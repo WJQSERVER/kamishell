@@ -1,0 +1,5 @@
+bin/
+kamishell
+*.exe
+*.test
+__debug_bin
