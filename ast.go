@@ -1,7 +1,6 @@
-package ast
+package kamishell
 
 import (
-	"kamishell/internal/lexer"
 	"strings"
 )
 
@@ -41,7 +40,7 @@ func (p *Program) String() string {
 }
 
 type CommandStatement struct {
-	Token     lexer.Token
+	Token     Token
 	Name      string
 	Arguments []Expression
 }
@@ -60,7 +59,7 @@ func (cs *CommandStatement) String() string {
 }
 
 type PrintStatement struct {
-	Token      lexer.Token
+	Token      Token
 	Expression Expression
 }
 
@@ -78,7 +77,7 @@ func (ps *PrintStatement) String() string {
 }
 
 type AssignStatement struct {
-	Token lexer.Token // the := token
+	Token Token // the := token
 	Name  *Identifier
 	Value Expression
 }
@@ -97,7 +96,7 @@ func (as *AssignStatement) String() string {
 }
 
 type Identifier struct {
-	Token lexer.Token
+	Token Token
 	Value string
 }
 
@@ -106,7 +105,7 @@ func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
 func (i *Identifier) String() string       { return i.Value }
 
 type StringLiteral struct {
-	Token lexer.Token
+	Token Token
 	Value string
 }
 
@@ -115,7 +114,7 @@ func (sl *StringLiteral) TokenLiteral() string { return sl.Token.Literal }
 func (sl *StringLiteral) String() string       { return "\"" + sl.Value + "\"" }
 
 type IntegerLiteral struct {
-	Token lexer.Token
+	Token Token
 	Value int64
 }
 
@@ -124,7 +123,7 @@ func (il *IntegerLiteral) TokenLiteral() string { return il.Token.Literal }
 func (il *IntegerLiteral) String() string       { return il.Token.Literal }
 
 type BooleanLiteral struct {
-	Token lexer.Token
+	Token Token
 	Value bool
 }
 
@@ -133,7 +132,7 @@ func (bl *BooleanLiteral) TokenLiteral() string { return bl.Token.Literal }
 func (bl *BooleanLiteral) String() string       { return bl.Token.Literal }
 
 type BlockStatement struct {
-	Token      lexer.Token // the { token
+	Token      Token // the { token
 	Statements []Statement
 }
 
@@ -148,7 +147,7 @@ func (bs *BlockStatement) String() string {
 }
 
 type IfStatement struct {
-	Token       lexer.Token // the if token
+	Token       Token // the if token
 	Condition   Expression
 	Consequence *BlockStatement
 	Alternative *BlockStatement
@@ -172,7 +171,7 @@ func (is *IfStatement) String() string {
 }
 
 type ExpressionStatement struct {
-	Token      lexer.Token // the first token of the expression
+	Token      Token // the first token of the expression
 	Expression Expression
 }
 
@@ -186,7 +185,7 @@ func (es *ExpressionStatement) String() string {
 }
 
 type ExecStatement struct {
-	Token      lexer.Token // the exec token
+	Token      Token // the exec token
 	CommandStr Expression
 }
 
@@ -204,7 +203,7 @@ func (es *ExecStatement) String() string {
 }
 
 type InfixExpression struct {
-	Token    lexer.Token // The operator token, e.g. +
+	Token    Token // The operator token, e.g. +
 	Left     Expression
 	Operator string
 	Right    Expression
@@ -223,7 +222,7 @@ func (ie *InfixExpression) String() string {
 }
 
 type PipeStatement struct {
-	Token    lexer.Token // The | token
+	Token    Token // The | token
 	Commands []Statement // The commands in the pipeline (usually CommandStatements)
 }
 
@@ -241,7 +240,7 @@ func (ps *PipeStatement) String() string {
 }
 
 type RedirectStatement struct {
-	Token  lexer.Token // > or >>
+	Token  Token // > or >>
 	Source Statement
 	Target Expression
 	Append bool
@@ -260,7 +259,7 @@ func (rs *RedirectStatement) String() string {
 }
 
 type ForStatement struct {
-	Token       lexer.Token // the for token
+	Token       Token // the for token
 	Condition   Expression
 	Consequence *BlockStatement
 }

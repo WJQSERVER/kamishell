@@ -1,7 +1,6 @@
-package parser
+package kamishell
 
 import (
-	"kamishell/internal/lexer"
 	"testing"
 )
 
@@ -15,8 +14,8 @@ func BenchmarkParseProgram(b *testing.B) {
 	}`
 
 	for i := 0; i < b.N; i++ {
-		l := lexer.New(input)
-		p := New(l)
+		l := NewLexer(input)
+		p := NewParser(l)
 		p.ParseProgram()
 	}
 }

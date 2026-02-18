@@ -1,8 +1,6 @@
-package parser
+package kamishell
 
 import (
-	"kamishell/internal/ast"
-	"kamishell/internal/lexer"
 	"testing"
 )
 
@@ -10,8 +8,8 @@ func TestParseAssignStatement(t *testing.T) {
 	input := `x := 5
 	name := "kami"
 	valid := true`
-	l := lexer.New(input)
-	p := New(l)
+	l := NewLexer(input)
+	p := NewParser(l)
 	program := p.ParseProgram()
 
 	if len(program.Statements) != 3 {
@@ -29,9 +27,9 @@ func TestParseAssignStatement(t *testing.T) {
 
 	for i, tt := range tests {
 		stmt := program.Statements[i]
-		assignStmt, ok := stmt.(*ast.AssignStatement)
+		assignStmt, ok := stmt.(*AssignStatement)
 		if !ok {
-			t.Fatalf("test[%d] - stmt is not *ast.AssignStatement. got=%T", i, stmt)
+			t.Fatalf("test[%d] - stmt is not *AssignStatement. got=%T", i, stmt)
 		}
 
 		if assignStmt.Name.Value != tt.expectedIdentifier {
@@ -46,17 +44,17 @@ func TestParseAssignStatement(t *testing.T) {
 
 func TestParseCommandStatement(t *testing.T) {
 	input := `ls "-la"`
-	l := lexer.New(input)
-	p := New(l)
+	l := NewLexer(input)
+	p := NewParser(l)
 	program := p.ParseProgram()
 
 	if len(program.Statements) != 1 {
 		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
 	}
 
-	stmt, ok := program.Statements[0].(*ast.CommandStatement)
+	stmt, ok := program.Statements[0].(*CommandStatement)
 	if !ok {
-		t.Fatalf("stmt is not *ast.CommandStatement. got=%T", program.Statements[0])
+		t.Fatalf("stmt is not *CommandStatement. got=%T", program.Statements[0])
 	}
 
 	if stmt.Name != "ls" {
@@ -67,9 +65,9 @@ func TestParseCommandStatement(t *testing.T) {
 		t.Errorf("len(stmt.Arguments) not 1. got=%d", len(stmt.Arguments))
 	}
 
-	arg, ok := stmt.Arguments[0].(*ast.StringLiteral)
+	arg, ok := stmt.Arguments[0].(*StringLiteral)
 	if !ok {
-		t.Fatalf("argument is not *ast.StringLiteral. got=%T", stmt.Arguments[0])
+		t.Fatalf("argument is not *StringLiteral. got=%T", stmt.Arguments[0])
 	}
 
 	if arg.Value != "-la" {

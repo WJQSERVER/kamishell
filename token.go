@@ -1,4 +1,4 @@
-package lexer
+package kamishell
 
 type TokenType string
 
@@ -44,8 +44,8 @@ const (
 	PRINT  TokenType = "PRINT"
 	EXEC   TokenType = "EXEC"
 	NIL    TokenType = "NIL"
-	TRUE   TokenType = "TRUE"
-	FALSE  TokenType = "FALSE"
+	TRUE_TOK   TokenType = "TRUE"
+	FALSE_TOK  TokenType = "FALSE"
 )
 
 type Token struct {
@@ -65,8 +65,8 @@ var keywords = map[string]TokenType{
 	"print":  PRINT,
 	"exec":   EXEC,
 	"nil":    NIL,
-	"true":   TRUE,
-	"false":  FALSE,
+	"true":   TRUE_TOK,
+	"false":  FALSE_TOK,
 }
 
 func LookupIdent(ident string) TokenType {

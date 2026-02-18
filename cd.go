@@ -1,4 +1,4 @@
-package builtin
+package kamishell
 
 import (
 	"fmt"
@@ -7,10 +7,10 @@ import (
 )
 
 func init() {
-	Register("cd", Cd)
+	RegisterBuiltin("cd", Cd)
 }
 
-func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+func Cd(args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	var dir string
 	if len(args) == 0 {
 		dir = os.Getenv("HOME")

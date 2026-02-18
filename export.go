@@ -1,4 +1,4 @@
-package builtin
+package kamishell
 
 import (
 	"fmt"
@@ -8,10 +8,10 @@ import (
 )
 
 func init() {
-	Register("export", Export)
+	RegisterBuiltin("export", Export)
 }
 
-func Export(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+func Export(args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 {
 		return Env(args, env, stdin, stdout, stderr)
 	}
@@ -29,10 +29,10 @@ func Export(args []string, env Environment, stdin io.Reader, stdout io.Writer, s
 }
 
 func init() {
-	Register("env", Env)
+	RegisterBuiltin("env", Env)
 }
 
-func Env(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+func Env(args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	for _, e := range os.Environ() {
 		fmt.Fprintln(stdout, e)
 	}

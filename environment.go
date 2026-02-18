@@ -1,4 +1,4 @@
-package runtime
+package kamishell
 
 import "os"
 import "strings"
@@ -35,4 +35,8 @@ func (e *Environment) Set(name string, val interface{}) {
 			e.store[name] = FALSE
 		}
 	}
+}
+
+func NewEmptyEnvironment() *Environment {
+	return &Environment{store: make(map[string]Object)}
 }

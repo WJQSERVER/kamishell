@@ -1,4 +1,4 @@
-package builtin
+package kamishell
 
 import (
 	"fmt"
@@ -7,10 +7,10 @@ import (
 )
 
 func init() {
-	Register("pwd", Pwd)
+	RegisterBuiltin("pwd", Pwd)
 }
 
-func Pwd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+func Pwd(args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(stderr, "pwd: %v\n", err)
