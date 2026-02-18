@@ -4,7 +4,7 @@ Kamishell 是一种混合了 Bash 简洁性和 Go 语言严谨性的跨平台 Sh
 
 ## 1. 变量与赋值
 
-使用 `:=` 进行变量声明和赋值。Kamishell 是动态类型的，支持以下基础类型：
+使用 `:=` 进行变量声明 and 赋值。Kamishell 是动态类型的，支持以下基础类型：
 
 - **Integer**: `x := 10`
 - **String**: `name := "Kamishell"`
@@ -51,7 +51,16 @@ if isValid {
 }
 ```
 
-## 5. 错误处理
+## 5. 强制命令执行 (`exec`)
+
+当命令名称与 Kamishell 的关键字（如 `go`, `print`, `if` 等）冲突时，可以使用 `exec` 关键字配合字符串来强制执行外部命令：
+
+```go
+exec "go run ."
+exec "print -p 9090"
+```
+
+## 6. 错误处理
 
 Kamishell 鼓励显式的错误处理。当命令执行失败时，会返回一个 Error 对象。
 

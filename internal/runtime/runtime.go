@@ -5,6 +5,7 @@ import (
 	"kamishell/internal/ast"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 var (
@@ -31,7 +32,7 @@ func Eval(node ast.Node, env *Environment) Object {
 		env.Set(node.Name.Value, val)
 		return val
 	case *ast.CommandStatement:
-		return executeCommand(node)
+		return executeCommand(node.Name, node.Arguments)
 	case *ast.PrintStatement:
 		val := Eval(node.Expression, env)
 		if isError(val) {
@@ -39,6 +40,8 @@ func Eval(node ast.Node, env *Environment) Object {
 		}
 		fmt.Println(val.Inspect())
 		return NULL
+	case *ast.ExecStatement:
+		return evalExecStatement(node, env)
 	case *ast.Identifier:
 		return evalIdentifier(node, env)
 	case *ast.StringLiteral:
@@ -77,6 +80,24 @@ func evalIfStatement(is *ast.IfStatement, env *Environment) Object {
 	}
 }
 
+func evalExecStatement(es *ast.ExecStatement, env *Environment) Object {
+	val := Eval(es.CommandStr, env)
+	if isError(val) {
+		return val
+	}
+	cmdStr, ok := val.(*String)
+	if !ok {
+		return &Error{Message: "exec expects a string"}
+	}
+
+	fields := strings.Fields(cmdStr.Value)
+	if len(fields) == 0 {
+		return NULL
+	}
+
+	return executeCommand(fields[0], fields[1:])
+}
+
 func isTruthy(obj Object) bool {
 	switch obj {
 	case NULL:
@@ -84,8 +105,6 @@ func isTruthy(obj Object) bool {
 	case TRUE:
 		return true
 	case FALSE:
-		return false
-	case &Integer{Value: 0}: // Optional: 0 is falsy?
 		return false
 	default:
 		if i, ok := obj.(*Integer); ok && i.Value == 0 {
@@ -95,8 +114,8 @@ func isTruthy(obj Object) bool {
 	}
 }
 
-func executeCommand(node *ast.CommandStatement) Object {
-	cmd := exec.Command(node.Name, node.Arguments...)
+func executeCommand(name string, args []string) Object {
+	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

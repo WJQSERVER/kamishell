@@ -52,3 +52,11 @@
     if err != nil {
         handleError(err)
     }
+
+## 8. 强制执行关键字 (`exec`)
+*   用于解决命令名与关键字冲突的问题。
+*   **示例**:
+    ```go
+    exec "go run ."
+    exec "print -p 9090"
+    ```

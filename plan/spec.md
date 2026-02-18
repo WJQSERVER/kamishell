@@ -54,3 +54,9 @@ func myFunc(arg string) error {
 ### 3.2 内置命令 (Built-ins)
 *   `print`: 替代传统的 `echo`。
 *   `cd`, `pwd`, `exit`, `var`, `export` 等。
+
+### 3.3 强制命令执行 (`exec`)
+使用 `exec` 关键字可以执行字符串形式的命令，解决与保留关键字的冲突。
+```go
+exec "go run ."
+```

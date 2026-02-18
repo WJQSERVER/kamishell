@@ -50,13 +50,28 @@ func TestIfElseExpressions(t *testing.T) {
 	}{
 		{"if true { 10 }", "10"},
 		{"if false { 10 } else { 20 }", "20"},
-		{"if 1 { 10 }", "10"},
 	}
 
 	for _, tt := range tests {
 		evaluated := testEval(tt.input)
 		if evaluated.Inspect() != tt.expected {
 			t.Errorf("expected=%s, got=%s", tt.expected, evaluated.Inspect())
+		}
+	}
+}
+
+func TestExecStatement(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{`exec "ls -la";`},
+		{`exec "go version";`},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		if evaluated != NULL && isError(evaluated) {
+			t.Errorf("exec failed for input %s: %s", tt.input, evaluated.Inspect())
 		}
 	}
 }

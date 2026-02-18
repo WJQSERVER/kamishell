@@ -184,3 +184,21 @@ func (es *ExpressionStatement) String() string {
 	}
 	return ""
 }
+
+type ExecStatement struct {
+	Token      lexer.Token // the exec token
+	CommandStr Expression
+}
+
+func (es *ExecStatement) statementNode()       {}
+func (es *ExecStatement) TokenLiteral() string { return es.Token.Literal }
+func (es *ExecStatement) String() string {
+	var out strings.Builder
+	out.WriteString(es.TokenLiteral())
+	out.WriteString(" ")
+	if es.CommandStr != nil {
+		out.WriteString(es.CommandStr.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}

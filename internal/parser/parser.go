@@ -43,6 +43,8 @@ func (p *Parser) parseStatement() ast.Statement {
 	switch p.curToken.Type {
 	case lexer.PRINT:
 		return p.parsePrintStatement()
+	case lexer.EXEC:
+		return p.parseExecStatement()
 	case lexer.IF:
 		return p.parseIfStatement()
 	case lexer.IDENT:
@@ -72,6 +74,16 @@ func (p *Parser) parsePrintStatement() *ast.PrintStatement {
 	stmt := &ast.PrintStatement{Token: p.curToken}
 	p.nextToken()
 	stmt.Expression = p.parseExpression()
+	if p.peekToken.Type == lexer.SEMICOLON {
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseExecStatement() *ast.ExecStatement {
+	stmt := &ast.ExecStatement{Token: p.curToken}
+	p.nextToken()
+	stmt.CommandStr = p.parseExpression()
 	if p.peekToken.Type == lexer.SEMICOLON {
 		p.nextToken()
 	}

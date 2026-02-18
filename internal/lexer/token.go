@@ -39,6 +39,7 @@ const (
 	GO     TokenType = "GO"
 	VAR    TokenType = "VAR"
 	PRINT  TokenType = "PRINT"
+	EXEC   TokenType = "EXEC"
 	NIL    TokenType = "NIL"
 	TRUE   TokenType = "TRUE"
 	FALSE  TokenType = "FALSE"
@@ -59,6 +60,7 @@ var keywords = map[string]TokenType{
 	"go":     GO,
 	"var":    VAR,
 	"print":  PRINT,
+	"exec":   EXEC,
 	"nil":    NIL,
 	"true":   TRUE,
 	"false":  FALSE,
