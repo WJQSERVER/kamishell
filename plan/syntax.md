@@ -10,7 +10,7 @@
 *   **捕获输出**: `output, err := ls -la` (支持多返回值，捕获输出和错误)。
 
 ## 3. 控制流
-*   使用 Go 的语法替代 Bash 繁琐的 `if [ ... ]; then`。
+*   使用 Go 的语法替代 Bash 繁琐特有的 `if [ ... ]; then`。
 *   **示例**:
     ```go
     if x == "test" {
@@ -46,12 +46,6 @@
         return err
     }
     ```
-    或者在捕获输出时：
-    ```go
-    out, err := ls "dir"
-    if err != nil {
-        handleError(err)
-    }
 
 ## 8. 强制执行关键字 (`exec`)
 *   用于解决命令名与关键字冲突的问题。
@@ -60,3 +54,7 @@
     exec "go run ."
     exec "print -p 9090"
     ```
+
+## 9. 注释 (Go 风格)
+*   **单行**: `// comment`
+*   **多行**: `/* comment */`

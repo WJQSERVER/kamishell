@@ -5,7 +5,12 @@ import (
 )
 
 func TestNextToken(t *testing.T) {
-	input := `print "hello";
+	input := `// This is a comment
+	print "hello";
+	/*
+	   Multi-line
+	   comment
+	*/
 	files := ls -la;
 	if err != nil {
 		exit 1

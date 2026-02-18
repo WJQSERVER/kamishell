@@ -12,7 +12,7 @@
 
 ### 命令与赋值
 ```bash
-# 执行并捕获输出与错误
+// 执行并捕获输出与错误
 files, err := ls -la | grep ".go"
 if err != nil {
     return err
@@ -22,6 +22,7 @@ print "Found ${len(files)} files"
 
 ### 逻辑控制
 ```go
+/* 检查当前用户 */
 if $USER == "root" {
     print "Warning: Running as root"
 }
@@ -37,7 +38,7 @@ for _, f := range files {
 ### 并发处理
 ```go
 go {
-    # 异步备份
+    // 异步备份
     err := tar -czf backup.tar.gz ./data
     if err != nil {
         sendNotification("Backup failed")
@@ -50,7 +51,7 @@ go {
 ```go
 err := some_command
 if err != nil {
-    # 处理错误
+    // 处理错误
 }
 ```
 
@@ -60,4 +61,4 @@ if err != nil {
 3. 实现跨平台的内置命令集。
 
 ## 5. 关键字与符号
-详见 [keywords.md](./keywords.md)。Kamishell 严格遵循 Go 的关键字集合，并扩展了 Shell 必要的环境管理关键字。
+详见 [keywords.md](./keywords.md)。Kamishell 严格遵循 Go 的关键字集合，并扩展了 Shell 必要的环境管理关键字。同时支持 Go 风格的注释 (`//` 和 `/* */`)。

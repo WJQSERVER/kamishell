@@ -118,17 +118,41 @@ func (l *Lexer) NextToken() Token {
 }
 
 func (l *Lexer) skipWhitespace() {
-	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' || l.ch == '#' {
-		if l.ch == '#' {
-			l.skipComment()
-		} else {
+	for {
+		if l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
 			l.readChar()
+		} else if l.ch == '/' {
+			if l.peekChar() == '/' {
+				l.skipSingleLineComment()
+			} else if l.peekChar() == '*' {
+				l.skipMultiLineComment()
+			} else {
+				break
+			}
+		} else {
+			break
 		}
 	}
 }
 
-func (l *Lexer) skipComment() {
+func (l *Lexer) skipSingleLineComment() {
 	for l.ch != '\n' && l.ch != 0 {
+		l.readChar()
+	}
+}
+
+func (l *Lexer) skipMultiLineComment() {
+	l.readChar() // consume '/'
+	l.readChar() // consume '*'
+	for {
+		if l.ch == 0 {
+			break
+		}
+		if l.ch == '*' && l.peekChar() == '/' {
+			l.readChar() // consume '*'
+			l.readChar() // consume '/'
+			break
+		}
 		l.readChar()
 	}
 }
