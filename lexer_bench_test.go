@@ -1,4 +1,4 @@
-package lexer
+package kamishell
 
 import (
 	"testing"
@@ -12,7 +12,7 @@ func BenchmarkNextToken(b *testing.B) {
 	}`
 
 	for i := 0; i < b.N; i++ {
-		l := New(input)
+		l := NewLexer(input)
 		for tok := l.NextToken(); tok.Type != EOF; tok = l.NextToken() {
 		}
 	}

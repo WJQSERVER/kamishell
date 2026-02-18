@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	Register("ls", Ls)
+	RegisterBuiltin("ls", Ls)
 }
 
 func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

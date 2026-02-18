@@ -1,4 +1,4 @@
-package lexer
+package kamishell
 
 import (
 	"unicode"
@@ -12,7 +12,7 @@ type Lexer struct {
 	prevToken    TokenType // type of the last token returned
 }
 
-func New(input string) *Lexer {
+func NewLexer(input string) *Lexer {
 	l := &Lexer{input: input}
 	l.readChar()
 	l.skipShebang()
@@ -168,7 +168,7 @@ func (l *Lexer) NextToken() Token {
 
 func (l *Lexer) isCompletable() bool {
 	switch l.prevToken {
-	case IDENT, NUMBER, STRING, TRUE, FALSE, NIL, RETURN, RPAREN, RBRACE:
+	case IDENT, NUMBER, STRING, TRUE_TOK, FALSE_TOK, NIL, RETURN, RPAREN, RBRACE:
 		return true
 	}
 	return false

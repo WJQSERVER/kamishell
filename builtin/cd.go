@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	Register("cd", Cd)
+	RegisterBuiltin("cd", Cd)
 }
 
 func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

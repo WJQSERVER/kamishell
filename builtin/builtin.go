@@ -13,6 +13,6 @@ type BuiltinFunc func(args []string, env Environment, stdin io.Reader, stdout io
 
 var Builtins = map[string]BuiltinFunc{}
 
-func Register(name string, fn BuiltinFunc) {
+func RegisterBuiltin(name string, fn BuiltinFunc) {
 	Builtins[name] = fn
 }

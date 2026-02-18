@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	Register("pwd", Pwd)
+	RegisterBuiltin("pwd", Pwd)
 }
 
 func Pwd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

@@ -1,4 +1,4 @@
-package lexer
+package kamishell
 
 import (
 	"testing"
@@ -41,7 +41,7 @@ func TestNextToken(t *testing.T) {
 		{EOF, ""},
 	}
 
-	l := New(input)
+	l := NewLexer(input)
 
 	for i, tt := range tests {
 		tok := l.NextToken()
@@ -62,7 +62,7 @@ func TestShebangSupport(t *testing.T) {
 	input := `#!/usr/bin/env kami
 	print "hello"`
 
-	l := New(input)
+	l := NewLexer(input)
 	tok := l.NextToken()
 
 	if tok.Type != PRINT {
@@ -74,7 +74,7 @@ func TestSemicolonInsertion(t *testing.T) {
 	input := `ls
 	print "hi"`
 
-	l := New(input)
+	l := NewLexer(input)
 
 	tok := l.NextToken()
 	if tok.Type != IDENT || tok.Literal != "ls" {

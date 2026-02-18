@@ -1,8 +1,6 @@
-package runtime
+package kamishell
 
 import (
-	"kamishell/internal/lexer"
-	"kamishell/internal/parser"
 	"testing"
 )
 
@@ -22,8 +20,8 @@ func TestEvalIntegerExpression(t *testing.T) {
 }
 
 func testEval(input string) Object {
-	l := lexer.New(input)
-	p := parser.New(l)
+	l := NewLexer(input)
+	p := NewParser(l)
 	program := p.ParseProgram()
 	env := NewEnvironment()
 

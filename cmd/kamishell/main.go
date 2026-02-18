@@ -4,16 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"kamishell/internal/lexer"
-	"kamishell/internal/parser"
-	"kamishell/internal/runtime"
+	"kamishell"
 	"os"
 )
 
 const PROMPT = "kami> "
 
 func main() {
-	env := runtime.NewEnvironment()
+	env := kamishell.NewEnvironment()
 
 	if len(os.Args) > 1 {
 		// Script mode
@@ -25,7 +23,7 @@ func main() {
 	}
 }
 
-func executeFile(filename string, env *runtime.Environment) {
+func executeFile(filename string, env *kamishell.Environment) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading file: %v\n", err)
@@ -35,7 +33,7 @@ func executeFile(filename string, env *runtime.Environment) {
 	runInput(string(content), env, false)
 }
 
-func startRepl(in io.Reader, out io.Writer, env *runtime.Environment) {
+func startRepl(in io.Reader, out io.Writer, env *kamishell.Environment) {
 	scanner := bufio.NewScanner(in)
 	for {
 		fmt.Fprint(out, PROMPT)
@@ -56,16 +54,16 @@ func startRepl(in io.Reader, out io.Writer, env *runtime.Environment) {
 	}
 }
 
-func runInput(input string, env *runtime.Environment, isRepl bool) {
-	l := lexer.New(input)
-	p := parser.New(l)
+func runInput(input string, env *kamishell.Environment, isRepl bool) {
+	l := kamishell.NewLexer(input)
+	p := kamishell.NewParser(l)
 
 	program := p.ParseProgram()
-	result := runtime.Eval(program, env)
+	result := kamishell.Eval(program, env)
 	if result != nil {
-		if result.Type() == runtime.ERROR_OBJ {
+		if result.Type() == kamishell.ERROR_OBJ {
 			fmt.Fprintf(os.Stderr, "%s\n", result.Inspect())
-		} else if isRepl && result.Type() != runtime.NULL_OBJ {
+		} else if isRepl && result.Type() != kamishell.NULL_OBJ {
 			fmt.Println(result.Inspect())
 		}
 	}
