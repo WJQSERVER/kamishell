@@ -43,7 +43,7 @@ func (p *Program) String() string {
 type CommandStatement struct {
 	Token     lexer.Token
 	Name      string
-	Arguments []string
+	Arguments []Expression
 }
 
 func (cs *CommandStatement) statementNode()       {}
@@ -53,7 +53,7 @@ func (cs *CommandStatement) String() string {
 	out.WriteString(cs.Name)
 	for _, arg := range cs.Arguments {
 		out.WriteString(" ")
-		out.WriteString(arg)
+		out.WriteString(arg.String())
 	}
 	out.WriteString(";")
 	return out.String()
@@ -219,5 +219,62 @@ func (ie *InfixExpression) String() string {
 	out.WriteString(" " + ie.Operator + " ")
 	out.WriteString(ie.Right.String())
 	out.WriteString(")")
+	return out.String()
+}
+
+type PipeStatement struct {
+	Token    lexer.Token // The | token
+	Commands []Statement // The commands in the pipeline (usually CommandStatements)
+}
+
+func (ps *PipeStatement) statementNode()       {}
+func (ps *PipeStatement) TokenLiteral() string { return ps.Token.Literal }
+func (ps *PipeStatement) String() string {
+	var out strings.Builder
+	for i, cmd := range ps.Commands {
+		out.WriteString(cmd.String())
+		if i < len(ps.Commands)-1 {
+			out.WriteString(" | ")
+		}
+	}
+	return out.String()
+}
+
+type RedirectStatement struct {
+	Token  lexer.Token // > or >>
+	Source Statement
+	Target Expression
+	Append bool
+}
+
+func (rs *RedirectStatement) statementNode()       {}
+func (rs *RedirectStatement) TokenLiteral() string { return rs.Token.Literal }
+func (rs *RedirectStatement) String() string {
+	var out strings.Builder
+	out.WriteString(rs.Source.String())
+	out.WriteString(" ")
+	out.WriteString(rs.Token.Literal)
+	out.WriteString(" ")
+	out.WriteString(rs.Target.String())
+	return out.String()
+}
+
+type ForStatement struct {
+	Token       lexer.Token // the for token
+	Condition   Expression
+	Consequence *BlockStatement
+}
+
+func (fs *ForStatement) statementNode()       {}
+func (fs *ForStatement) TokenLiteral() string { return fs.Token.Literal }
+func (fs *ForStatement) String() string {
+	var out strings.Builder
+	out.WriteString("for ")
+	if fs.Condition != nil {
+		out.WriteString(fs.Condition.String())
+	}
+	out.WriteString(" { ")
+	out.WriteString(fs.Consequence.String())
+	out.WriteString(" }")
 	return out.String()
 }

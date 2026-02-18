@@ -2,11 +2,13 @@ package runtime
 
 import (
 	"fmt"
+	"io"
 	"kamishell/internal/ast"
 	"kamishell/internal/builtin"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 var (
@@ -16,43 +18,53 @@ var (
 )
 
 func Eval(node ast.Node, env *Environment) Object {
+	return EvalWithIO(node, env, os.Stdin, os.Stdout, os.Stderr)
+}
+
+func EvalWithIO(node ast.Node, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	switch node := node.(type) {
 	case *ast.Program:
-		return evalStatements(node.Statements, env)
+		return evalStatements(node.Statements, env, stdin, stdout, stderr)
 	case *ast.BlockStatement:
-		return evalStatements(node.Statements, env)
+		return evalStatements(node.Statements, env, stdin, stdout, stderr)
 	case *ast.ExpressionStatement:
-		return Eval(node.Expression, env)
+		return EvalWithIO(node.Expression, env, stdin, stdout, stderr)
 	case *ast.IfStatement:
-		return evalIfStatement(node, env)
+		return evalIfStatement(node, env, stdin, stdout, stderr)
+	case *ast.ForStatement:
+		return evalForStatement(node, env, stdin, stdout, stderr)
+	case *ast.PipeStatement:
+		return evalPipeStatement(node, env, stdin, stdout, stderr)
+	case *ast.RedirectStatement:
+		return evalRedirectStatement(node, env, stdin, stdout, stderr)
 	case *ast.InfixExpression:
-		left := Eval(node.Left, env)
+		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		if isError(left) {
 			return left
 		}
-		right := Eval(node.Right, env)
+		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
 		if isError(right) {
 			return right
 		}
 		return evalInfixExpression(node.Operator, left, right)
 	case *ast.AssignStatement:
-		val := Eval(node.Value, env)
+		val := EvalWithIO(node.Value, env, stdin, stdout, stderr)
 		if isError(val) {
 			return val
 		}
 		env.Set(node.Name.Value, val)
 		return val
 	case *ast.CommandStatement:
-		return executeCommand(node.Name, node.Arguments)
+		return executeCommand(node.Name, node.Arguments, env, stdin, stdout, stderr)
 	case *ast.PrintStatement:
-		val := Eval(node.Expression, env)
+		val := EvalWithIO(node.Expression, env, stdin, stdout, stderr)
 		if isError(val) {
 			return val
 		}
-		fmt.Println(val.Inspect())
+		fmt.Fprintln(stdout, val.Inspect())
 		return NULL
 	case *ast.ExecStatement:
-		return evalExecStatement(node, env)
+		return evalExecStatement(node, env, stdin, stdout, stderr)
 	case *ast.Identifier:
 		return evalIdentifier(node, env)
 	case *ast.StringLiteral:
@@ -65,10 +77,10 @@ func Eval(node ast.Node, env *Environment) Object {
 	return NULL
 }
 
-func evalStatements(stmts []ast.Statement, env *Environment) Object {
+func evalStatements(stmts []ast.Statement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var result Object
 	for _, statement := range stmts {
-		result = Eval(statement, env)
+		result = EvalWithIO(statement, env, stdin, stdout, stderr)
 		if errObj, ok := result.(*Error); ok {
 			return errObj
 		}
@@ -76,19 +88,44 @@ func evalStatements(stmts []ast.Statement, env *Environment) Object {
 	return result
 }
 
-func evalIfStatement(is *ast.IfStatement, env *Environment) Object {
-	condition := Eval(is.Condition, env)
+func evalIfStatement(is *ast.IfStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	condition := EvalWithIO(is.Condition, env, stdin, stdout, stderr)
 	if isError(condition) {
 		return condition
 	}
 
 	if isTruthy(condition) {
-		return Eval(is.Consequence, env)
+		return EvalWithIO(is.Consequence, env, stdin, stdout, stderr)
 	} else if is.Alternative != nil {
-		return Eval(is.Alternative, env)
+		return EvalWithIO(is.Alternative, env, stdin, stdout, stderr)
 	} else {
 		return NULL
 	}
+}
+
+func evalForStatement(fs *ast.ForStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var result Object = NULL
+	for {
+		if fs.Condition != nil {
+			condition := EvalWithIO(fs.Condition, env, stdin, stdout, stderr)
+			if isError(condition) {
+				return condition
+			}
+			if !isTruthy(condition) {
+				break
+			}
+		}
+
+		result = EvalWithIO(fs.Consequence, env, stdin, stdout, stderr)
+		if isError(result) {
+			return result
+		}
+
+		if fs.Condition == nil {
+			break
+		}
+	}
+	return result
 }
 
 func evalInfixExpression(operator string, left, right Object) Object {
@@ -96,9 +133,9 @@ func evalInfixExpression(operator string, left, right Object) Object {
 	case left.Type() == INTEGER_OBJ && right.Type() == INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
 	case operator == "==":
-		return nativeBoolToBooleanObject(left == right)
+		return nativeBoolToBooleanObject(left.Inspect() == right.Inspect())
 	case operator == "!=":
-		return nativeBoolToBooleanObject(left != right)
+		return nativeBoolToBooleanObject(left.Inspect() != right.Inspect())
 	case left.Type() != right.Type():
 		return &Error{Message: fmt.Sprintf("type mismatch: %s %s %s", left.Type(), operator, right.Type())}
 	default:
@@ -117,13 +154,17 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 		return nativeBoolToBooleanObject(leftVal != rightVal)
 	case ">":
 		return nativeBoolToBooleanObject(leftVal > rightVal)
+	case "<":
+		return nativeBoolToBooleanObject(leftVal < rightVal)
+	case "+":
+		return &Integer{Value: leftVal + rightVal}
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
 }
 
-func evalExecStatement(es *ast.ExecStatement, env *Environment) Object {
-	val := Eval(es.CommandStr, env)
+func evalExecStatement(es *ast.ExecStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	val := EvalWithIO(es.CommandStr, env, stdin, stdout, stderr)
 	if isError(val) {
 		return val
 	}
@@ -137,7 +178,94 @@ func evalExecStatement(es *ast.ExecStatement, env *Environment) Object {
 		return NULL
 	}
 
-	return executeCommand(fields[0], fields[1:])
+	return executeCommandWithStrings(fields[0], fields[1:], env, stdin, stdout, stderr)
+}
+
+func evalPipeStatement(ps *ast.PipeStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	n := len(ps.Commands)
+	pipes := make([]*io.PipeWriter, n-1)
+	readers := make([]*io.PipeReader, n-1)
+
+	for i := 0; i < n-1; i++ {
+		readers[i], pipes[i] = io.Pipe()
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	var errs []string
+	var errMu sync.Mutex
+
+	for i := 0; i < n; i++ {
+		go func(idx int) {
+			defer wg.Done()
+
+			var curStdin io.Reader
+			var curStdout io.Writer
+
+			if idx == 0 {
+				curStdin = stdin
+			} else {
+				curStdin = readers[idx-1]
+			}
+
+			if idx == n-1 {
+				curStdout = stdout
+			} else {
+				curStdout = pipes[idx]
+			}
+
+			res := EvalWithIO(ps.Commands[idx], env, curStdin, curStdout, stderr)
+
+			if idx < n-1 {
+				pipes[idx].Close()
+			}
+			if idx > 0 {
+				readers[idx-1].Close()
+			}
+
+			if isError(res) {
+				errMu.Lock()
+				errs = append(errs, res.Inspect())
+				errMu.Unlock()
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	if len(errs) > 0 {
+		return &Error{Message: strings.Join(errs, "; ")}
+	}
+
+	return NULL
+}
+
+func evalRedirectStatement(rs *ast.RedirectStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	target := EvalWithIO(rs.Target, env, stdin, stdout, stderr)
+	if isError(target) {
+		return target
+	}
+
+	path, ok := target.(*String)
+	if !ok {
+		return &Error{Message: "redirection target must be a string"}
+	}
+
+	flags := os.O_CREATE | os.O_WRONLY
+	if rs.Append {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+
+	f, err := os.OpenFile(path.Value, flags, 0644)
+	if err != nil {
+		return &Error{Message: err.Error()}
+	}
+	defer f.Close()
+
+	return EvalWithIO(rs.Source, env, stdin, f, stderr)
 }
 
 func isTruthy(obj Object) bool {
@@ -156,21 +284,31 @@ func isTruthy(obj Object) bool {
 	}
 }
 
-func executeCommand(name string, args []string) Object {
-	// 1. Check for built-ins
+func executeCommand(name string, args []ast.Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	evaledArgs := make([]string, len(args))
+	for i, arg := range args {
+		val := EvalWithIO(arg, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		evaledArgs[i] = val.Inspect()
+	}
+	return executeCommandWithStrings(name, evaledArgs, env, stdin, stdout, stderr)
+}
+
+func executeCommandWithStrings(name string, args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	if fn, ok := builtin.Builtins[name]; ok {
-		exitCode := fn(args, os.Stdout, os.Stderr)
+		exitCode := fn(args, env, stdin, stdout, stderr)
 		if exitCode != 0 {
 			return &Error{Message: fmt.Sprintf("builtin %s exited with %d", name, exitCode)}
 		}
 		return NULL
 	}
 
-	// 2. Check for external commands
 	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.Stdin = stdin
 	err := cmd.Run()
 	if err != nil {
 		return &Error{Message: err.Error()}
@@ -183,7 +321,7 @@ func evalIdentifier(node *ast.Identifier, env *Environment) Object {
 	if !ok {
 		return &Error{Message: fmt.Sprintf("identifier not found: %s", node.Value)}
 	}
-	return val
+	return val.(Object)
 }
 
 func nativeBoolToBooleanObject(input bool) *Boolean {

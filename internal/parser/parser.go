@@ -21,6 +21,8 @@ var precedences = map[lexer.TokenType]int{
 	lexer.EQ:       EQUALS,
 	lexer.NEQ:      EQUALS,
 	lexer.GREATER:  LESSGREATER,
+	lexer.LESS:     LESSGREATER,
+	lexer.PLUS:     SUM,
 }
 
 type (
@@ -46,11 +48,14 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(lexer.STRING, p.parseStringLiteral)
 	p.registerPrefix(lexer.TRUE, p.parseBooleanLiteral)
 	p.registerPrefix(lexer.FALSE, p.parseBooleanLiteral)
+	p.registerPrefix(lexer.DOLLAR, p.parseInterpolation)
 
 	p.infixParseFns = make(map[lexer.TokenType]infixParseFn)
 	p.registerInfix(lexer.EQ, p.parseInfixExpression)
 	p.registerInfix(lexer.NEQ, p.parseInfixExpression)
 	p.registerInfix(lexer.GREATER, p.parseInfixExpression)
+	p.registerInfix(lexer.LESS, p.parseInfixExpression)
+	p.registerInfix(lexer.PLUS, p.parseInfixExpression)
 
 	p.nextToken()
 	p.nextToken()
@@ -86,27 +91,66 @@ func (p *Parser) ParseProgram() *ast.Program {
 }
 
 func (p *Parser) parseStatement() ast.Statement {
+	var stmt ast.Statement
 	switch p.curToken.Type {
 	case lexer.SEMICOLON:
 		return nil
 	case lexer.PRINT:
-		return p.parsePrintStatement()
+		stmt = p.parsePrintStatement()
 	case lexer.EXEC:
-		return p.parseExecStatement()
+		stmt = p.parseExecStatement()
 	case lexer.IF:
-		return p.parseIfStatement()
+		stmt = p.parseIfStatement()
+	case lexer.FOR:
+		stmt = p.parseForStatement()
 	case lexer.IDENT:
 		if p.peekToken.Type == lexer.COLON_ASSIGN {
-			return p.parseAssignStatement()
+			stmt = p.parseAssignStatement()
+		} else {
+			stmt = p.parseCommandStatement()
 		}
-		return p.parseCommandStatement()
 	case lexer.LBRACE:
-		return p.parseBlockStatement()
-	case lexer.NUMBER, lexer.STRING, lexer.TRUE, lexer.FALSE:
-		return p.parseExpressionStatement()
+		stmt = p.parseBlockStatement()
+	case lexer.NUMBER, lexer.STRING, lexer.TRUE, lexer.FALSE, lexer.DOLLAR:
+		stmt = p.parseExpressionStatement()
 	default:
-		return p.parseCommandStatement()
+		stmt = p.parseCommandStatement()
 	}
+
+	for {
+		if p.peekToken.Type == lexer.PIPE {
+			stmt = p.parsePipeStatement(stmt)
+		} else if p.peekToken.Type == lexer.GREATER || p.peekToken.Type == lexer.APPEND {
+			stmt = p.parseRedirectStatement(stmt)
+		} else {
+			break
+		}
+	}
+
+	return stmt
+}
+
+func (p *Parser) parsePipeStatement(left ast.Statement) *ast.PipeStatement {
+	ps := &ast.PipeStatement{Token: p.peekToken, Commands: []ast.Statement{left}}
+	for p.peekToken.Type == lexer.PIPE {
+		p.nextToken() // move to |
+		p.nextToken() // move to start of next command
+		cmd := p.parseCommandStatement()
+		ps.Commands = append(ps.Commands, cmd)
+	}
+	return ps
+}
+
+func (p *Parser) parseRedirectStatement(left ast.Statement) *ast.RedirectStatement {
+	stmt := &ast.RedirectStatement{Token: p.peekToken, Source: left}
+	stmt.Append = p.peekToken.Type == lexer.APPEND
+
+	p.nextToken() // move to > or >>
+	p.nextToken() // move to target
+
+	stmt.Target = p.parseExpression(LOWEST)
+
+	return stmt
 }
 
 func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
@@ -121,7 +165,7 @@ func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 func (p *Parser) parsePrintStatement() *ast.PrintStatement {
 	stmt := &ast.PrintStatement{Token: p.curToken}
 	p.nextToken()
-	stmt.Expression = p.parseExpression(LOWEST)
+	stmt.Expression = p.parseExpression(LESSGREATER)
 	if p.peekToken.Type == lexer.SEMICOLON {
 		p.nextToken()
 	}
@@ -160,9 +204,6 @@ func (p *Parser) parseIfStatement() *ast.IfStatement {
 	p.nextToken()
 	stmt.Condition = p.parseExpression(LOWEST)
 
-	// In Go, the { must be on the same line or before semicolon insertion.
-	// Our Lexer doesn't insert semicolon after if condition because expressions don't necessarily end.
-	// But if the user put a newline, the Lexer might have inserted a semicolon if the condition was completable.
 	if p.peekToken.Type == lexer.SEMICOLON {
 		p.nextToken()
 	}
@@ -181,6 +222,26 @@ func (p *Parser) parseIfStatement() *ast.IfStatement {
 			p.nextToken()
 			stmt.Alternative = p.parseBlockStatement()
 		}
+	}
+
+	return stmt
+}
+
+func (p *Parser) parseForStatement() *ast.ForStatement {
+	stmt := &ast.ForStatement{Token: p.curToken}
+
+	p.nextToken()
+	if p.curToken.Type != lexer.LBRACE {
+		stmt.Condition = p.parseExpression(LOWEST)
+	}
+
+	if p.peekToken.Type == lexer.SEMICOLON {
+		p.nextToken()
+	}
+
+	if p.peekToken.Type == lexer.LBRACE {
+		p.nextToken()
+		stmt.Consequence = p.parseBlockStatement()
 	}
 
 	return stmt
@@ -206,9 +267,14 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 func (p *Parser) parseCommandStatement() *ast.CommandStatement {
 	stmt := &ast.CommandStatement{Token: p.curToken, Name: p.curToken.Literal}
 
-	for p.peekToken.Type != lexer.SEMICOLON && p.peekToken.Type != lexer.EOF && p.peekToken.Type != lexer.RBRACE {
+	for p.peekToken.Type != lexer.SEMICOLON && p.peekToken.Type != lexer.EOF && p.peekToken.Type != lexer.RBRACE && p.peekToken.Type != lexer.PIPE && p.peekToken.Type != lexer.GREATER && p.peekToken.Type != lexer.APPEND {
 		p.nextToken()
-		stmt.Arguments = append(stmt.Arguments, p.curToken.Literal)
+		if p.curToken.Type == lexer.IDENT {
+			// In command context, treat bare words as strings
+			stmt.Arguments = append(stmt.Arguments, &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal})
+		} else {
+			stmt.Arguments = append(stmt.Arguments, p.parseExpression(CALL))
+		}
 	}
 
 	if p.peekToken.Type == lexer.SEMICOLON {
@@ -225,7 +291,7 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 	}
 	leftExp := prefix()
 
-	for p.peekToken.Type != lexer.SEMICOLON && p.peekToken.Type != lexer.LBRACE && precedence < p.peekPrecedence() {
+	for p.peekToken.Type != lexer.SEMICOLON && p.peekToken.Type != lexer.LBRACE && p.peekToken.Type != lexer.GREATER && p.peekToken.Type != lexer.APPEND && precedence < p.peekPrecedence() {
 		infix := p.infixParseFns[p.peekToken.Type]
 		if infix == nil {
 			return leftExp
@@ -239,6 +305,11 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 }
 
 func (p *Parser) parseIdentifier() ast.Expression {
+	return &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+}
+
+func (p *Parser) parseInterpolation() ast.Expression {
+	p.nextToken() // consume $
 	return &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 }
 

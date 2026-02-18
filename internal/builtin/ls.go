@@ -13,7 +13,7 @@ func init() {
 	Register("ls", Ls)
 }
 
-func Ls(args []string, stdout io.Writer, stderr io.Writer) int {
+func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	args = preprocessArgs(args)
 
 	fs := flag.NewFlagSet("ls", flag.ContinueOnError)

@@ -34,8 +34,6 @@ func (l *Lexer) skipShebang() {
 		for l.ch != '\n' && l.ch != 0 {
 			l.readChar()
 		}
-		// Don't call skipWhitespace here because it might trigger semicolon insertion
-		// based on prevToken, which is empty. Just skip the newline if present.
 		if l.ch == '\n' {
 			l.readChar()
 		}
@@ -45,7 +43,6 @@ func (l *Lexer) skipShebang() {
 func (l *Lexer) NextToken() Token {
 	var tok Token
 
-	// Skip horizontal whitespace and comments, and handle newlines for semicolon insertion
 	for {
 		if l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
 			l.readChar()
@@ -60,13 +57,8 @@ func (l *Lexer) NextToken() Token {
 		} else if l.ch == '/' {
 			if l.peekChar() == '/' {
 				l.skipSingleLineComment()
-				// After single line comment, we are at \n or EOF.
-				// Loop will handle it (potential semicolon insertion).
 			} else if l.peekChar() == '*' {
 				l.skipMultiLineComment()
-				// After multi-line comment, we might need to check if it ended with a newline?
-				// Actually Go's spec says a multi-line comment acts like a newline if it contains one.
-				// For simplicity, let's just continue the loop.
 			} else {
 				break
 			}
@@ -116,6 +108,8 @@ func (l *Lexer) NextToken() Token {
 		} else {
 			tok = newToken(GREATER, l.ch)
 		}
+	case '<':
+		tok = newToken(LESS, l.ch)
 	case '!':
 		if l.peekChar() == '=' {
 			ch := l.ch
@@ -124,6 +118,8 @@ func (l *Lexer) NextToken() Token {
 		} else {
 			tok = newToken(NOT, l.ch)
 		}
+	case '+':
+		tok = newToken(PLUS, l.ch)
 	case ';':
 		tok = newToken(SEMICOLON, l.ch)
 	case ',':
@@ -136,6 +132,8 @@ func (l *Lexer) NextToken() Token {
 		tok = newToken(LBRACE, l.ch)
 	case '}':
 		tok = newToken(RBRACE, l.ch)
+	case '$':
+		tok = newToken(DOLLAR, l.ch)
 	case '"':
 		tok.Type = STRING
 		tok.Literal = l.readString()
@@ -143,7 +141,6 @@ func (l *Lexer) NextToken() Token {
 		if l.isCompletable() {
 			tok = Token{Type: SEMICOLON, Literal: ";"}
 			l.prevToken = SEMICOLON
-			// We don't consume EOF here, next call will return EOF
 			return tok
 		}
 		tok.Literal = ""
