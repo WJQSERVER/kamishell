@@ -3,6 +3,7 @@ package runtime
 import (
 	"fmt"
 	"kamishell/internal/ast"
+	"kamishell/internal/builtin"
 	"os"
 	"os/exec"
 	"strings"
@@ -156,6 +157,16 @@ func isTruthy(obj Object) bool {
 }
 
 func executeCommand(name string, args []string) Object {
+	// 1. Check for built-ins
+	if fn, ok := builtin.Builtins[name]; ok {
+		exitCode := fn(args, os.Stdout, os.Stderr)
+		if exitCode != 0 {
+			return &Error{Message: fmt.Sprintf("builtin %s exited with %d", name, exitCode)}
+		}
+		return NULL
+	}
+
+	// 2. Check for external commands
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
