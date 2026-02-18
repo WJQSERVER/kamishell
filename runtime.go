@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"kamishell/builtin"
 )
 
 var (
@@ -302,7 +303,7 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 }
 
 func executeCommandWithStrings(name string, args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	if fn, ok := Builtins[name]; ok {
+	if fn, ok := builtin.Builtins[name]; ok {
 		exitCode := fn(args, env, stdin, stdout, stderr)
 		if exitCode != 0 {
 			return &Error{Message: fmt.Sprintf("builtin %s exited with %d", name, exitCode)}

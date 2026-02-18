@@ -1,4 +1,4 @@
-package kamishell
+package builtin
 
 import (
 	"flag"
@@ -13,7 +13,7 @@ func init() {
 	RegisterBuiltin("ls", Ls)
 }
 
-func Ls(args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	args = preprocessArgs(args)
 
 	fs := flag.NewFlagSet("ls", flag.ContinueOnError)
