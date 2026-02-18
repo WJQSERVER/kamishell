@@ -6,6 +6,44 @@ import (
 	"testing"
 )
 
+func TestParseAssignStatement(t *testing.T) {
+	input := `x := 5;
+	name := "kami";
+	valid := true;`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 3 {
+		t.Fatalf("program.Statements does not contain 3 statements. got=%d", len(program.Statements))
+	}
+
+	tests := []struct {
+		expectedIdentifier string
+		expectedValue      string
+	}{
+		{"x", "5"},
+		{"name", "\"kami\""},
+		{"valid", "true"},
+	}
+
+	for i, tt := range tests {
+		stmt := program.Statements[i]
+		assignStmt, ok := stmt.(*ast.AssignStatement)
+		if !ok {
+			t.Fatalf("test[%d] - stmt is not *ast.AssignStatement. got=%T", i, stmt)
+		}
+
+		if assignStmt.Name.Value != tt.expectedIdentifier {
+			t.Errorf("test[%d] - assignStmt.Name.Value not %s. got=%s", i, tt.expectedIdentifier, assignStmt.Name.Value)
+		}
+
+		if assignStmt.Value.String() != tt.expectedValue {
+			t.Errorf("test[%d] - assignStmt.Value.String() not %s. got=%s", i, tt.expectedValue, assignStmt.Value.String())
+		}
+	}
+}
+
 func TestParseCommandStatement(t *testing.T) {
 	input := `ls -la;`
 	l := lexer.New(input)

@@ -40,6 +40,8 @@ const (
 	VAR    TokenType = "VAR"
 	PRINT  TokenType = "PRINT"
 	NIL    TokenType = "NIL"
+	TRUE   TokenType = "TRUE"
+	FALSE  TokenType = "FALSE"
 )
 
 type Token struct {
@@ -58,6 +60,8 @@ var keywords = map[string]TokenType{
 	"var":    VAR,
 	"print":  PRINT,
 	"nil":    NIL,
+	"true":   TRUE,
+	"false":  FALSE,
 }
 
 func LookupIdent(ident string) TokenType {
