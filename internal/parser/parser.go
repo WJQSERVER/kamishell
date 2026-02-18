@@ -87,6 +87,8 @@ func (p *Parser) ParseProgram() *ast.Program {
 
 func (p *Parser) parseStatement() ast.Statement {
 	switch p.curToken.Type {
+	case lexer.SEMICOLON:
+		return nil
 	case lexer.PRINT:
 		return p.parsePrintStatement()
 	case lexer.EXEC:
@@ -158,22 +160,27 @@ func (p *Parser) parseIfStatement() *ast.IfStatement {
 	p.nextToken()
 	stmt.Condition = p.parseExpression(LOWEST)
 
-	if p.peekToken.Type != lexer.LBRACE {
-		return nil
+	// In Go, the { must be on the same line or before semicolon insertion.
+	// Our Lexer doesn't insert semicolon after if condition because expressions don't necessarily end.
+	// But if the user put a newline, the Lexer might have inserted a semicolon if the condition was completable.
+	if p.peekToken.Type == lexer.SEMICOLON {
+		p.nextToken()
 	}
 
-	p.nextToken()
-	stmt.Consequence = p.parseBlockStatement()
+	if p.peekToken.Type == lexer.LBRACE {
+		p.nextToken()
+		stmt.Consequence = p.parseBlockStatement()
+	}
 
 	if p.peekToken.Type == lexer.ELSE {
 		p.nextToken()
-
-		if p.peekToken.Type != lexer.LBRACE {
-			return nil
+		if p.peekToken.Type == lexer.SEMICOLON {
+			p.nextToken()
 		}
-
-		p.nextToken()
-		stmt.Alternative = p.parseBlockStatement()
+		if p.peekToken.Type == lexer.LBRACE {
+			p.nextToken()
+			stmt.Alternative = p.parseBlockStatement()
+		}
 	}
 
 	return stmt

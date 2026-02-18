@@ -7,9 +7,9 @@ import (
 )
 
 func TestParseAssignStatement(t *testing.T) {
-	input := `x := 5;
-	name := "kami";
-	valid := true;`
+	input := `x := 5
+	name := "kami"
+	valid := true`
 	l := lexer.New(input)
 	p := New(l)
 	program := p.ParseProgram()
@@ -45,7 +45,7 @@ func TestParseAssignStatement(t *testing.T) {
 }
 
 func TestParseCommandStatement(t *testing.T) {
-	input := `ls -la;`
+	input := `ls -la`
 	l := lexer.New(input)
 	p := New(l)
 	program := p.ParseProgram()

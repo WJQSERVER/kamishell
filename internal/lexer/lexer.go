@@ -6,14 +6,16 @@ import (
 
 type Lexer struct {
 	input        string
-	position     int  // current position in input (points to current char)
-	readPosition int  // current reading position in input (after current char)
-	ch           byte // current char under examination
+	position     int      // current position in input (points to current char)
+	readPosition int      // current reading position in input (after current char)
+	ch           byte     // current char under examination
+	prevToken    TokenType // type of the last token returned
 }
 
 func New(input string) *Lexer {
 	l := &Lexer{input: input}
 	l.readChar()
+	l.skipShebang()
 	return l
 }
 
@@ -27,10 +29,51 @@ func (l *Lexer) readChar() {
 	l.readPosition++
 }
 
+func (l *Lexer) skipShebang() {
+	if l.ch == '#' && l.peekChar() == '!' {
+		for l.ch != '\n' && l.ch != 0 {
+			l.readChar()
+		}
+		// Don't call skipWhitespace here because it might trigger semicolon insertion
+		// based on prevToken, which is empty. Just skip the newline if present.
+		if l.ch == '\n' {
+			l.readChar()
+		}
+	}
+}
+
 func (l *Lexer) NextToken() Token {
 	var tok Token
 
-	l.skipWhitespace()
+	// Skip horizontal whitespace and comments, and handle newlines for semicolon insertion
+	for {
+		if l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+			l.readChar()
+		} else if l.ch == '\n' {
+			if l.isCompletable() {
+				l.readChar()
+				tok = Token{Type: SEMICOLON, Literal: ";"}
+				l.prevToken = SEMICOLON
+				return tok
+			}
+			l.readChar()
+		} else if l.ch == '/' {
+			if l.peekChar() == '/' {
+				l.skipSingleLineComment()
+				// After single line comment, we are at \n or EOF.
+				// Loop will handle it (potential semicolon insertion).
+			} else if l.peekChar() == '*' {
+				l.skipMultiLineComment()
+				// After multi-line comment, we might need to check if it ended with a newline?
+				// Actually Go's spec says a multi-line comment acts like a newline if it contains one.
+				// For simplicity, let's just continue the loop.
+			} else {
+				break
+			}
+		} else {
+			break
+		}
+	}
 
 	switch l.ch {
 	case '=':
@@ -97,16 +140,24 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = STRING
 		tok.Literal = l.readString()
 	case 0:
+		if l.isCompletable() {
+			tok = Token{Type: SEMICOLON, Literal: ";"}
+			l.prevToken = SEMICOLON
+			// We don't consume EOF here, next call will return EOF
+			return tok
+		}
 		tok.Literal = ""
 		tok.Type = EOF
 	default:
 		if isLetter(l.ch) {
 			tok.Literal = l.readIdentifier()
 			tok.Type = LookupIdent(tok.Literal)
+			l.prevToken = tok.Type
 			return tok
 		} else if isDigit(l.ch) {
 			tok.Type = NUMBER
 			tok.Literal = l.readNumber()
+			l.prevToken = tok.Type
 			return tok
 		} else {
 			tok = newToken(ILLEGAL, l.ch)
@@ -114,25 +165,16 @@ func (l *Lexer) NextToken() Token {
 	}
 
 	l.readChar()
+	l.prevToken = tok.Type
 	return tok
 }
 
-func (l *Lexer) skipWhitespace() {
-	for {
-		if l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
-			l.readChar()
-		} else if l.ch == '/' {
-			if l.peekChar() == '/' {
-				l.skipSingleLineComment()
-			} else if l.peekChar() == '*' {
-				l.skipMultiLineComment()
-			} else {
-				break
-			}
-		} else {
-			break
-		}
+func (l *Lexer) isCompletable() bool {
+	switch l.prevToken {
+	case IDENT, NUMBER, STRING, TRUE, FALSE, NIL, RETURN, RPAREN, RBRACE:
+		return true
 	}
+	return false
 }
 
 func (l *Lexer) skipSingleLineComment() {
