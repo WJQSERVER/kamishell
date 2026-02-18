@@ -2,9 +2,18 @@
 
 Kamishell 是一种混合了 Bash 简洁性和 Go 语言严谨性的跨平台 Shell。
 
-## 1. 变量与赋值
+## 1. 文件头 (Shebang)
 
-使用 `:=` 进行变量声明 and 赋值。Kamishell 是动态类型的，支持以下基础类型：
+Kamishell 支持标准的 Unix Shebang 文件头，允许脚本作为可执行文件运行。
+
+```bash
+#!/usr/bin/env kami
+print "Hello from an executable script!"
+```
+
+## 2. 变量与赋值
+
+使用 `:=` 进行变量声明和赋值。Kamishell 是动态类型的，支持以下基础类型：
 
 - **Integer**: `x := 10`
 - **String**: `name := "Kamishell"`
@@ -19,16 +28,34 @@ count := 5
 print count
 ```
 
-## 2. 外部命令执行
+## 3. 外部命令与内置命令执行
 
-直接输入命令及其参数即可执行，就像在 Bash 中一样：
+直接输入命令及其参数即可执行。Kamishell 会优先查找内置命令，如果没有找到，则在系统的 PATH 中查找外部命令。
 
 ```bash
-ls -la
 grep "main" cmd/kamishell/main.go
 ```
 
-## 3. 内置命令
+## 4. 内置核心工具
+
+为了保证跨平台的一致性，Kamishell 重新实现了一些常用的核心工具。
+
+### `ls`
+列出目录内容。支持以下参数：
+- `-a`: 显示所有文件（包括以 `.` 开头的隐藏文件）。
+- `-l`: 使用长格式列表显示详细信息。
+- `-h`: 配合 `-l` 使用，以易读的格式（如 1K, 234M）显示文件大小。
+- `-F`: 在条目后添加文件类型分类符（如 `/` 表示目录，`*` 表示可执行文件）。
+
+### `cd`
+切换当前工作目录。
+```bash
+cd internal
+cd ..
+```
+
+### `pwd`
+显示当前绝对路径。
 
 ### `print`
 用于向标准输出打印内容，替代了传统的 `echo`。
@@ -37,10 +64,10 @@ grep "main" cmd/kamishell/main.go
 print "Hello, Kamishell!"
 ```
 
-## 4. 控制流
+## 5. 控制流
 
 ### If-Else 语句
-语法采用类 Go 的风格，不需要 `then` 或 `fi`。
+语法采用类 Go 的风格。注意：`{` 必须与 `if` 在同一行，或者在不触发自动分号插入的情况下换行。
 
 ```go
 isValid := true
@@ -51,7 +78,19 @@ if isValid {
 }
 ```
 
-## 5. 强制命令执行 (`exec`)
+## 6. 分号 (Semicolons)
+
+分号在 Kamishell 中是**可选的**。
+
+- 你可以省略行尾的分号。
+- 你可以使用分号在同一行分隔多个命令。
+
+```go
+print "first"; print "second"
+x := 1; y := 2
+```
+
+## 7. 强制命令执行 (`exec`)
 
 当命令名称与 Kamishell 的关键字（如 `go`, `print`, `if` 等）冲突时，可以使用 `exec` 关键字配合字符串来强制执行外部命令：
 
@@ -60,7 +99,24 @@ exec "go run ."
 exec "print -p 9090"
 ```
 
-## 6. 错误处理
+## 8. 注释
+
+Kamishell 遵循 Go 的注释语法：
+
+- **单行注释**: 使用 `//`
+- **多行注释**: 使用 `/* ... */`
+
+```go
+// 这是一个单行注释
+print "hello"
+
+/*
+  这是一个
+  多行注释
+*/
+```
+
+## 9. 错误处理
 
 Kamishell 鼓励显式的错误处理。当命令执行失败时，会返回一个 Error 对象。
 
@@ -70,4 +126,3 @@ if err != nil {
     print "发生错误了"
 }
 ```
-*(注意：目前的实现中，错误会自动打印到标准错误流，并在赋值时捕获)*

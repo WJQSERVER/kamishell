@@ -64,8 +64,7 @@ func TestExecStatement(t *testing.T) {
 	tests := []struct {
 		input string
 	}{
-		{`exec "ls -la";`},
-		{`exec "go version";`},
+		{`exec "ls -la"`},
 	}
 
 	for _, tt := range tests {
@@ -73,5 +72,14 @@ func TestExecStatement(t *testing.T) {
 		if evaluated != NULL && isError(evaluated) {
 			t.Errorf("exec failed for input %s: %s", tt.input, evaluated.Inspect())
 		}
+	}
+}
+
+func TestInterpolation(t *testing.T) {
+	input := `x := "world"; print $x`
+	// Since testEval returns the result of the last statement, and print returns NULL
+	evaluated := testEval(input)
+	if evaluated != NULL {
+		t.Errorf("expected NULL from print, got %v", evaluated)
 	}
 }

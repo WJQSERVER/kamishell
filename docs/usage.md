@@ -9,13 +9,23 @@
 在项目根目录下执行以下命令编译：
 
 ```bash
-go build -o kamishell ./cmd/kamishell/main.go
+go build -o kami ./cmd/kamishell/main.go
 ```
+
+### 交互模式 (REPL)
 
 编译完成后，可以直接启动交互式 REPL：
 
 ```bash
-./kamishell
+./kami
+```
+
+### 脚本模式
+
+Kamishell 支持直接运行脚本文件：
+
+```bash
+./kami examples/test.sh
 ```
 
 ## 3. REPL 命令
