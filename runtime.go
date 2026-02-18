@@ -66,7 +66,14 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *Identifier:
 		return evalIdentifier(node, env)
 	case *StringLiteral:
-		return &String{Value: node.Value}
+		return &String{Value: os.Expand(node.Value, func(name string) string {
+			if val, ok := env.Get(name); ok {
+				if obj, ok := val.(Object); ok {
+					return obj.Inspect()
+				}
+			}
+			return os.Getenv(name)
+		})}
 	case *IntegerLiteral:
 		return &Integer{Value: node.Value}
 	case *BooleanLiteral:

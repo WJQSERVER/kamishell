@@ -102,7 +102,7 @@ func (p *Parser) parseStatement() Statement {
 	case FOR:
 		stmt = p.parseForStatement()
 	case IDENT:
-		if p.peekToken.Type == COLON_ASSIGN {
+		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			stmt = p.parseAssignStatement()
 		} else {
 			stmt = p.parseCommandStatement()
