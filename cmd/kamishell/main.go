@@ -6,6 +6,7 @@ import (
 	"kamishell"
 	"os"
 	"path/filepath"
+	"strings"
 
 	chreadline "github.com/chzyer/readline"
 	wjqreadline "github.com/WJQSERVER/readline"
@@ -85,11 +86,13 @@ func startChzyerRepl(env *kamishell.Environment, historyFile string) {
 }
 
 func startWjqRepl(env *kamishell.Environment, historyFile string) {
-	// WJQSERVER/readline implementation
-	// Note: WJQSERVER/readline might have different ways to handle history files
+	// Cyan prompt for WJQ version to distinguish it
+	cyanPrompt := "\033[36mkami>\033[0m "
+
 	cfg := &wjqreadline.Config{
-		Prompt:    PROMPT,
+		Prompt:    cyanPrompt,
 		Completer: &KamiCompleter{env: env},
+		History:   NewWjqFileHistory(historyFile),
 	}
 
 	rl, err := wjqreadline.NewInstance(cfg)
@@ -97,8 +100,6 @@ func startWjqRepl(env *kamishell.Environment, historyFile string) {
 		fmt.Fprintf(os.Stderr, "Error initializing wjq readline: %v\n", err)
 		return
 	}
-	// For now, history in wjq is in-memory or needs more setup if we want it persistent
-	// as I saw "History interface" and "NewHistory()" in go doc.
 
 	for {
 		line, err := rl.Readline()
@@ -107,6 +108,7 @@ func startWjqRepl(env *kamishell.Environment, historyFile string) {
 				fmt.Println("^C")
 				continue
 			}
+			// EOF or other fatal errors
 			break
 		}
 
@@ -144,5 +146,34 @@ func loadConfig(env *kamishell.Environment) {
 			content, _ := os.ReadFile(path)
 			runInput(string(content), env, false)
 		}
+	}
+}
+
+type WjqFileHistory struct {
+	wjqreadline.History
+	filepath string
+}
+
+func NewWjqFileHistory(path string) *WjqFileHistory {
+	h := &WjqFileHistory{
+		History:  wjqreadline.NewHistory(),
+		filepath: path,
+	}
+	if data, err := os.ReadFile(path); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if line != "" {
+				h.History.Append(line)
+			}
+		}
+	}
+	return h
+}
+
+func (h *WjqFileHistory) Append(line string) {
+	h.History.Append(line)
+	f, err := os.OpenFile(h.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		defer f.Close()
+		f.WriteString(line + "\n")
 	}
 }
