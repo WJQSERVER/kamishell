@@ -130,6 +130,7 @@ func (p *Parser) parseRune(r rune) (InputEvent, error) {
 			case 'G': return InputEvent{Key: KeyHome}, nil
 			case 'O': return InputEvent{Key: KeyEnd}, nil
 			case 'S': return InputEvent{Key: KeyDelete}, nil
+			case 0x93: return InputEvent{Key: KeyCtrlDelete}, nil
 			}
 		}
 		return InputEvent{Key: KeyRune, Rune: r}, nil
@@ -183,6 +184,8 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 						return InputEvent{Key: KeyCtrlDelete}, nil
 					}
 				}
+			} else if ok && r == '^' {
+				return InputEvent{Key: KeyCtrlDelete}, nil
 			}
 		case '1': // [1;5A (Ctrl+Up), [1;5B (Ctrl+Down), [1;5C (Ctrl+Right), [1;5D (Ctrl+Left)
 			r, ok = p.readNext(100 * time.Millisecond)

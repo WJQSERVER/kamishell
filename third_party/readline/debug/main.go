@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/WJQSERVER/readline/internal/input"
 	"github.com/WJQSERVER/readline/internal/term"
@@ -23,19 +24,55 @@ func main() {
 	}
 	defer restore()
 
-	p := input.NewParser(t)
-
 	fmt.Print("\r\nWJQ Readline Raw Key Debugger\r\n")
 	printConsoleModes()
-	fmt.Print("Press any keys to see their parsed values.\r\n")
-	fmt.Print("Type 'q' or Ctrl-C to exit.\r\n")
+	fmt.Print("Commands: 'q' to quit, 'r' to toggle RAW BYTE mode\r\n")
 	fmt.Print("-------------------------------------------\r\n")
 
+	rawMode := false
+	p := input.NewParser(t)
+
 	for {
+		if rawMode {
+			var buf [16]byte
+			n, err := os.Stdin.Read(buf[:])
+			if err != nil {
+				fmt.Printf("\r\nRead error: %v\r\n", err)
+				break
+			}
+			fmt.Printf("\rRAW BYTES: ")
+			for i := 0; i < n; i++ {
+				fmt.Printf("0x%02x ", buf[i])
+			}
+			fmt.Print("\r\n")
+
+			// Check for 'q' in raw mode
+			for i := 0; i < n; i++ {
+				if buf[i] == 'q' {
+					fmt.Print("\r\nExiting...\r\n")
+					return
+				}
+				if buf[i] == 'r' {
+					rawMode = false
+					fmt.Print("\r\nSwitched to PARSED mode\r\n")
+					// Re-init parser because we consumed from stdin
+					p = input.NewParser(t)
+					break
+				}
+			}
+			continue
+		}
+
 		ev, err := p.NextEvent()
 		if err != nil {
 			fmt.Printf("\r\nError: %v\r\n", err)
 			break
+		}
+
+		if ev.Key == input.KeyRune && ev.Rune == 'r' {
+			rawMode = true
+			fmt.Print("\r\nSwitched to RAW mode (Direct Stdin Read)\r\n")
+			continue
 		}
 
 		keyName := "Unknown"
@@ -98,7 +135,7 @@ func main() {
 			keyName = "Ctrl-Delete"
 		}
 
-		fmt.Printf("\rKey Event: ID=%d, Name=%-20s Rune=%d (0x%04x)\r\n", ev.Key, keyName, ev.Rune, ev.Rune)
+		fmt.Printf("\rKey Event: ID=%-2d, Name=%-20s Rune=%-5d (0x%04x)\r\n", ev.Key, keyName, ev.Rune, ev.Rune)
 
 		if ev.Key == input.KeyCtrlC || (ev.Key == input.KeyRune && ev.Rune == 'q') {
 			fmt.Print("\r\nExiting...\r\n")

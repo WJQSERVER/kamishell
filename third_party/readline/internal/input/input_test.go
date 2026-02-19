@@ -29,3 +29,16 @@ func TestParser(t *testing.T) {
 		t.Errorf("expected Delete, got %v", ev)
 	}
 }
+
+func TestParser_CtrlDelete(t *testing.T) {
+	data := []byte("\x1b[3;5~")
+	p := NewParser(bytes.NewReader(data))
+
+	ev, err := p.NextEvent()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ev.Key != KeyCtrlDelete {
+		t.Errorf("expected KeyCtrlDelete, got %v", ev.Key)
+	}
+}
