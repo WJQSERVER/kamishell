@@ -1,4 +1,4 @@
-package kamishell
+package main
 
 type TokenType string
 
