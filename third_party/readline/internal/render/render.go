@@ -38,9 +38,8 @@ func (r *Renderer) Refresh(b *buffer.Buffer) error {
 	// Hide cursor to prevent jitter
 	out.WriteString("\x1b[?25l")
 
-	// Basic redraw: carriage return, print prompt + content, clear to EOL
-	// We use \r to return to the beginning of the CURRENT line.
-	fmt.Fprintf(&out, "\r%s%s\x1b[K", r.prompt, b.String())
+	// Move to column 1 and clear to EOL, then print prompt and content
+	fmt.Fprintf(&out, "\x1b[1G%s%s\x1b[K", r.prompt, b.String())
 
 	// Move cursor to correct position (1-based column) using CHA
 	fmt.Fprintf(&out, "\x1b[%dG", promptWidth+cursorPos+1)

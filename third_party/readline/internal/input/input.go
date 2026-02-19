@@ -120,7 +120,7 @@ func (p *Parser) parseRune(r rune) (InputEvent, error) {
 	case 27: // Escape
 		return p.parseEscape()
 	case 0, 224: // Windows extended key prefix (if not in VT mode)
-		next, ok := p.readNext(10 * time.Millisecond)
+		next, ok := p.readNext(50 * time.Millisecond)
 		if ok {
 			switch next {
 			case 'H': return InputEvent{Key: KeyUp}, nil
@@ -195,9 +195,9 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 				case 'B':
 					return InputEvent{Key: KeyDown}, nil
 				case 'C':
-					return InputEvent{Key: KeyRight}, nil
+					return InputEvent{Key: KeyCtrlRight}, nil
 				case 'D':
-					return InputEvent{Key: KeyLeft}, nil
+					return InputEvent{Key: KeyCtrlLeft}, nil
 				}
 			} else if ok && r == '~' {
 				return InputEvent{Key: KeyHome}, nil

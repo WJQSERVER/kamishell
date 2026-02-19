@@ -61,3 +61,7 @@ go build -o kami ./cmd/kamishell
 
 - 运行测试: `go test ./...`
 - 性能评估: `go test -bench=. ./...`
+
+## 6. 深入了解
+
+- [分词器实现细节](tokenizer.md): 了解 Kamishell 如何解析命令以及处理交互层面的单词边界。
