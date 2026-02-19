@@ -8,7 +8,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("export", Export)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "export",
+		Description: "设置环境变量",
+		Action:      Export,
+	})
 }
 
 func Export(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

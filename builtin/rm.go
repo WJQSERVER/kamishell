@@ -11,7 +11,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("rm", Rm)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "rm",
+		Description: "删除文件或目录",
+		Action:      Rm,
+	})
 }
 
 func Rm(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

@@ -29,7 +29,7 @@ func (c *KamiCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	// 1. Built-ins
 	for name := range builtin.Builtins {
 		if strings.HasPrefix(name, lastWord) {
-			candidates = append(candidates, []rune(name[len(lastWord):]))
+			candidates = append(candidates, []rune(name))
 		}
 	}
 
@@ -37,7 +37,7 @@ func (c *KamiCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	if c.env != nil {
 		for _, key := range c.env.Keys() {
 			if strings.HasPrefix(key, lastWord) {
-				candidates = append(candidates, []rune(key[len(lastWord):]))
+				candidates = append(candidates, []rune(key))
 			}
 		}
 	}
@@ -48,7 +48,7 @@ func (c *KamiCompleter) Do(line []rune, pos int) ([][]rune, int) {
 		if info, err := os.Stat(f); err == nil && info.IsDir() {
 			f += "/"
 		}
-		candidates = append(candidates, []rune(f[len(lastWord):]))
+		candidates = append(candidates, []rune(f))
 	}
 
 	return candidates, len([]rune(lastWord))

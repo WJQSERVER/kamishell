@@ -14,7 +14,7 @@ import (
 const PROMPT = "kami> "
 
 var (
-	readlineLib = flag.String("readline", "chzyer", "Select readline library: chzyer (default) or wjq (experimental)")
+	readlineLib = flag.String("readline", "wjq", "Select readline library: wjq (default) or base (legacy)")
 )
 
 func main() {
@@ -49,10 +49,11 @@ func startRepl(env *Environment) {
 	home, _ := os.UserHomeDir()
 	historyFile := filepath.Join(home, ".kami_history")
 
-	if *readlineLib == "wjq" {
-		startWjqRepl(env, historyFile)
-	} else {
+	if *readlineLib == "base" || *readlineLib == "chzyer" {
 		startChzyerRepl(env, historyFile)
+	} else {
+		// Default to wjq
+		startWjqRepl(env, historyFile)
 	}
 }
 

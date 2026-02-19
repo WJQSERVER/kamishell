@@ -4,3 +4,4 @@ kamishell
 *.test
 __debug_bin
 kami
+vendor/

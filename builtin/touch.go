@@ -7,7 +7,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("touch", Touch)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "touch",
+		Description: "创建空文件或更新时间戳",
+		Action:      Touch,
+	})
 }
 
 func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

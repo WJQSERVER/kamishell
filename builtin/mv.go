@@ -1,48 +1,109 @@
 package builtin
 
 import (
+	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func init() {
-	RegisterBuiltin("mv", Mv)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "mv",
+		Description: "移动或重命名文件或目录",
+		Action:      Mv,
+	})
 }
 
 func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
-	if len(args) < 2 {
+	args = PreprocessArgs(args)
+	fs := flag.NewFlagSet("mv", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	force := fs.Bool("f", false, "do not prompt before overwriting")
+	interactive := fs.Bool("i", false, "prompt before overwrite")
+
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+
+	targets := fs.Args()
+	if len(targets) < 2 {
 		fmt.Fprintln(stderr, "mv: missing file operand")
 		return 1
 	}
 
-	src := args[0]
-	dst := args[1]
+	dest := targets[len(targets)-1]
+	sources := targets[:len(targets)-1]
 
-	// If dst is a directory, move src into it
-	dstInfo, err := os.Stat(dst)
-	if err == nil && dstInfo.IsDir() {
-		dst = filepath.Join(dst, filepath.Base(src))
+	destInfo, destErr := os.Stat(dest)
+	isDestDir := destErr == nil && destInfo.IsDir()
+
+	if len(sources) > 1 && !isDestDir {
+		fmt.Fprintf(stderr, "mv: target '%s' is not a directory\n", dest)
+		return 1
 	}
 
-	err = os.Rename(src, dst)
-	if err != nil {
-		// Try copy and delete if Rename fails (e.g. across filesystems)
-		err = copyAndDelete(src, dst)
+	exitCode := 0
+	reader := bufio.NewReader(stdin)
+
+	for _, src := range sources {
+		actualDest := dest
+		if isDestDir {
+			actualDest = filepath.Join(dest, filepath.Base(src))
+		}
+
+		if _, err := os.Stat(actualDest); err == nil && !*force {
+			if *interactive {
+				fmt.Fprintf(stdout, "mv: overwrite '%s'? ", actualDest)
+				resp, _ := reader.ReadString('\n')
+				resp = strings.ToLower(strings.TrimSpace(resp))
+				if resp != "y" && resp != "yes" {
+					continue
+				}
+			}
+		}
+
+		err := os.Rename(src, actualDest)
 		if err != nil {
-			fmt.Fprintf(stderr, "mv: %v\n", err)
-			return 1
+			// Try copy and delete if Rename fails (e.g. across filesystems)
+			err = moveByCopy(src, actualDest)
+			if err != nil {
+				fmt.Fprintf(stderr, "mv: %v\n", err)
+				exitCode = 1
+			}
 		}
 	}
 
-	return 0
+	return exitCode
 }
 
-func copyAndDelete(src, dst string) error {
-	// Re-using copy logic if needed, but for now let's keep it simple
-	// and assume it's just Rename for most cases.
-	// If we wanted to be robust, we'd implement full copy+delete here.
+func moveByCopy(src, dst string) error {
+	srcInfo, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+
+	if srcInfo.IsDir() {
+		// Use Cp implementation logic if possible, but here we just do a simplified version
+		err = copyDirInternal(src, dst)
+		if err != nil {
+			return err
+		}
+		return os.RemoveAll(src)
+	}
+
+	err = copyFileSimple(src, dst)
+	if err != nil {
+		return err
+	}
+	return os.Remove(src)
+}
+
+func copyFileSimple(src, dst string) error {
 	s, err := os.Open(src)
 	if err != nil {
 		return err
@@ -56,10 +117,30 @@ func copyAndDelete(src, dst string) error {
 	defer d.Close()
 
 	_, err = io.Copy(d, s)
+	return err
+}
+
+func copyDirInternal(src, dst string) error {
+	srcInfo, err := os.Lstat(src)
 	if err != nil {
 		return err
 	}
 
-	s.Close()
-	return os.Remove(src)
+	err = os.MkdirAll(dst, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		err = moveByCopy(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name()))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

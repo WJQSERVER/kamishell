@@ -42,6 +42,7 @@ go build -o kami ./cmd/kamishell
 - **`type name`**: 显示名称的类型（函数、内置命令、外部路径或变量）。
 - **`which name`**: 在 PATH 中搜索外部命令的完整路径。
 - **`jobs`**: 列出正在后台运行或已完成的任务（由 `&` 或 `go` 启动）。
+- **`help`**: 显示内建命令的帮助信息。
 - **`print [arg...]`**: 向终端打印信息（支持插值和拼接）。
 - **`exit [code]`**: 退出 Shell，可选返回状态码（默认 0）。
 
@@ -61,3 +62,7 @@ go build -o kami ./cmd/kamishell
 
 - 运行测试: `go test ./...`
 - 性能评估: `go test -bench=. ./...`
+
+## 6. 深入了解
+
+- [分词器实现细节](tokenizer.md): 了解 Kamishell 如何解析命令以及处理交互层面的单词边界。

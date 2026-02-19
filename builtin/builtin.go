@@ -10,12 +10,24 @@ type Environment interface {
 	Get(name string) (interface{}, bool)
 }
 
+type Inspector interface {
+	Inspect() string
+}
+
 type BuiltinFunc func(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 
-var Builtins = map[string]BuiltinFunc{}
+// BuiltinCommand represents a builtin tool with metadata.
+type BuiltinCommand struct {
+	Name        string
+	Description string
+	Action      BuiltinFunc
+}
 
-func RegisterBuiltin(name string, fn BuiltinFunc) {
-	Builtins[name] = fn
+var Builtins = map[string]*BuiltinCommand{}
+
+// RegisterBuiltin adds a new builtin command to the registry.
+func RegisterBuiltin(cmd *BuiltinCommand) {
+	Builtins[cmd.Name] = cmd
 }
 
 type Job struct {
