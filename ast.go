@@ -328,3 +328,31 @@ type NilLiteral struct {
 func (nl *NilLiteral) expressionNode()      {}
 func (nl *NilLiteral) TokenLiteral() string { return nl.Token.Literal }
 func (nl *NilLiteral) String() string       { return nl.Token.Literal }
+
+type BackgroundStatement struct {
+	Token Token // the & token
+	Stmt  Statement
+}
+
+func (bs *BackgroundStatement) statementNode()       {}
+func (bs *BackgroundStatement) TokenLiteral() string { return bs.Token.Literal }
+func (bs *BackgroundStatement) String() string {
+	var out strings.Builder
+	out.WriteString(bs.Stmt.String())
+	out.WriteString(" &")
+	return out.String()
+}
+
+type GoStatement struct {
+	Token Token // the go token
+	Node  Node  // BlockStatement or CommandStatement or Function call
+}
+
+func (gs *GoStatement) statementNode()       {}
+func (gs *GoStatement) TokenLiteral() string { return gs.Token.Literal }
+func (gs *GoStatement) String() string {
+	var out strings.Builder
+	out.WriteString("go ")
+	out.WriteString(gs.Node.String())
+	return out.String()
+}

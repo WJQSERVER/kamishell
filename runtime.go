@@ -38,6 +38,12 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalRedirectStatement(node, env, stdin, stdout, stderr)
 	case *LogicalStatement:
 		return evalLogicalStatement(node, env, stdin, stdout, stderr)
+	case *GoStatement:
+		go EvalWithIO(node.Node, env, stdin, stdout, stderr)
+		return NULL
+	case *BackgroundStatement:
+		go EvalWithIO(node.Stmt, env, stdin, stdout, stderr)
+		return NULL
 	case *FunctionStatement:
 		return evalFunctionStatement(node, env)
 	case *InfixExpression:

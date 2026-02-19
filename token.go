@@ -19,6 +19,7 @@ const (
 	LESS    TokenType = "<"
 	APPEND  TokenType = ">>"
 	AND     TokenType = "&&"
+	AMPERSAND TokenType = "&"
 	OR      TokenType = "||"
 	NOT     TokenType = "!"
 	EQ      TokenType = "=="

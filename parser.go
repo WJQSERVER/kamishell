@@ -103,6 +103,13 @@ func (p *Parser) parseStatement() Statement {
             Right:    right,
         }
     }
+    if p.peekToken.Type == AMPERSAND {
+        p.nextToken() // move to &
+        stmt = &BackgroundStatement{
+            Token: p.curToken,
+            Stmt:  stmt,
+        }
+    }
     return stmt
 }
 
@@ -121,6 +128,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseForStatement()
 	case FUNC:
 		stmt = p.parseFunctionStatement()
+	case GO:
+		stmt = p.parseGoStatement()
 	case IDENT:
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			stmt = p.parseAssignStatement()
@@ -285,7 +294,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{Token: p.curToken, Name: p.curToken.Literal}
 
-	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR {
+	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND {
 		p.nextToken()
 		if p.curToken.Type == IDENT {
 			// In command context, treat bare words as strings
@@ -309,7 +318,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	}
 	leftExp := prefix()
 
-	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && precedence < p.peekPrecedence() {
+	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND && precedence < p.peekPrecedence() {
 		infix := p.infixParseFns[p.peekToken.Type]
 		if infix == nil {
 			return leftExp
@@ -422,4 +431,15 @@ func (p *Parser) parseFunctionParameters() []*Identifier {
 	}
 
 	return identifiers
+}
+
+func (p *Parser) parseGoStatement() *GoStatement {
+	stmt := &GoStatement{Token: p.curToken}
+	p.nextToken()
+	if p.curToken.Type == LBRACE {
+		stmt.Node = p.parseBlockStatement()
+	} else {
+		stmt.Node = p.parseCommandStatement()
+	}
+	return stmt
 }
