@@ -132,3 +132,21 @@ func (b *Buffer) DisplayWidth(limit int) int {
 func (b *Buffer) FullWidth() int {
 	return runewidth.StringWidth(string(b.data))
 }
+
+func (b *Buffer) DeleteWord() {
+	if b.cursor == len(b.data) {
+		return
+	}
+
+	i := b.cursor
+	// Skip spaces to the right
+	for i < len(b.data) && unicode.IsSpace(b.data[i]) {
+		i++
+	}
+	// Skip non-spaces to the right
+	for i < len(b.data) && !unicode.IsSpace(b.data[i]) {
+		i++
+	}
+
+	b.data = append(b.data[:b.cursor], b.data[i:]...)
+}

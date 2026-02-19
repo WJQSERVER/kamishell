@@ -96,6 +96,8 @@ func (i *Instance) Readline() (string, error) {
 			i.buffer.MoveWordLeft()
 		case input.KeyCtrlRight:
 			i.buffer.MoveWordRight()
+		case input.KeyCtrlDelete:
+			i.buffer.DeleteWord()
 		case input.KeyHome, input.KeyCtrlA:
 			i.buffer.MoveHome()
 		case input.KeyEnd, input.KeyCtrlE:

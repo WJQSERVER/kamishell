@@ -37,6 +37,7 @@ const (
 	KeyEsc
 	KeyCtrlLeft
 	KeyCtrlRight
+	KeyCtrlDelete
 )
 
 type InputEvent struct {
@@ -170,10 +171,18 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 			return InputEvent{Key: KeyHome}, nil
 		case 'F':
 			return InputEvent{Key: KeyEnd}, nil
-		case '3': // Maybe Delete [3~
+		case '3': // Maybe Delete [3~ or Ctrl+Delete [3;5~
 			r, ok = p.readNext(100 * time.Millisecond)
 			if ok && r == '~' {
 				return InputEvent{Key: KeyDelete}, nil
+			} else if ok && r == ';' {
+				r, ok = p.readNext(100 * time.Millisecond) // '5'
+				if ok && r == '5' {
+					r, ok = p.readNext(100 * time.Millisecond) // '~'
+					if ok && r == '~' {
+						return InputEvent{Key: KeyCtrlDelete}, nil
+					}
+				}
 			}
 		case '1': // [1;5A (Ctrl+Up), [1;5B (Ctrl+Down), [1;5C (Ctrl+Right), [1;5D (Ctrl+Left)
 			r, ok = p.readNext(100 * time.Millisecond)
@@ -186,9 +195,9 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 				case 'B':
 					return InputEvent{Key: KeyDown}, nil
 				case 'C':
-					return InputEvent{Key: KeyCtrlRight}, nil
+					return InputEvent{Key: KeyRight}, nil
 				case 'D':
-					return InputEvent{Key: KeyCtrlLeft}, nil
+					return InputEvent{Key: KeyLeft}, nil
 				}
 			} else if ok && r == '~' {
 				return InputEvent{Key: KeyHome}, nil

@@ -94,6 +94,8 @@ func main() {
 			keyName = "Ctrl-Left / Alt-b"
 		case input.KeyCtrlRight:
 			keyName = "Ctrl-Right / Alt-f"
+		case input.KeyCtrlDelete:
+			keyName = "Ctrl-Delete"
 		}
 
 		fmt.Printf("\rKey Event: ID=%d, Name=%-20s Rune=%d (0x%04x)\r\n", ev.Key, keyName, ev.Rune, ev.Rune)
