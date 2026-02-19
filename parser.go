@@ -175,7 +175,12 @@ func (p *Parser) parseRedirectStatement(left Statement) *RedirectStatement {
 	p.nextToken() // move to > or >>
 	p.nextToken() // move to target
 
-	stmt.Target = p.parseExpression(LOWEST)
+	if p.curToken.Type == IDENT {
+		stmt.Target = &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+		p.nextToken()
+	} else {
+		stmt.Target = p.parseExpression(LOWEST)
+	}
 
 	return stmt
 }

@@ -10,6 +10,13 @@ import (
 	"kamishell/builtin"
 )
 
+
+
+
+
+
+
+
 var (
 	NULL  = &Null{}
 	TRUE  = &Boolean{Value: true}
@@ -39,10 +46,18 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *LogicalStatement:
 		return evalLogicalStatement(node, env, stdin, stdout, stderr)
 	case *GoStatement:
-		go EvalWithIO(node.Node, env, stdin, stdout, stderr)
+		id := builtin.RegisterJob(node.String())
+		go func() {
+			EvalWithIO(node.Node, env, stdin, stdout, stderr)
+			builtin.CompleteJob(id)
+		}()
 		return NULL
 	case *BackgroundStatement:
-		go EvalWithIO(node.Stmt, env, stdin, stdout, stderr)
+		id := builtin.RegisterJob(node.String())
+		go func() {
+			EvalWithIO(node.Stmt, env, stdin, stdout, stderr)
+			builtin.CompleteJob(id)
+		}()
 		return NULL
 	case *FunctionStatement:
 		return evalFunctionStatement(node, env)
