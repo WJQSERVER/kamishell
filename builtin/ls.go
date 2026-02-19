@@ -28,15 +28,32 @@ func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		return 1
 	}
 
-	dirs := fs.Args()
-	if len(dirs) == 0 {
-		dirs = []string{"."}
+	targets := fs.Args()
+	if len(targets) == 0 {
+		targets = []string{"."}
 	}
 
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
+	exitCode := 0
+	for _, target := range targets {
+		info, err := os.Stat(target)
 		if err != nil {
 			fmt.Fprintf(stderr, "ls: %v\n", err)
+			exitCode = 1
+			continue
+		}
+
+		if !info.IsDir() {
+			printEntry(stdout, target, info, *long, *human, *classify)
+			if !*long {
+				fmt.Fprintln(stdout)
+			}
+			continue
+		}
+
+		entries, err := os.ReadDir(target)
+		if err != nil {
+			fmt.Fprintf(stderr, "ls: %v\n", err)
+			exitCode = 1
 			continue
 		}
 
@@ -50,29 +67,15 @@ func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 				continue
 			}
 
-			if *long {
-				info, err := entry.Info()
-				if err != nil {
-					fmt.Fprintf(stderr, "ls: %v\n", err)
-					continue
-				}
-
-				mode := info.Mode().String()
-				size := formatSize(info.Size(), *human)
-				mtime := info.ModTime().Format(time.Stamp)
-
-				fmt.Fprintf(stdout, "%-12s %10s %s %s", mode, size, mtime, name)
-			} else {
-				fmt.Fprint(stdout, name)
+			entryInfo, err := entry.Info()
+			if err != nil {
+				fmt.Fprintf(stderr, "ls: %v\n", err)
+				exitCode = 1
+				continue
 			}
 
-			if *classify {
-				fmt.Fprint(stdout, getClassifyIndicator(entry))
-			}
-
-			if *long {
-				fmt.Fprintln(stdout)
-			} else {
+			printEntry(stdout, name, entryInfo, *long, *human, *classify)
+			if !*long {
 				fmt.Fprint(stdout, "  ")
 			}
 		}
@@ -81,7 +84,26 @@ func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		}
 	}
 
-	return 0
+	return exitCode
+}
+
+func printEntry(stdout io.Writer, name string, info os.FileInfo, long, human, classify bool) {
+	if long {
+		mode := info.Mode().String()
+		size := formatSize(info.Size(), human)
+		mtime := info.ModTime().Format(time.Stamp)
+		fmt.Fprintf(stdout, "%-12s %10s %s %s", mode, size, mtime, name)
+	} else {
+		fmt.Fprint(stdout, name)
+	}
+
+	if classify {
+		fmt.Fprint(stdout, getInfoClassifyIndicator(info))
+	}
+
+	if long {
+		fmt.Fprintln(stdout)
+	}
 }
 
 func preprocessArgs(args []string) []string {
@@ -114,13 +136,9 @@ func formatSize(size int64, human bool) string {
 	return fmt.Sprintf("%.1f%c", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
-func getClassifyIndicator(entry os.DirEntry) string {
-	if entry.IsDir() {
+func getInfoClassifyIndicator(info os.FileInfo) string {
+	if info.IsDir() {
 		return "/"
-	}
-	info, err := entry.Info()
-	if err != nil {
-		return ""
 	}
 	mode := info.Mode()
 	if mode&os.ModeSymlink != 0 {

@@ -12,12 +12,22 @@ func NewEnvironment() *Environment {
 	return &Environment{store: s}
 }
 
+func NewEnclosedEnvironment(outer *Environment) *Environment {
+	env := NewEmptyEnvironment()
+	env.outer = outer
+	return env
+}
+
 type Environment struct {
 	store map[string]Object
+	outer *Environment
 }
 
 func (e *Environment) Get(name string) (interface{}, bool) {
 	obj, ok := e.store[name]
+	if !ok && e.outer != nil {
+		return e.outer.Get(name)
+	}
 	return obj, ok
 }
 

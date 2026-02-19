@@ -10,6 +10,7 @@ const (
 	STRING_OBJ  ObjectType = "STRING"
 	NULL_OBJ    ObjectType = "NULL"
 	ERROR_OBJ   ObjectType = "ERROR"
+	FUNCTION_OBJ ObjectType = "FUNCTION"
 )
 
 type Object interface {
@@ -49,3 +50,14 @@ type Error struct {
 
 func (e *Error) Inspect() string { return "ERROR: " + e.Message }
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
+
+type Function struct {
+	Parameters []*Identifier
+	Body       *BlockStatement
+	Env        *Environment
+}
+
+func (f *Function) Inspect() string {
+	return "func"
+}
+func (f *Function) Type() ObjectType { return FUNCTION_OBJ }

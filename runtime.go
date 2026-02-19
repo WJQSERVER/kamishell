@@ -36,6 +36,10 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalPipeStatement(node, env, stdin, stdout, stderr)
 	case *RedirectStatement:
 		return evalRedirectStatement(node, env, stdin, stdout, stderr)
+	case *LogicalStatement:
+		return evalLogicalStatement(node, env, stdin, stdout, stderr)
+	case *FunctionStatement:
+		return evalFunctionStatement(node, env)
 	case *InfixExpression:
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		if isError(left) {
@@ -136,6 +140,8 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 
 func evalInfixExpression(operator string, left, right Object) Object {
 	switch {
+	case left.Type() == STRING_OBJ && right.Type() == STRING_OBJ:
+		return evalStringInfixExpression(operator, left, right)
 	case left.Type() == INTEGER_OBJ && right.Type() == INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
 	case operator == "==":
@@ -147,6 +153,15 @@ func evalInfixExpression(operator string, left, right Object) Object {
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
+}
+
+func evalStringInfixExpression(operator string, left, right Object) Object {
+	if operator != "+" {
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
+	}
+	leftVal := left.(*String).Value
+	rightVal := right.(*String).Value
+	return &String{Value: leftVal + rightVal}
 }
 
 func evalIntegerInfixExpression(operator string, left, right Object) Object {
@@ -303,6 +318,12 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 }
 
 func executeCommandWithStrings(name string, args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if val, ok := env.Get(name); ok {
+		if fn, ok := val.(*Function); ok {
+			return applyFunction(fn, args, env, stdin, stdout, stderr)
+		}
+	}
+
 	if fn, ok := builtin.Builtins[name]; ok {
 		exitCode := fn(args, env, stdin, stdout, stderr)
 		if exitCode != 0 {
@@ -342,4 +363,44 @@ func isError(obj Object) bool {
 		return obj.Type() == ERROR_OBJ
 	}
 	return false
+}
+
+func evalLogicalStatement(ls *LogicalStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	left := EvalWithIO(ls.Left, env, stdin, stdout, stderr)
+
+	if ls.Operator == "&&" {
+		if !isError(left) {
+			return EvalWithIO(ls.Right, env, stdin, stdout, stderr)
+		}
+		return left
+	} else if ls.Operator == "||" {
+		if isError(left) {
+			return EvalWithIO(ls.Right, env, stdin, stdout, stderr)
+		}
+		return left
+	}
+
+	return &Error{Message: fmt.Sprintf("unknown logical operator: %s", ls.Operator)}
+}
+
+func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
+	fn := &Function{
+		Parameters: fs.Parameters,
+		Body:       fs.Body,
+		Env:        env,
+	}
+	env.Set(fs.Name.Value, fn)
+	return NULL
+}
+
+func applyFunction(fn *Function, args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	extendEnv := NewEnclosedEnvironment(fn.Env)
+
+	for i, param := range fn.Parameters {
+		if i < len(args) {
+			extendEnv.Set(param.Value, &String{Value: args[i]})
+		}
+	}
+
+	return EvalWithIO(fn.Body, extendEnv, stdin, stdout, stderr)
 }
