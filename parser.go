@@ -47,6 +47,7 @@ func NewParser(l *Lexer) *Parser {
 	p.registerPrefix(TRUE_TOK, p.parseBooleanLiteral)
 	p.registerPrefix(FALSE_TOK, p.parseBooleanLiteral)
 	p.registerPrefix(DOLLAR, p.parseInterpolation)
+	p.registerPrefix(NIL, p.parseNilLiteral)
 
 	p.infixParseFns = make(map[TokenType]infixParseFn)
 	p.registerInfix(EQ, p.parseInfixExpression)
@@ -89,6 +90,23 @@ func (p *Parser) ParseProgram() *Program {
 }
 
 func (p *Parser) parseStatement() Statement {
+    stmt := p.parsePipeOrRedirectStatement()
+    for p.peekToken.Type == AND || p.peekToken.Type == OR {
+        operator := p.peekToken
+        p.nextToken() // move to && or ||
+        p.nextToken() // move to next command
+        right := p.parsePipeOrRedirectStatement()
+        stmt = &LogicalStatement{
+            Token:    operator,
+            Left:     stmt,
+            Operator: operator.Literal,
+            Right:    right,
+        }
+    }
+    return stmt
+}
+
+func (p *Parser) parsePipeOrRedirectStatement() Statement {
 	var stmt Statement
 	switch p.curToken.Type {
 	case SEMICOLON:
@@ -101,6 +119,8 @@ func (p *Parser) parseStatement() Statement {
 		stmt = p.parseIfStatement()
 	case FOR:
 		stmt = p.parseForStatement()
+	case FUNC:
+		stmt = p.parseFunctionStatement()
 	case IDENT:
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			stmt = p.parseAssignStatement()
@@ -265,7 +285,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{Token: p.curToken, Name: p.curToken.Literal}
 
-	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND {
+	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR {
 		p.nextToken()
 		if p.curToken.Type == IDENT {
 			// In command context, treat bare words as strings
@@ -289,7 +309,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	}
 	leftExp := prefix()
 
-	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && precedence < p.peekPrecedence() {
+	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && precedence < p.peekPrecedence() {
 		infix := p.infixParseFns[p.peekToken.Type]
 		if infix == nil {
 			return leftExp
@@ -322,6 +342,10 @@ func (p *Parser) parseStringLiteral() Expression {
 	return &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
 }
 
+func (p *Parser) parseNilLiteral() Expression {
+	return &NilLiteral{Token: p.curToken}
+}
+
 func (p *Parser) parseBooleanLiteral() Expression {
 	return &BooleanLiteral{Token: p.curToken, Value: p.curToken.Type == TRUE_TOK}
 }
@@ -352,4 +376,50 @@ func (p *Parser) curPrecedence() int {
 		return p
 	}
 	return LOWEST
+}
+
+func (p *Parser) parseFunctionStatement() *FunctionStatement {
+	stmt := &FunctionStatement{Token: p.curToken}
+
+	p.nextToken() // move to name
+	stmt.Name = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	if p.peekToken.Type == LPAREN {
+		p.nextToken() // move to (
+		stmt.Parameters = p.parseFunctionParameters()
+	}
+
+	if p.peekToken.Type == LBRACE {
+		p.nextToken() // move to {
+		stmt.Body = p.parseBlockStatement()
+	}
+
+	return stmt
+}
+
+func (p *Parser) parseFunctionParameters() []*Identifier {
+	identifiers := []*Identifier{}
+
+	if p.peekToken.Type == RPAREN {
+		p.nextToken()
+		return identifiers
+	}
+
+	p.nextToken()
+
+	ident := &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	identifiers = append(identifiers, ident)
+
+	for p.peekToken.Type == COMMA {
+		p.nextToken()
+		p.nextToken()
+		ident := &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+		identifiers = append(identifiers, ident)
+	}
+
+	if p.peekToken.Type == RPAREN {
+		p.nextToken()
+	}
+
+	return identifiers
 }

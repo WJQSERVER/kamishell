@@ -277,3 +277,54 @@ func (fs *ForStatement) String() string {
 	out.WriteString(" }")
 	return out.String()
 }
+
+type LogicalStatement struct {
+	Token    Token // && or ||
+	Left     Statement
+	Operator string
+	Right    Statement
+}
+
+func (ls *LogicalStatement) statementNode()       {}
+func (ls *LogicalStatement) TokenLiteral() string { return ls.Token.Literal }
+func (ls *LogicalStatement) String() string {
+	var out strings.Builder
+	out.WriteString("(")
+	out.WriteString(ls.Left.String())
+	out.WriteString(" " + ls.Operator + " ")
+	out.WriteString(ls.Right.String())
+	out.WriteString(")")
+	return out.String()
+}
+
+type FunctionStatement struct {
+	Token      Token // the func token
+	Name       *Identifier
+	Parameters []*Identifier
+	Body       *BlockStatement
+}
+
+func (fs *FunctionStatement) statementNode()       {}
+func (fs *FunctionStatement) TokenLiteral() string { return fs.Token.Literal }
+func (fs *FunctionStatement) String() string {
+	var out strings.Builder
+	out.WriteString(fs.TokenLiteral() + " ")
+	out.WriteString(fs.Name.String())
+	out.WriteString("(")
+	params := []string{}
+	for _, p := range fs.Parameters {
+		params = append(params, p.String())
+	}
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") ")
+	out.WriteString(fs.Body.String())
+	return out.String()
+}
+
+type NilLiteral struct {
+	Token Token
+}
+
+func (nl *NilLiteral) expressionNode()      {}
+func (nl *NilLiteral) TokenLiteral() string { return nl.Token.Literal }
+func (nl *NilLiteral) String() string       { return nl.Token.Literal }

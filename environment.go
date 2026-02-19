@@ -12,12 +12,22 @@ func NewEnvironment() *Environment {
 	return &Environment{store: s}
 }
 
+func NewEnclosedEnvironment(outer *Environment) *Environment {
+	env := NewEmptyEnvironment()
+	env.outer = outer
+	return env
+}
+
 type Environment struct {
 	store map[string]Object
+	outer *Environment
 }
 
 func (e *Environment) Get(name string) (interface{}, bool) {
 	obj, ok := e.store[name]
+	if !ok && e.outer != nil {
+		return e.outer.Get(name)
+	}
 	return obj, ok
 }
 
@@ -39,4 +49,15 @@ func (e *Environment) Set(name string, val interface{}) {
 
 func NewEmptyEnvironment() *Environment {
 	return &Environment{store: make(map[string]Object)}
+}
+
+func (e *Environment) Keys() []string {
+	keys := make([]string, 0, len(e.store))
+	for k := range e.store {
+		keys = append(keys, k)
+	}
+	if e.outer != nil {
+		keys = append(keys, e.outer.Keys()...)
+	}
+	return keys
 }
