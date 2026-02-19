@@ -11,16 +11,15 @@
 - Always handle characters as `rune`.
 
 ## Multi-platform
-- Core terminal logic now relies on `golang.org/x/term` for robust cross-platform support.
+- Core terminal handling relies on `golang.org/x/term` for robust cross-platform stability.
 
 ## Debugging and Testing
-- **Unit Tests**: Run `go test ./...` to verify basic logic.
-- **Parsed Debugger**: `go run debug/main.go`
-  - Shows how the library interprets keys after parsing ANSI sequences.
-- **Raw HEX Debugger**: `go run debug/raw.go`
-  - Directly captures every byte from Stdin.
-  - **Crucial for Windows/PowerShell**: Use this to find the exact Hex sequence (e.g., `1B 64`) for any key combination.
+- **Unit Tests**: Run `go test ./...` to verify internal logic.
+- **Unified Debugger**: `go run debug/main.go` (Run from `third_party/readline` directory)
+  - This tool simultaneously displays **RAW HEX BYTES** and the **PARSED RESULT**.
+  - Use this to diagnose any key combination issues, especially on Windows/PowerShell.
+- **Example App**: `go run example/main.go` for a full feature demonstration.
 
 ## Common Issues
-- **First line not showing**: Ensure `ENABLE_PROCESSED_OUTPUT` is set on Windows.
-- **Cursor jitter**: Use CHA (`\x1b[nG`) and hide/show cursor during redraw.
+- **First line not showing**: Ensure `ENABLE_PROCESSED_OUTPUT` is set on Windows (see `term_windows.go`).
+- **Cursor jitter**: Use CHA (`\x1b[nG`) and hide/show cursor during redraw to ensure a smooth UI.

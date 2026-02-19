@@ -2,12 +2,30 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 
 	"github.com/WJQSERVER/readline/internal/input"
 	"github.com/WJQSERVER/readline/internal/term"
 )
+
+// SpyReader wraps an io.Reader and prints the hex of every byte read.
+type SpyReader struct {
+	inner io.Reader
+}
+
+func (s *SpyReader) Read(p []byte) (n int, err error) {
+	n, err = s.inner.Read(p)
+	if n > 0 {
+		fmt.Printf("\r\x1b[33m[RAW BYTES: ")
+		for i := 0; i < n; i++ {
+			fmt.Printf("%02X ", p[i])
+		}
+		fmt.Printf("]\x1b[0m")
+	}
+	return n, err
+}
 
 func main() {
 	t, err := term.NewTerminal(os.Stdin, os.Stdout)
@@ -23,13 +41,15 @@ func main() {
 	}
 	defer restore()
 
-	fmt.Print("\r\nWJQ Readline Parsed Key Debugger\r\n")
+	fmt.Print("\r\nWJQ Readline Unified Debugger (RAW + PARSED)\r\n")
 	fmt.Printf("Platform: %s/%s\r\n", runtime.GOOS, runtime.GOARCH)
-	fmt.Print("Press any keys to see their parsed values.\r\n")
+	fmt.Print("Press any keys to see their bytes and parsed values.\r\n")
 	fmt.Print("Type 'q' or Ctrl-C to exit.\r\n")
-	fmt.Print("-------------------------------------------\r\n")
+	fmt.Print("--------------------------------------------------\r\n")
 
-	p := input.NewParser(t)
+	// Use SpyReader to intercept bytes before they reach the parser
+	spy := &SpyReader{inner: t}
+	p := input.NewParser(spy)
 
 	for {
 		ev, err := p.NextEvent()
@@ -100,7 +120,8 @@ func main() {
 			keyName = "Ctrl-Backspace / Alt-Backspace"
 		}
 
-		fmt.Printf("\rKey Event: ID=%-2d, Name=%-25s Rune=%-5d (0x%04x)\r\n", ev.Key, keyName, ev.Rune, ev.Rune)
+		// Use \x1b[K to clear the rest of the line (where RAW BYTES was printed)
+		fmt.Printf(" -> Result: \x1b[1m%s\x1b[0m (ID=%d, Rune=%d)\x1b[K\r\n", keyName, ev.Key, ev.Rune)
 
 		if ev.Key == input.KeyCtrlC || (ev.Key == input.KeyRune && ev.Rune == 'q') {
 			fmt.Print("\r\nExiting...\r\n")
