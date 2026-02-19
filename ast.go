@@ -356,3 +356,28 @@ func (gs *GoStatement) String() string {
 	out.WriteString(gs.Node.String())
 	return out.String()
 }
+
+type VarStatement struct {
+	Token Token // the var token
+	Name  *Identifier
+	Type  *Identifier // optional type constraint
+	Value Expression  // optional initial value
+}
+
+func (vs *VarStatement) statementNode()       {}
+func (vs *VarStatement) TokenLiteral() string { return vs.Token.Literal }
+func (vs *VarStatement) String() string {
+	var out strings.Builder
+	out.WriteString("var ")
+	out.WriteString(vs.Name.String())
+	if vs.Type != nil {
+		out.WriteString(" ")
+		out.WriteString(vs.Type.String())
+	}
+	if vs.Value != nil {
+		out.WriteString(" = ")
+		out.WriteString(vs.Value.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}

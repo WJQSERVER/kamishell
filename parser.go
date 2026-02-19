@@ -120,6 +120,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		return nil
 	case PRINT:
 		stmt = p.parsePrintStatement()
+	case VAR:
+		stmt = p.parseVarStatement()
 	case EXEC:
 		stmt = p.parseExecStatement()
 	case IF:
@@ -446,5 +448,34 @@ func (p *Parser) parseGoStatement() *GoStatement {
 	} else {
 		stmt.Node = p.parseCommandStatement()
 	}
+	return stmt
+}
+
+func (p *Parser) parseVarStatement() *VarStatement {
+	stmt := &VarStatement{Token: p.curToken}
+
+	if p.peekToken.Type != IDENT {
+		return nil
+	}
+	p.nextToken()
+	stmt.Name = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	// Optional type
+	if p.peekToken.Type == IDENT {
+		p.nextToken()
+		stmt.Type = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	}
+
+	// Optional value
+	if p.peekToken.Type == ASSIGN {
+		p.nextToken() // move to =
+		p.nextToken() // move to expression
+		stmt.Value = p.parseExpression(LOWEST)
+	}
+
+	if p.peekToken.Type == SEMICOLON {
+		p.nextToken()
+	}
+
 	return stmt
 }

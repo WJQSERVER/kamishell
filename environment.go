@@ -5,11 +5,13 @@ import "strings"
 
 func NewEnvironment() *Environment {
 	s := make(map[string]Object)
+	t := make(map[string]string)
 	for _, e := range os.Environ() {
 		pair := strings.SplitN(e, "=", 2)
 		s[pair[0]] = &String{Value: pair[1]}
+		t[pair[0]] = string(STRING_OBJ)
 	}
-	return &Environment{store: s}
+	return &Environment{store: s, types: t}
 }
 
 func NewEnclosedEnvironment(outer *Environment) *Environment {
@@ -20,6 +22,7 @@ func NewEnclosedEnvironment(outer *Environment) *Environment {
 
 type Environment struct {
 	store map[string]Object
+	types map[string]string
 	outer *Environment
 }
 
@@ -29,6 +32,14 @@ func (e *Environment) Get(name string) (interface{}, bool) {
 		return e.outer.Get(name)
 	}
 	return obj, ok
+}
+
+func (e *Environment) GetType(name string) (string, bool) {
+	t, ok := e.types[name]
+	if !ok && e.outer != nil {
+		return e.outer.GetType(name)
+	}
+	return t, ok
 }
 
 func (e *Environment) Set(name string, val interface{}) {
@@ -47,8 +58,18 @@ func (e *Environment) Set(name string, val interface{}) {
 	}
 }
 
+func (e *Environment) SetWithType(name string, val Object, typeName string) {
+	e.store[name] = val
+	if typeName != "" {
+		e.types[name] = typeName
+	}
+}
+
 func NewEmptyEnvironment() *Environment {
-	return &Environment{store: make(map[string]Object)}
+	return &Environment{
+		store: make(map[string]Object),
+		types: make(map[string]string),
+	}
 }
 
 func (e *Environment) Keys() []string {
