@@ -1,4 +1,4 @@
-package kamishell
+package main
 
 import "os"
 import "strings"

@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"kamishell"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +19,7 @@ var (
 
 func main() {
 	flag.Parse()
-	env := kamishell.NewEnvironment()
+	env := NewEnvironment()
 
 	// Load .kamirc
 	loadConfig(env)
@@ -36,7 +35,7 @@ func main() {
 	}
 }
 
-func executeFile(filename string, env *kamishell.Environment) {
+func executeFile(filename string, env *Environment) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading file: %v\n", err)
@@ -46,7 +45,7 @@ func executeFile(filename string, env *kamishell.Environment) {
 	runInput(string(content), env, false)
 }
 
-func startRepl(env *kamishell.Environment) {
+func startRepl(env *Environment) {
 	home, _ := os.UserHomeDir()
 	historyFile := filepath.Join(home, ".kami_history")
 
@@ -57,7 +56,7 @@ func startRepl(env *kamishell.Environment) {
 	}
 }
 
-func startChzyerRepl(env *kamishell.Environment, historyFile string) {
+func startChzyerRepl(env *Environment, historyFile string) {
 	rl, err := chreadline.NewEx(&chreadline.Config{
 		Prompt:          PROMPT,
 		HistoryFile:     historyFile,
@@ -85,7 +84,7 @@ func startChzyerRepl(env *kamishell.Environment, historyFile string) {
 	}
 }
 
-func startWjqRepl(env *kamishell.Environment, historyFile string) {
+func startWjqRepl(env *Environment, historyFile string) {
 	// Cyan prompt for WJQ version to distinguish it
 	cyanPrompt := "\033[36mkami>\033[0m "
 
@@ -120,22 +119,22 @@ func startWjqRepl(env *kamishell.Environment, historyFile string) {
 	}
 }
 
-func runInput(input string, env *kamishell.Environment, isRepl bool) {
-	l := kamishell.NewLexer(input)
-	p := kamishell.NewParser(l)
+func runInput(input string, env *Environment, isRepl bool) {
+	l := NewLexer(input)
+	p := NewParser(l)
 
 	program := p.ParseProgram()
-	result := kamishell.Eval(program, env)
+	result := Eval(program, env)
 	if result != nil {
-		if result.Type() == kamishell.ERROR_OBJ {
+		if result.Type() == ERROR_OBJ {
 			fmt.Fprintf(os.Stderr, "%s\n", result.Inspect())
-		} else if isRepl && result.Type() != kamishell.NULL_OBJ {
+		} else if isRepl && result.Type() != NULL_OBJ {
 			fmt.Println(result.Inspect())
 		}
 	}
 }
 
-func loadConfig(env *kamishell.Environment) {
+func loadConfig(env *Environment) {
 	configs := []string{
 		os.ExpandEnv("$HOME/.kamirc"),
 		".kamirc",
