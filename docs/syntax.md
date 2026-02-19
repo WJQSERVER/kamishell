@@ -13,116 +13,141 @@ print "Hello from an executable script!"
 
 ## 2. 变量与赋值
 
-使用 `:=` 进行变量声明和赋值。Kamishell 是动态类型的，支持以下基础类型：
+使用 `:=` 进行变量声明和赋值。使用 `=` 对已存在的变量进行重新赋值。Kamishell 是动态类型的。
 
+### 基础类型
 - **Integer**: `x := 10`
 - **String**: `name := "Kamishell"`
 - **Boolean**: `isValid := true`
 - **Nil**: `empty := nil`
+- **Function**: `f := func() { ... }`
 
-### 变量使用
-在命令中可以直接使用变量名（如果是字符串或基础类型），或者在逻辑控制中使用。
-
+### 变量插值
+在字符串字面量中，可以使用 `$VAR` 语法进行变量插值：
 ```go
-count := 5
-print count
+name := "Jules"
+print "Hello, $name"
 ```
 
-## 3. 外部命令与内置命令执行
+## 3. 命令执行
 
-直接输入命令及其参数即可执行。Kamishell 会优先查找内置命令，如果没有找到，则在系统的 PATH 中查找外部命令。
+直接输入命令及其参数即可执行。Kamishell 搜索顺序：
+1. **当前作用域函数**
+2. **Shell 内置命令** (如 `ls`, `cd`)
+3. **系统 PATH 中的外部命令**
+
+### 管道 (Pipes)
+使用 `|` 连接多个命令，将前一个命令的 `stdout` 作为下一个命令的 `stdin`。
+```bash
+ls -la | grep "kami" | wc -l
+```
+
+### 重定向 (Redirection)
+- `>`: 覆盖写入文件。
+- `>>`: 追加写入文件。
+```bash
+print "log entry" >> access.log
+ls /tmp > file_list.txt
+```
+
+## 4. 逻辑运算符
+
+Kamishell 支持命令链式执行和逻辑判断：
+- `&&`: 仅当前一个命令成功（退出码 0）时执行后续命令。
+- `||`: 仅当前一个命令失败（退出码非 0）时执行后续命令。
 
 ```bash
-grep "main" cmd/kamishell/main.go
+mkdir new_dir && cd new_dir
+ls non_existent || print "File not found"
 ```
 
-## 4. 内置核心工具
+## 5. 异步执行
 
-为了保证跨平台的一致性，Kamishell 重新实现了一些常用的核心工具。
-
-### `ls`
-列出目录内容。支持以下参数：
-- `-a`: 显示所有文件（包括以 `.` 开头的隐藏文件）。
-- `-l`: 使用长格式列表显示详细信息。
-- `-h`: 配合 `-l` 使用，以易读的格式（如 1K, 234M）显示文件大小。
-- `-F`: 在条目后添加文件类型分类符（如 `/` 表示目录，`*` 表示可执行文件）。
-
-### `cd`
-切换当前工作目录。
+### 后缀 `&` (Shell 风格)
+将整个命令行放入后台运行。
 ```bash
-cd internal
-cd ..
+sleep 10 &
+print "I am not waiting for sleep"
 ```
 
-### `pwd`
-显示当前绝对路径。
+### 关键字 `go` (Go 风格)
+用于异步运行一个代码块或单个命令。
+```go
+go {
+    sleep 5
+    print "Background task done"
+}
 
-### `print`
-用于向标准输出打印内容，替代了传统的 `echo`。
+go updatedb
+```
+
+## 6. 函数定义 (`func`)
+
+支持类 Go 的函数定义语法，支持参数传递和词法作用域。
 
 ```go
-print "Hello, Kamishell!"
+func greet(name) {
+    print "Hello, " + name
+}
+
+greet "Kamishell"
+
+// 闭包支持
+x := 10
+func check() {
+    print x // 访问外部变量
+}
 ```
 
-## 5. 控制流
+## 7. 控制流
 
 ### If-Else 语句
-语法采用类 Go 的风格。注意：`{` 必须与 `if` 在同一行，或者在不触发自动分号插入的情况下换行。
+注意：`{` 必须与 `if` 或 `else` 在同一行。
 
 ```go
-isValid := true
-if isValid {
-    print "It is valid"
+x := 10
+if x > 5 {
+    print "High"
 } else {
-    print "It is invalid"
+    print "Low"
 }
 ```
 
-## 6. 分号 (Semicolons)
-
-分号在 Kamishell 中是**可选的**。
-
-- 你可以省略行尾的分号。
-- 你可以使用分号在同一行分隔多个命令。
-
+### For 循环
+目前支持基础的无限循环或带条件的循环。
 ```go
-print "first"; print "second"
-x := 1; y := 2
+i := 0
+for i < 3 {
+    print i
+    i = i + 1
+}
 ```
 
-## 7. 强制命令执行 (`exec`)
+## 8. 错误处理
 
-当命令名称与 Kamishell 的关键字（如 `go`, `print`, `if` 等）冲突时，可以使用 `exec` 关键字配合字符串来强制执行外部命令：
+Kamishell 运行时会自动维护一个名为 `err` 的特殊变量。每次命令执行后，该变量都会被更新。
 
+- 如果命令成功，`err` 为 `nil`。
+- 如果命令失败，`err` 为一个 Error 对象，包含以下字段：
+  - `err.Message`: 错误描述信息。
+  - `err.Code`: 退出码。
+  - `err.Op`: 产生错误的命令名称。
+
+```go
+cp source.txt dest.txt
+if err != nil {
+    print "Operation failed: " + err.Message
+}
+```
+
+## 9. 强制命令执行 (`exec`)
+
+当命令名称与关键字冲突时使用：
 ```go
 exec "go run ."
-exec "print -p 9090"
 ```
 
-## 8. 注释
+## 10. 注释
 
-Kamishell 遵循 Go 的注释语法：
-
-- **单行注释**: 使用 `//`
-- **多行注释**: 使用 `/* ... */`
-
-```go
-// 这是一个单行注释
-print "hello"
-
-/*
-  这是一个
-  多行注释
-*/
-```
-
-## 9. 错误处理
-
-Kamishell 鼓励显式的错误处理。当命令执行失败时，会返回一个 Error 对象。
-
-```go
-err := ls non_existent_folder
-if err != nil {
-    print "发生错误了"
-}
-```
+- **单行**: `//`
+- **多行**: `/* ... */`

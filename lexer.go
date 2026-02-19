@@ -98,7 +98,7 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok = Token{Type: AND, Literal: string(ch) + string(l.ch)}
 		} else {
-			tok = newToken(ILLEGAL, l.ch)
+			tok = newToken(AMPERSAND, l.ch)
 		}
 	case '>':
 		if l.peekChar() == '>' {

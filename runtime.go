@@ -10,6 +10,13 @@ import (
 	"kamishell/builtin"
 )
 
+
+
+
+
+
+
+
 var (
 	NULL  = &Null{}
 	TRUE  = &Boolean{Value: true}
@@ -38,15 +45,44 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalRedirectStatement(node, env, stdin, stdout, stderr)
 	case *LogicalStatement:
 		return evalLogicalStatement(node, env, stdin, stdout, stderr)
+	case *GoStatement:
+		id := builtin.RegisterJob(node.String())
+		go func() {
+			EvalWithIO(node.Node, env, stdin, stdout, stderr)
+			builtin.CompleteJob(id)
+		}()
+		return NULL
+	case *BackgroundStatement:
+		id := builtin.RegisterJob(node.String())
+		go func() {
+			EvalWithIO(node.Stmt, env, stdin, stdout, stderr)
+			builtin.CompleteJob(id)
+		}()
+		return NULL
 	case *FunctionStatement:
 		return evalFunctionStatement(node, env)
 	case *InfixExpression:
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
 		return evalInfixExpression(node.Operator, left, right)
+	case *VarStatement:
+		return evalVarStatement(node, env, stdin, stdout, stderr)
 	case *AssignStatement:
 		val := EvalWithIO(node.Value, env, stdin, stdout, stderr)
-		env.Set(node.Name.Value, val)
+		if isError(val) {
+			return val
+		}
+
+		expectedType, ok := env.GetType(node.Name.Value)
+		if ok && expectedType != "" && string(val.Type()) != expectedType {
+			return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
+		}
+
+		if node.Token.Literal == ":=" {
+			env.SetWithType(node.Name.Value, val, string(val.Type()))
+		} else {
+			env.Set(node.Name.Value, val)
+		}
 		return val
 	case *CommandStatement:
 		return executeCommand(node.Name, node.Arguments, env, stdin, stdout, stderr)
@@ -130,10 +166,15 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 	return result
 }
 
+
 func evalInfixExpression(operator string, left, right Object) Object {
+	if operator == "+" {
+		if left.Type() == STRING_OBJ || right.Type() == STRING_OBJ {
+			return &String{Value: left.Inspect() + right.Inspect()}
+		}
+	}
+
 	switch {
-	case left.Type() == STRING_OBJ && right.Type() == STRING_OBJ:
-		return evalStringInfixExpression(operator, left, right)
 	case left.Type() == INTEGER_OBJ && right.Type() == INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
 	case operator == "==":
@@ -147,14 +188,8 @@ func evalInfixExpression(operator string, left, right Object) Object {
 	}
 }
 
-func evalStringInfixExpression(operator string, left, right Object) Object {
-	if operator != "+" {
-		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
-	}
-	leftVal := left.(*String).Value
-	rightVal := right.(*String).Value
-	return &String{Value: leftVal + rightVal}
-}
+
+
 
 func evalIntegerInfixExpression(operator string, left, right Object) Object {
 	leftVal := left.(*Integer).Value
@@ -398,4 +433,40 @@ func applyFunction(fn *Function, args []string, env *Environment, stdin io.Reade
 	}
 
 	return EvalWithIO(fn.Body, extendEnv, stdin, stdout, stderr)
+}
+
+func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var val Object = NULL
+	if vs.Value != nil {
+		val = EvalWithIO(vs.Value, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+	}
+
+	typeName := ""
+	if vs.Type != nil {
+		typeName = string(mapTypeName(vs.Type.Value))
+		if val != NULL && string(val.Type()) != typeName {
+			return &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
+		}
+	} else if val != NULL {
+		typeName = string(val.Type())
+	}
+
+	env.SetWithType(vs.Name.Value, val, typeName)
+	return val
+}
+
+func mapTypeName(name string) ObjectType {
+	switch strings.ToLower(name) {
+	case "int", "integer":
+		return INTEGER_OBJ
+	case "string":
+		return STRING_OBJ
+	case "bool", "boolean":
+		return BOOLEAN_OBJ
+	default:
+		return ObjectType(strings.ToUpper(name))
+	}
 }
