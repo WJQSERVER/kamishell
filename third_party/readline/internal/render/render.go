@@ -1,6 +1,7 @@
 package render
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
@@ -32,15 +33,24 @@ func (r *Renderer) Refresh(b *buffer.Buffer) error {
 	visualPrompt := stripANSI(r.prompt)
 	promptWidth := runewidth.StringWidth(visualPrompt)
 
+	var out bytes.Buffer
+
+	// Hide cursor to prevent jitter
+	out.WriteString("\x1b[?25l")
+
 	// Basic redraw: carriage return, print prompt + content, clear to EOL
-	fmt.Fprintf(r.out, "\r%s%s\x1b[K", r.prompt, b.String())
+	// We use \r to return to the beginning of the CURRENT line.
+	fmt.Fprintf(&out, "\r%s%s\x1b[K", r.prompt, b.String())
 
-	// Move cursor to correct position (1-based column)
-	// CHA (Cursor Horizontal Absolute) moves to the n-th column.
-	fmt.Fprintf(r.out, "\x1b[%dG", promptWidth+cursorPos+1)
+	// Move cursor to correct position (1-based column) using CHA
+	fmt.Fprintf(&out, "\x1b[%dG", promptWidth+cursorPos+1)
 
+	// Show cursor
+	out.WriteString("\x1b[?25h")
+
+	_, err := r.out.Write(out.Bytes())
 	r.lastWidth = currentWidth
-	return nil
+	return err
 }
 
 func (r *Renderer) ClearLine() {

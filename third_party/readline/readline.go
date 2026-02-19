@@ -1,6 +1,8 @@
 package readline
 
 import (
+	"runtime"
+	"time"
 	"errors"
 	"io"
 	"sync"
@@ -59,6 +61,9 @@ func (i *Instance) Readline() (string, error) {
 	i.buffer.Clear()
 	i.historyIdx = -1
 	i.renderer.SetPrompt(i.cfg.Prompt)
+	if runtime.GOOS == "windows" {
+		time.Sleep(10 * time.Millisecond)
+	}
 	i.renderer.Refresh(i.buffer)
 	i.mu.Unlock()
 
