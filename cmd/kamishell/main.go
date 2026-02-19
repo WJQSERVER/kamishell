@@ -1,25 +1,33 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"kamishell"
 	"os"
 	"path/filepath"
 
-	"github.com/chzyer/readline"
+	chreadline "github.com/chzyer/readline"
+	wjqreadline "github.com/WJQSERVER/readline"
 )
 
 const PROMPT = "kami> "
 
+var (
+	readlineLib = flag.String("readline", "chzyer", "Select readline library: chzyer (default) or wjq (experimental)")
+)
+
 func main() {
+	flag.Parse()
 	env := kamishell.NewEnvironment()
 
 	// Load .kamirc
 	loadConfig(env)
 
-	if len(os.Args) > 1 {
+	args := flag.Args()
+	if len(args) > 0 {
 		// Script mode
-		filename := os.Args[1]
+		filename := args[0]
 		executeFile(filename, env)
 	} else {
 		// REPL mode
@@ -41,7 +49,15 @@ func startRepl(env *kamishell.Environment) {
 	home, _ := os.UserHomeDir()
 	historyFile := filepath.Join(home, ".kami_history")
 
-	rl, err := readline.NewEx(&readline.Config{
+	if *readlineLib == "wjq" {
+		startWjqRepl(env, historyFile)
+	} else {
+		startChzyerRepl(env, historyFile)
+	}
+}
+
+func startChzyerRepl(env *kamishell.Environment, historyFile string) {
+	rl, err := chreadline.NewEx(&chreadline.Config{
 		Prompt:          PROMPT,
 		HistoryFile:     historyFile,
 		AutoComplete:    &KamiCompleter{env: env},
@@ -49,7 +65,7 @@ func startRepl(env *kamishell.Environment) {
 		EOFPrompt:       "exit",
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing readline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error initializing chzyer readline: %v\n", err)
 		return
 	}
 	defer rl.Close()
@@ -57,6 +73,40 @@ func startRepl(env *kamishell.Environment) {
 	for {
 		line, err := rl.Readline()
 		if err != nil { // io.EOF or ctrl-c
+			break
+		}
+
+		if line == "" {
+			continue
+		}
+
+		runInput(line, env, true)
+	}
+}
+
+func startWjqRepl(env *kamishell.Environment, historyFile string) {
+	// WJQSERVER/readline implementation
+	// Note: WJQSERVER/readline might have different ways to handle history files
+	cfg := &wjqreadline.Config{
+		Prompt:    PROMPT,
+		Completer: &KamiCompleter{env: env},
+	}
+
+	rl, err := wjqreadline.NewInstance(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing wjq readline: %v\n", err)
+		return
+	}
+	// For now, history in wjq is in-memory or needs more setup if we want it persistent
+	// as I saw "History interface" and "NewHistory()" in go doc.
+
+	for {
+		line, err := rl.Readline()
+		if err != nil {
+			if err == wjqreadline.ErrInterrupt {
+				fmt.Println("^C")
+				continue
+			}
 			break
 		}
 
