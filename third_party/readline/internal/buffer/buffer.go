@@ -150,3 +150,22 @@ func (b *Buffer) DeleteWord() {
 
 	b.data = append(b.data[:b.cursor], b.data[i:]...)
 }
+
+func (b *Buffer) BackspaceWord() {
+	if b.cursor == 0 {
+		return
+	}
+
+	i := b.cursor
+	// Skip spaces to the left
+	for i > 0 && unicode.IsSpace(b.data[i-1]) {
+		i--
+	}
+	// Skip non-spaces to the left
+	for i > 0 && !unicode.IsSpace(b.data[i-1]) {
+		i--
+	}
+
+	b.data = append(b.data[:i], b.data[b.cursor:]...)
+	b.cursor = i
+}

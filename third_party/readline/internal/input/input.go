@@ -38,6 +38,7 @@ const (
 	KeyCtrlLeft
 	KeyCtrlRight
 	KeyCtrlDelete
+	KeyCtrlBackspace
 )
 
 type InputEvent struct {
@@ -239,6 +240,10 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 		return InputEvent{Key: KeyCtrlLeft}, nil
 	} else if r == 'f' {
 		return InputEvent{Key: KeyCtrlRight}, nil
+	} else if r == 'd' {
+		return InputEvent{Key: KeyCtrlDelete}, nil
+	} else if r == 127 || r == '\b' {
+		return InputEvent{Key: KeyCtrlBackspace}, nil
 	}
 
 	return InputEvent{Key: KeyUnknown}, nil

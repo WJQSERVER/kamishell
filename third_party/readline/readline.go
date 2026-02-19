@@ -110,6 +110,8 @@ func (i *Instance) Readline() (string, error) {
 			i.buffer.KillToEnd()
 		case input.KeyCtrlU:
 			i.buffer.KillToStart()
+		case input.KeyCtrlW, input.KeyCtrlBackspace:
+			i.buffer.BackspaceWord()
 		case input.KeyCtrlC:
 			i.renderer.NewLine()
 			resultErr = ErrInterrupt

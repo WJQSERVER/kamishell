@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/WJQSERVER/readline/internal/input"
 	"github.com/WJQSERVER/readline/internal/term"
@@ -24,55 +23,19 @@ func main() {
 	}
 	defer restore()
 
-	fmt.Print("\r\nWJQ Readline Raw Key Debugger\r\n")
-	printConsoleModes()
-	fmt.Print("Commands: 'q' to quit, 'r' to toggle RAW BYTE mode\r\n")
+	fmt.Print("\r\nWJQ Readline Parsed Key Debugger\r\n")
+	fmt.Printf("Platform: %s/%s\r\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Print("Press any keys to see their parsed values.\r\n")
+	fmt.Print("Type 'q' or Ctrl-C to exit.\r\n")
 	fmt.Print("-------------------------------------------\r\n")
 
-	rawMode := false
 	p := input.NewParser(t)
 
 	for {
-		if rawMode {
-			var buf [16]byte
-			n, err := os.Stdin.Read(buf[:])
-			if err != nil {
-				fmt.Printf("\r\nRead error: %v\r\n", err)
-				break
-			}
-			fmt.Printf("\rRAW BYTES: ")
-			for i := 0; i < n; i++ {
-				fmt.Printf("0x%02x ", buf[i])
-			}
-			fmt.Print("\r\n")
-
-			// Check for 'q' in raw mode
-			for i := 0; i < n; i++ {
-				if buf[i] == 'q' {
-					fmt.Print("\r\nExiting...\r\n")
-					return
-				}
-				if buf[i] == 'r' {
-					rawMode = false
-					fmt.Print("\r\nSwitched to PARSED mode\r\n")
-					// Re-init parser because we consumed from stdin
-					p = input.NewParser(t)
-					break
-				}
-			}
-			continue
-		}
-
 		ev, err := p.NextEvent()
 		if err != nil {
 			fmt.Printf("\r\nError: %v\r\n", err)
 			break
-		}
-
-		if ev.Key == input.KeyRune && ev.Rune == 'r' {
-			rawMode = true
-			fmt.Print("\r\nSwitched to RAW mode (Direct Stdin Read)\r\n")
-			continue
 		}
 
 		keyName := "Unknown"
@@ -128,26 +91,20 @@ func main() {
 		case input.KeyEsc:
 			keyName = "Esc"
 		case input.KeyCtrlLeft:
-			keyName = "Ctrl-Left / Alt-b"
+			keyName = "Ctrl-Left"
 		case input.KeyCtrlRight:
-			keyName = "Ctrl-Right / Alt-f"
+			keyName = "Ctrl-Right"
 		case input.KeyCtrlDelete:
 			keyName = "Ctrl-Delete"
+		case input.KeyCtrlBackspace:
+			keyName = "Ctrl-Backspace / Alt-Backspace"
 		}
 
-		fmt.Printf("\rKey Event: ID=%-2d, Name=%-20s Rune=%-5d (0x%04x)\r\n", ev.Key, keyName, ev.Rune, ev.Rune)
+		fmt.Printf("\rKey Event: ID=%-2d, Name=%-25s Rune=%-5d (0x%04x)\r\n", ev.Key, keyName, ev.Rune, ev.Rune)
 
 		if ev.Key == input.KeyCtrlC || (ev.Key == input.KeyRune && ev.Rune == 'q') {
 			fmt.Print("\r\nExiting...\r\n")
 			break
 		}
-	}
-}
-
-func printConsoleModes() {
-	if runtime.GOOS == "windows" {
-		fmt.Print("Platform: Windows\r\n")
-	} else {
-		fmt.Print("Platform: Unix-like\r\n")
 	}
 }

@@ -5,7 +5,7 @@ package term
 import (
 	"io"
 	"os"
-	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 )
 
 type unixTerminal struct {
@@ -35,34 +35,15 @@ func (t *unixTerminal) Write(p []byte) (n int, err error) {
 }
 
 func (t *unixTerminal) GetSize() (width, height int, err error) {
-	ws, err := unix.IoctlGetWinsize(t.fd, unix.TIOCGWINSZ)
-	if err != nil {
-		return 80, 24, err
-	}
-	return int(ws.Col), int(ws.Row), nil
+	return term.GetSize(t.fd)
 }
 
 func (t *unixTerminal) SetRaw() (func(), error) {
-	termios, err := unix.IoctlGetTermios(t.fd, unix.TCGETS)
+	oldState, err := term.MakeRaw(t.fd)
 	if err != nil {
 		return nil, err
 	}
-
-	oldState := *termios
-
-	// ICRNL: Fix Ctrl-M being read as Ctrl-J
-	// INLCR: Fix Ctrl-J being read as Ctrl-M
-	termios.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP | unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON | unix.IXOFF
-	termios.Oflag &^= unix.OPOST
-	termios.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
-	termios.Cflag &^= unix.CSIZE | unix.PARENB
-	termios.Cflag |= unix.CS8
-
-	if err := unix.IoctlSetTermios(t.fd, unix.TCSETS, termios); err != nil {
-		return nil, err
-	}
-
 	return func() {
-		unix.IoctlSetTermios(t.fd, unix.TCSETS, &oldState)
+		term.Restore(t.fd, oldState)
 	}, nil
 }
