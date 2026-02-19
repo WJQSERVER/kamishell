@@ -235,6 +235,16 @@ func (i *Instance) NotifyKeyPress(k string) {
 		i.MoveLeft()
 	case "Right":
 		i.MoveRight()
+	case "Up":
+		i.mu.Lock()
+		i.handleHistory(true)
+		i.renderer.Refresh(i.buffer)
+		i.mu.Unlock()
+	case "Down":
+		i.mu.Lock()
+		i.handleHistory(false)
+		i.renderer.Refresh(i.buffer)
+		i.mu.Unlock()
 	case "Home":
 		i.MoveHome()
 	case "End":
