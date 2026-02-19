@@ -14,6 +14,13 @@
 - Unix: Uses `termios` via `golang.org/x/sys/unix`.
 - Windows: Uses `Console API` via `golang.org/x/sys/windows`.
 
-## Verification
-- Run `go test ./...` to verify basic logic.
-- Run `go build -o example_bin example/main.go` to ensure it compiles.
+## Debugging and Testing
+- **Unit Tests**: Run `go test ./...` to verify basic logic.
+- **Interactive Debugger**: A raw key debugger is available in `debug/main.go`.
+  Run it with: `go run debug/main.go`
+  Use this to verify if ANSI escape sequences (arrows, home, etc.) are being correctly parsed in your terminal.
+- **Example App**: `go run example/main.go` for a full feature demonstration.
+
+## Common Issues
+- If arrow keys are not working, check `internal/input/input.go` to see if the escape sequence matches your terminal.
+- Use CHA (`\x1b[nG`) for cursor movement in the renderer for better stability.
