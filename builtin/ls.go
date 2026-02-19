@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 )
@@ -23,6 +24,11 @@ func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	long := fs.Bool("l", false, "use a long listing format")
 	human := fs.Bool("h", false, "with -l, print sizes like 1K 234M 2G etc.")
 	classify := fs.Bool("F", false, "append indicator (one of */=>@|) to entries")
+	recursive := fs.Bool("R", false, "list subdirectories recursively")
+	reverse := fs.Bool("r", false, "reverse order while sorting")
+	sortByTime := fs.Bool("t", false, "sort by modification time, newest first")
+	sortBySize := fs.Bool("S", false, "sort by file size, largest first")
+	dirOnly := fs.Bool("d", false, "list directories themselves, not their contents")
 
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -34,57 +40,99 @@ func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	}
 
 	exitCode := 0
-	for _, target := range targets {
-		info, err := os.Stat(target)
+	for i, target := range targets {
+		if len(targets) > 1 && !*recursive {
+			fmt.Fprintf(stdout, "%s:\n", target)
+		}
+
+		info, err := os.Lstat(target)
 		if err != nil {
 			fmt.Fprintf(stderr, "ls: %v\n", err)
 			exitCode = 1
 			continue
 		}
 
-		if !info.IsDir() {
+		if *dirOnly || !info.IsDir() {
 			printEntry(stdout, target, info, *long, *human, *classify)
 			if !*long {
 				fmt.Fprintln(stdout)
 			}
-			continue
-		}
-
-		entries, err := os.ReadDir(target)
-		if err != nil {
-			fmt.Fprintf(stderr, "ls: %v\n", err)
-			exitCode = 1
-			continue
-		}
-
-		sort.Slice(entries, func(i, j int) bool {
-			return entries[i].Name() < entries[j].Name()
-		})
-
-		for _, entry := range entries {
-			name := entry.Name()
-			if !*all && name[0] == '.' {
-				continue
-			}
-
-			entryInfo, err := entry.Info()
-			if err != nil {
-				fmt.Fprintf(stderr, "ls: %v\n", err)
-				exitCode = 1
-				continue
-			}
-
-			printEntry(stdout, name, entryInfo, *long, *human, *classify)
-			if !*long {
-				fmt.Fprint(stdout, "  ")
+		} else {
+			ec := listDir(target, stdout, stderr, *all, *long, *human, *classify, *recursive, *reverse, *sortByTime, *sortBySize, len(targets) > 1 || *recursive, i == 0)
+			if ec != 0 {
+				exitCode = ec
 			}
 		}
-		if !*long {
+
+		if i < len(targets)-1 && !*long && !*dirOnly && info.IsDir() {
 			fmt.Fprintln(stdout)
 		}
 	}
 
 	return exitCode
+}
+
+func listDir(dirPath string, stdout, stderr io.Writer, all, long, human, classify, recursive, reverse, sortByTime, sortBySize, showHeader, isFirst bool) int {
+	if showHeader && !isFirst {
+		fmt.Fprintf(stdout, "\n%s:\n", dirPath)
+	} else if showHeader && isFirst && recursive {
+		fmt.Fprintf(stdout, "%s:\n", dirPath)
+	}
+
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "ls: %v\n", err)
+		return 1
+	}
+
+	var infos []os.FileInfo
+	for _, entry := range entries {
+		name := entry.Name()
+		if !all && name[0] == '.' {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		infos = append(infos, info)
+	}
+
+	// Sorting
+	sort.Slice(infos, func(i, j int) bool {
+		var res bool
+		if sortByTime {
+			res = infos[i].ModTime().After(infos[j].ModTime())
+		} else if sortBySize {
+			res = infos[i].Size() > infos[j].Size()
+		} else {
+			res = infos[i].Name() < infos[j].Name()
+		}
+		if reverse {
+			return !res
+		}
+		return res
+	})
+
+	for _, info := range infos {
+		printEntry(stdout, info.Name(), info, long, human, classify)
+		if !long {
+			fmt.Fprint(stdout, "  ")
+		}
+	}
+	if !long {
+		fmt.Fprintln(stdout)
+	}
+
+	if recursive {
+		for _, info := range infos {
+			if info.IsDir() && info.Name() != "." && info.Name() != ".." {
+				listDir(filepath.Join(dirPath, info.Name()), stdout, stderr, all, long, human, classify, recursive, reverse, sortByTime, sortBySize, true, false)
+			}
+		}
+	}
+
+	return 0
 }
 
 func printEntry(stdout io.Writer, name string, info os.FileInfo, long, human, classify bool) {
