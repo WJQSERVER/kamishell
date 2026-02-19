@@ -50,3 +50,14 @@ func (e *Environment) Set(name string, val interface{}) {
 func NewEmptyEnvironment() *Environment {
 	return &Environment{store: make(map[string]Object)}
 }
+
+func (e *Environment) Keys() []string {
+	keys := make([]string, 0, len(e.store))
+	for k := range e.store {
+		keys = append(keys, k)
+	}
+	if e.outer != nil {
+		keys = append(keys, e.outer.Keys()...)
+	}
+	return keys
+}
