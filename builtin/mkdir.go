@@ -1,9 +1,11 @@
 package builtin
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 )
 
 func init() {
@@ -11,12 +13,43 @@ func init() {
 }
 
 func Mkdir(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
-	for _, arg := range args {
-		err := os.MkdirAll(arg, 0755)
+	args = PreprocessArgs(args)
+	fs := flag.NewFlagSet("mkdir", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	parents := fs.Bool("p", false, "no error if existing, make parent directories as needed")
+	modeStr := fs.String("m", "0755", "set file mode (octal)")
+
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+
+	mode, err := strconv.ParseUint(*modeStr, 8, 32)
+	if err != nil {
+		fmt.Fprintf(stderr, "mkdir: invalid mode: %s\n", *modeStr)
+		return 1
+	}
+
+	targets := fs.Args()
+	if len(targets) == 0 {
+		fmt.Fprintln(stderr, "mkdir: missing operand")
+		return 1
+	}
+
+	exitCode := 0
+	for _, target := range targets {
+		var err error
+		if *parents {
+			err = os.MkdirAll(target, os.FileMode(mode))
+		} else {
+			err = os.Mkdir(target, os.FileMode(mode))
+		}
+
 		if err != nil {
-			fmt.Fprintf(stderr, "mkdir: %v\n", err)
-			return 1
+			fmt.Fprintf(stderr, "mkdir: %s: %v\n", target, err)
+			exitCode = 1
 		}
 	}
-	return 0
+
+	return exitCode
 }
