@@ -9,7 +9,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("grep", Grep)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "grep",
+		Description: "在文件中搜索模式",
+		Action:      Grep,
+	})
 }
 
 func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

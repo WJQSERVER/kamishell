@@ -11,7 +11,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("ls", Ls)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "ls",
+		Description: "列出目录内容",
+		Action:      Ls,
+	})
 }
 
 func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

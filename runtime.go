@@ -351,8 +351,8 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 		}
 	}
 
-	if fn, ok := builtin.Builtins[name]; ok {
-		exitCode := fn(args, env, stdin, stdout, stderr)
+	if cmd, ok := builtin.Builtins[name]; ok {
+		exitCode := cmd.Action(args, env, stdin, stdout, stderr)
 		if exitCode != 0 {
 			return &Error{Message: fmt.Sprintf("builtin %s failed", name), Code: exitCode, Op: name}
 		}

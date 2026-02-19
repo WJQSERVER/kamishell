@@ -8,7 +8,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("type", Type)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "type",
+		Description: "显示命令类型",
+		Action:      Type,
+	})
 }
 
 func Type(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

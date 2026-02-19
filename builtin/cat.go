@@ -8,7 +8,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("cat", Cat)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "cat",
+		Description: "连接文件并打印到标准输出",
+		Action:      Cat,
+	})
 }
 
 func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

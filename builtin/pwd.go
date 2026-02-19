@@ -9,7 +9,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("pwd", Pwd)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "pwd",
+		Description: "显示当前工作目录",
+		Action:      Pwd,
+	})
 }
 
 func Pwd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

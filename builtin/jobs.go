@@ -7,7 +7,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("jobs", JobsCmd)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "jobs",
+		Description: "列出后台作业",
+		Action:      JobsCmd,
+	})
 }
 
 func JobsCmd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

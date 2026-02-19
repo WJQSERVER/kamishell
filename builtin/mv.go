@@ -11,7 +11,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("mv", Mv)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "mv",
+		Description: "移动或重命名文件或目录",
+		Action:      Mv,
+	})
 }
 
 func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

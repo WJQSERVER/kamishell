@@ -8,7 +8,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("exit", Exit)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "exit",
+		Description: "退出 Shell",
+		Action:      Exit,
+	})
 }
 
 func Exit(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

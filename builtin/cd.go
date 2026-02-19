@@ -9,7 +9,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("cd", Cd)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "cd",
+		Description: "切换工作目录",
+		Action:      Cd,
+	})
 }
 
 func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

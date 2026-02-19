@@ -9,7 +9,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("sed", Sed)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "sed",
+		Description: "流编辑器，用于过滤和转换文本",
+		Action:      Sed,
+	})
 }
 
 func Sed(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

@@ -9,7 +9,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("mkdir", Mkdir)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "mkdir",
+		Description: "创建目录",
+		Action:      Mkdir,
+	})
 }
 
 func Mkdir(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

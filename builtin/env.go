@@ -7,7 +7,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("env", Env)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "env",
+		Description: "显示环境变量",
+		Action:      Env,
+	})
 }
 
 func Env(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

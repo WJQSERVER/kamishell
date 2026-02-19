@@ -11,7 +11,11 @@ import (
 )
 
 func init() {
-	RegisterBuiltin("cp", Cp)
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "cp",
+		Description: "复制文件或目录",
+		Action:      Cp,
+	})
 }
 
 func Cp(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

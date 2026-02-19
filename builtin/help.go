@@ -3,37 +3,34 @@ package builtin
 import (
 	"fmt"
 	"io"
+	"runtime/debug"
 	"sort"
 )
 
 func init() {
-	RegisterBuiltin("help", Help)
-}
-
-var helpDescriptions = map[string]string{
-	"help":   "显示此帮助信息",
-	"ls":     "列出目录内容",
-	"cd":     "切换工作目录",
-	"pwd":    "显示当前工作目录",
-	"cat":    "连接文件并打印到标准输出",
-	"cp":     "复制文件或目录",
-	"mv":     "移动或重命名文件或目录",
-	"rm":     "删除文件或目录",
-	"mkdir":  "创建目录",
-	"touch":  "创建空文件或更新时间戳",
-	"exit":   "退出 Shell",
-	"export": "设置环境变量",
-	"env":    "显示环境变量",
-	"type":   "显示命令类型",
-	"which":  "查找命令的可执行文件路径",
-	"jobs":   "列出后台作业",
-	"grep":   "在文件中搜索模式",
-	"sed":    "流编辑器，用于过滤和转换文本",
+	RegisterBuiltin(&BuiltinCommand{
+		Name:        "help",
+		Description: "显示此帮助信息",
+		Action:      Help,
+	})
 }
 
 func Help(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
-	fmt.Fprintln(stdout, "Kamishell 内建命令帮助:")
-	fmt.Fprintln(stdout, "---------------------------")
+	// Parse flags
+	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			printVersion(stdout)
+			return 0
+		}
+	}
+
+	fmt.Fprintln(stdout, "Kamishell (kami) - 一个用 Go 编写的高级交互式 Shell")
+	fmt.Fprintln(stdout, "--------------------------------------------------")
+
+	printVersion(stdout)
+	fmt.Fprintln(stdout, "LICENSE: Mozilla Public License 2.0")
+	fmt.Fprintln(stdout, "")
+	fmt.Fprintln(stdout, "内建命令列表:")
 
 	// Get all builtin names and sort them
 	names := make([]string, 0, len(Builtins))
@@ -43,14 +40,36 @@ func Help(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 	sort.Strings(names)
 
 	for _, name := range names {
-		desc, ok := helpDescriptions[name]
-		if !ok {
-			desc = "(尚无详细说明)"
-		}
-		fmt.Fprintf(stdout, "  %-10s %s\n", name, desc)
+		cmd := Builtins[name]
+		fmt.Fprintf(stdout, "  %-12s %s\n", name, cmd.Description)
 	}
 
-	fmt.Fprintln(stdout, "---------------------------")
-	fmt.Fprintln(stdout, "提示: 输入 'help <command>' (未来支持) 或查看文档了解详情。")
+	fmt.Fprintln(stdout, "--------------------------------------------------")
+	fmt.Fprintln(stdout, "提示: 输入 'help --version' 查看详细构建信息。")
+	fmt.Fprintln(stdout, "      内建关键字 (如 if, for, func, print) 请参考文档。")
 	return 0
+}
+
+func printVersion(stdout io.Writer) {
+	version := "unknown"
+	revision := "none"
+	time := "unknown"
+
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" {
+			version = info.Main.Version
+		}
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" {
+				revision = setting.Value
+			}
+			if setting.Key == "vcs.time" {
+				time = setting.Value
+			}
+		}
+	}
+
+	fmt.Fprintf(stdout, "版本: %s\n", version)
+	fmt.Fprintf(stdout, "提交: %s\n", revision)
+	fmt.Fprintf(stdout, "构建时间: %s\n", time)
 }
