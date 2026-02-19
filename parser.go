@@ -47,6 +47,7 @@ func NewParser(l *Lexer) *Parser {
 	p.registerPrefix(TRUE_TOK, p.parseBooleanLiteral)
 	p.registerPrefix(FALSE_TOK, p.parseBooleanLiteral)
 	p.registerPrefix(DOLLAR, p.parseInterpolation)
+	p.registerPrefix(NIL, p.parseNilLiteral)
 
 	p.infixParseFns = make(map[TokenType]infixParseFn)
 	p.registerInfix(EQ, p.parseInfixExpression)
@@ -339,6 +340,10 @@ func (p *Parser) parseIntegerLiteral() Expression {
 
 func (p *Parser) parseStringLiteral() Expression {
 	return &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+}
+
+func (p *Parser) parseNilLiteral() Expression {
+	return &NilLiteral{Token: p.curToken}
 }
 
 func (p *Parser) parseBooleanLiteral() Expression {

@@ -46,9 +46,7 @@ func startRepl(in io.Reader, out io.Writer, env *kamishell.Environment) {
 		if line == "" {
 			continue
 		}
-		if line == "exit" {
-			break
-		}
+		// exit handled by builtin
 
 		runInput(line, env, true)
 	}

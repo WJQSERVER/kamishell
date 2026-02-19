@@ -42,28 +42,16 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalFunctionStatement(node, env)
 	case *InfixExpression:
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
-		if isError(left) {
-			return left
-		}
 		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
-		if isError(right) {
-			return right
-		}
 		return evalInfixExpression(node.Operator, left, right)
 	case *AssignStatement:
 		val := EvalWithIO(node.Value, env, stdin, stdout, stderr)
-		if isError(val) {
-			return val
-		}
 		env.Set(node.Name.Value, val)
 		return val
 	case *CommandStatement:
 		return executeCommand(node.Name, node.Arguments, env, stdin, stdout, stderr)
 	case *PrintStatement:
 		val := EvalWithIO(node.Expression, env, stdin, stdout, stderr)
-		if isError(val) {
-			return val
-		}
 		fmt.Fprintln(stdout, val.Inspect())
 		return NULL
 	case *ExecStatement:
@@ -81,6 +69,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		})}
 	case *IntegerLiteral:
 		return &Integer{Value: node.Value}
+	case *NilLiteral:
+		return NULL
 	case *BooleanLiteral:
 		return nativeBoolToBooleanObject(node.Value)
 	}
@@ -92,7 +82,9 @@ func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout
 	for _, statement := range stmts {
 		result = EvalWithIO(statement, env, stdin, stdout, stderr)
 		if errObj, ok := result.(*Error); ok {
-			return errObj
+			env.Set("err", errObj)
+		} else {
+			env.Set("err", NULL)
 		}
 	}
 	return result
@@ -282,7 +274,7 @@ func evalRedirectStatement(rs *RedirectStatement, env *Environment, stdin io.Rea
 
 	f, err := os.OpenFile(path.Value, flags, 0644)
 	if err != nil {
-		return &Error{Message: err.Error()}
+		return &Error{Message: err.Error(), Code: 1, Op: "redirect"}
 	}
 	defer f.Close()
 
@@ -327,7 +319,7 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 	if fn, ok := builtin.Builtins[name]; ok {
 		exitCode := fn(args, env, stdin, stdout, stderr)
 		if exitCode != 0 {
-			return &Error{Message: fmt.Sprintf("builtin %s exited with %d", name, exitCode)}
+			return &Error{Message: fmt.Sprintf("builtin %s failed", name), Code: exitCode, Op: name}
 		}
 		return NULL
 	}
@@ -338,7 +330,10 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 	cmd.Stdin = stdin
 	err := cmd.Run()
 	if err != nil {
-		return &Error{Message: err.Error()}
+		if exitError, ok := err.(*exec.ExitError); ok {
+			return &Error{Message: err.Error(), Code: exitError.ExitCode(), Op: name}
+		}
+		return &Error{Message: err.Error(), Code: 1, Op: name}
 	}
 	return NULL
 }
