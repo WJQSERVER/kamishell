@@ -118,6 +118,20 @@ func (p *Parser) parseRune(r rune) (InputEvent, error) {
 		return InputEvent{Key: KeyCtrlW}, nil
 	case 27: // Escape
 		return p.parseEscape()
+	case 0, 224: // Windows extended key prefix (if not in VT mode)
+		next, ok := p.readNext(10 * time.Millisecond)
+		if ok {
+			switch next {
+			case 'H': return InputEvent{Key: KeyUp}, nil
+			case 'P': return InputEvent{Key: KeyDown}, nil
+			case 'M': return InputEvent{Key: KeyRight}, nil
+			case 'K': return InputEvent{Key: KeyLeft}, nil
+			case 'G': return InputEvent{Key: KeyHome}, nil
+			case 'O': return InputEvent{Key: KeyEnd}, nil
+			case 'S': return InputEvent{Key: KeyDelete}, nil
+			}
+		}
+		return InputEvent{Key: KeyRune, Rune: r}, nil
 	default:
 		return InputEvent{Key: KeyRune, Rune: r}, nil
 	}
@@ -133,13 +147,13 @@ func (p *Parser) readNext(timeout time.Duration) (rune, bool) {
 }
 
 func (p *Parser) parseEscape() (InputEvent, error) {
-	r, ok := p.readNext(50 * time.Millisecond)
+	r, ok := p.readNext(100 * time.Millisecond)
 	if !ok {
 		return InputEvent{Key: KeyEsc}, nil
 	}
 
 	if r == '[' {
-		r, ok = p.readNext(50 * time.Millisecond)
+		r, ok = p.readNext(100 * time.Millisecond)
 		if !ok {
 			return InputEvent{Key: KeyEsc}, nil
 		}
@@ -157,36 +171,41 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 		case 'F':
 			return InputEvent{Key: KeyEnd}, nil
 		case '3': // Maybe Delete [3~
-			r, ok = p.readNext(50 * time.Millisecond)
+			r, ok = p.readNext(100 * time.Millisecond)
 			if ok && r == '~' {
 				return InputEvent{Key: KeyDelete}, nil
 			}
-		case '1': // [1;5C (Ctrl+Right) or [1;5D (Ctrl+Left)
-			r, ok = p.readNext(50 * time.Millisecond)
+		case '1': // [1;5A (Ctrl+Up), [1;5B (Ctrl+Down), [1;5C (Ctrl+Right), [1;5D (Ctrl+Left)
+			r, ok = p.readNext(100 * time.Millisecond)
 			if ok && r == ';' {
-				r, ok = p.readNext(50 * time.Millisecond) // '5'
-				r, ok = p.readNext(50 * time.Millisecond) // 'C' or 'D'
-				if r == 'C' {
+				r, ok = p.readNext(100 * time.Millisecond) // '5'
+				r, ok = p.readNext(100 * time.Millisecond) // 'A','B','C' or 'D'
+				switch r {
+				case 'A':
+					return InputEvent{Key: KeyUp}, nil
+				case 'B':
+					return InputEvent{Key: KeyDown}, nil
+				case 'C':
 					return InputEvent{Key: KeyCtrlRight}, nil
-				} else if r == 'D' {
+				case 'D':
 					return InputEvent{Key: KeyCtrlLeft}, nil
 				}
 			} else if ok && r == '~' {
 				return InputEvent{Key: KeyHome}, nil
 			}
 		case '7': // Home [7~
-			r, ok = p.readNext(50 * time.Millisecond)
+			r, ok = p.readNext(100 * time.Millisecond)
 			if ok && r == '~' {
 				return InputEvent{Key: KeyHome}, nil
 			}
 		case '4', '8': // End [4~ or [8~
-			r, ok = p.readNext(50 * time.Millisecond)
+			r, ok = p.readNext(100 * time.Millisecond)
 			if ok && r == '~' {
 				return InputEvent{Key: KeyEnd}, nil
 			}
 		}
 	} else if r == 'O' {
-		r, ok = p.readNext(50 * time.Millisecond)
+		r, ok = p.readNext(100 * time.Millisecond)
 		if !ok {
 			return InputEvent{Key: KeyEsc}, nil
 		}

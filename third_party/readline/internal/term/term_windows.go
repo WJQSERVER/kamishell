@@ -59,9 +59,18 @@ func (t *windowsTerminal) SetRaw() (func(), error) {
 
 	// Raw mode: disable echo, line processing, etc.
 	newInMode := oldInMode &^ (windows.ENABLE_ECHO_INPUT | windows.ENABLE_LINE_INPUT | windows.ENABLE_PROCESSED_INPUT)
-	// Enable virtual terminal processing for ANSI sequences
+
+	// Enable virtual terminal input (ANSI sequences).
+	// Also clear ENABLE_WINDOW_INPUT, ENABLE_MOUSE_INPUT and ENABLE_QUICK_EDIT_MODE.
+	newInMode |= 0x0200 // ENABLE_VIRTUAL_TERMINAL_INPUT
+	newInMode |= 0x0080 // ENABLE_EXTENDED_FLAGS
+	newInMode &^= 0x0040 // ENABLE_QUICK_EDIT_MODE
+	newInMode &^= (windows.ENABLE_WINDOW_INPUT | windows.ENABLE_MOUSE_INPUT)
+
+	// Enable virtual terminal processing for ANSI sequences on output
 	newOutMode := oldOutMode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.DISABLE_NEWLINE_AUTO_RETURN
 
+	// Try to set new modes.
 	windows.SetConsoleMode(t.hIn, newInMode)
 	windows.SetConsoleMode(t.hOut, newOutMode)
 

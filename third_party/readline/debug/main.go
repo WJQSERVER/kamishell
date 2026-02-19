@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/WJQSERVER/readline/internal/input"
 	"github.com/WJQSERVER/readline/internal/term"
@@ -25,6 +26,7 @@ func main() {
 	p := input.NewParser(t)
 
 	fmt.Print("\r\nWJQ Readline Raw Key Debugger\r\n")
+	printConsoleModes()
 	fmt.Print("Press any keys to see their parsed values.\r\n")
 	fmt.Print("Type 'q' or Ctrl-C to exit.\r\n")
 	fmt.Print("-------------------------------------------\r\n")
@@ -94,11 +96,19 @@ func main() {
 			keyName = "Ctrl-Right / Alt-f"
 		}
 
-		fmt.Printf("\rKey Event: ID=%d, Name=%-20s Rune=%d\r\n", ev.Key, keyName, ev.Rune)
+		fmt.Printf("\rKey Event: ID=%d, Name=%-20s Rune=%d (0x%04x)\r\n", ev.Key, keyName, ev.Rune, ev.Rune)
 
 		if ev.Key == input.KeyCtrlC || (ev.Key == input.KeyRune && ev.Rune == 'q') {
 			fmt.Print("\r\nExiting...\r\n")
 			break
 		}
+	}
+}
+
+func printConsoleModes() {
+	if runtime.GOOS == "windows" {
+		fmt.Print("Platform: Windows\r\n")
+	} else {
+		fmt.Print("Platform: Unix-like\r\n")
 	}
 }
