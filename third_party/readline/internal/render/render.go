@@ -35,13 +35,9 @@ func (r *Renderer) Refresh(b *buffer.Buffer) error {
 	// Basic redraw: carriage return, print prompt + content, clear to EOL
 	fmt.Fprintf(r.out, "\r%s%s\x1b[K", r.prompt, b.String())
 
-	// Move cursor to correct position
-	targetPos := promptWidth + cursorPos
-	if targetPos > 0 {
-		fmt.Fprintf(r.out, "\r\x1b[%dC", targetPos)
-	} else {
-		fmt.Fprintf(r.out, "\r")
-	}
+	// Move cursor to correct position (1-based column)
+	// CHA (Cursor Horizontal Absolute) moves to the n-th column.
+	fmt.Fprintf(r.out, "\x1b[%dG", promptWidth+cursorPos+1)
 
 	r.lastWidth = currentWidth
 	return nil

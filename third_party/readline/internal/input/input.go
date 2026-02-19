@@ -1,6 +1,7 @@
 package input
 
 import (
+	"time"
 	"bufio"
 	"io"
 )
@@ -93,11 +94,14 @@ func (p *Parser) NextEvent() (InputEvent, error) {
 	case 23:
 		return InputEvent{Key: KeyCtrlW}, nil
 	case 27: // Escape
-		// Check for escape sequences
-		if p.reader.Buffered() == 0 {
-			return InputEvent{Key: KeyEsc}, nil
+		// Check for escape sequences. Give a small window for the rest of the sequence to arrive.
+		for i := 0; i < 50; i++ {
+			if p.reader.Buffered() > 0 {
+				return p.parseEscape()
+			}
+			time.Sleep(1 * time.Millisecond)
 		}
-		return p.parseEscape()
+		return InputEvent{Key: KeyEsc}, nil
 	default:
 		return InputEvent{Key: KeyRune, Rune: r}, nil
 	}

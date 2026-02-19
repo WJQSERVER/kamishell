@@ -20,9 +20,9 @@ func TestRenderer_Refresh(t *testing.T) {
 	r.Refresh(b)
 
 	output := buf.String()
-	// Output should contain "\r\x1b[9C" at the end to move cursor to position 9 (6+3)
-	if !strings.Contains(output, "\x1b[9C") {
-		t.Errorf("Expected output to contain cursor move to 9, got %q", output)
+	// Output should contain "\x1b[10G" at the end to move cursor to column 10 (6+3+1)
+	if !strings.Contains(output, "\x1b[10G") {
+		t.Errorf("Expected output to contain cursor move to 10G, got %q", output)
 	}
 }
 
