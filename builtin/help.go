@@ -17,11 +17,28 @@ func init() {
 
 func Help(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	// Parse flags
-	for _, arg := range args {
+	keywordArg := ""
+	showKeywords := false
+
+	for i, arg := range args {
 		if arg == "--version" || arg == "-v" {
 			printVersion(stdout)
 			return 0
 		}
+		if arg == "-k" {
+			showKeywords = true
+			if i+1 < len(args) {
+				keywordArg = args[i+1]
+			}
+			break // Priority to keyword help
+		}
+	}
+
+	if showKeywords {
+		if keywordArg != "" {
+			return showKeywordDetail(keywordArg, stdout)
+		}
+		return listKeywords(stdout)
 	}
 
 	fmt.Fprintln(stdout, "Kamishell (kami) - 一个用 Go 编写的高级交互式 Shell")
@@ -46,7 +63,42 @@ func Help(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 
 	fmt.Fprintln(stdout, "--------------------------------------------------")
 	fmt.Fprintln(stdout, "提示: 输入 'help --version' 查看详细构建信息。")
-	fmt.Fprintln(stdout, "      内建关键字 (如 if, for, func, print) 请参考文档。")
+	fmt.Fprintln(stdout, "      输入 'help -k' 查看关键字列表。")
+	fmt.Fprintln(stdout, "      输入 'help -k <关键字>' 查看特定关键字详情。")
+	return 0
+}
+
+func listKeywords(stdout io.Writer) int {
+	fmt.Fprintln(stdout, "Kamishell 关键字与操作符注解:")
+	fmt.Fprintln(stdout, "--------------------------------------------------")
+
+	keys := make([]string, 0, len(KeywordsDoc))
+	for k := range KeywordsDoc {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		info := KeywordsDoc[k]
+		fmt.Fprintf(stdout, "  %-12s %s\n", k, info.Description)
+	}
+	fmt.Fprintln(stdout, "--------------------------------------------------")
+	fmt.Fprintln(stdout, "使用 'help -k <关键字>' 获取详细用法。")
+	return 0
+}
+
+func showKeywordDetail(key string, stdout io.Writer) int {
+	info, ok := KeywordsDoc[key]
+	if !ok {
+		fmt.Fprintf(stdout, "未找到关键字 '%s' 的文档。\n", key)
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "关键字: %s\n", key)
+	fmt.Fprintf(stdout, "描述:   %s\n", info.Description)
+	fmt.Fprintf(stdout, "用法:   %s\n", info.Usage)
+	fmt.Fprintln(stdout, "详情:")
+	fmt.Fprintf(stdout, "  %s\n", info.Details)
 	return 0
 }
 
