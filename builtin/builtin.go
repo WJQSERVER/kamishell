@@ -50,3 +50,17 @@ func CompleteJob(id int) {
 		job.Status = "Done"
 	}
 }
+
+func PreprocessArgs(args []string) []string {
+	var result []string
+	for _, arg := range args {
+		if len(arg) > 2 && arg[0] == '-' && arg[1] != '-' {
+			for i := 1; i < len(arg); i++ {
+				result = append(result, "-"+string(arg[i]))
+			}
+		} else {
+			result = append(result, arg)
+		}
+	}
+	return result
+}

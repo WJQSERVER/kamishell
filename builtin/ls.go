@@ -14,7 +14,7 @@ func init() {
 }
 
 func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
-	args = preprocessArgs(args)
+	args = PreprocessArgs(args)
 
 	fs := flag.NewFlagSet("ls", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -104,20 +104,6 @@ func printEntry(stdout io.Writer, name string, info os.FileInfo, long, human, cl
 	if long {
 		fmt.Fprintln(stdout)
 	}
-}
-
-func preprocessArgs(args []string) []string {
-	var result []string
-	for _, arg := range args {
-		if len(arg) > 2 && arg[0] == '-' && arg[1] != '-' {
-			for i := 1; i < len(arg); i++ {
-				result = append(result, "-"+string(arg[i]))
-			}
-		} else {
-			result = append(result, arg)
-		}
-	}
-	return result
 }
 
 func formatSize(size int64, human bool) string {
