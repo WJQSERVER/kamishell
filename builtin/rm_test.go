@@ -112,3 +112,51 @@ func TestRmInteractive(t *testing.T) {
 		t.Errorf("file1.txt should have been removed when responding 'y'")
 	}
 }
+
+func TestRmRootProtection(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	// Test rm -rf /
+	code := Rm([]string{"-rf", "/"}, &rmMockEnv{}, nil, os.Stdout, stderr)
+	if code == 0 {
+		t.Errorf("expected error when removing root recursively")
+	}
+	if !strings.Contains(stderr.String(), "dangerous to operate recursively on '/'") {
+		t.Errorf("expected protection message, got: %s", stderr.String())
+	}
+
+	stderr.Reset()
+	// Test rm -rf --no-preserve-root /
+	// We don't want to actually run this if we are root!
+	// But we can check if it passes the protection check.
+	// Actually, the protection check is BEFORE os.Lstat(target).
+	// So if we have --no-preserve-root, it will proceed to os.Lstat("/").
+	// We can't easily mock os.Lstat in this setup without more refactoring.
+	// But we can at least verify that it DOES NOT print the protection message.
+
+	// Let's use a non-existent path that is NOT root to see it proceeds.
+	code = Rm([]string{"-rf", "--no-preserve-root", "/nonexistent_root_test"}, &rmMockEnv{}, nil, os.Stdout, stderr)
+	// It should NOT contain the "dangerous" message.
+	if strings.Contains(stderr.String(), "dangerous to operate recursively on '/'") {
+		t.Errorf("protection message should not appear with --no-preserve-root")
+	}
+}
+
+func TestRmDotProtection(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	code := Rm([]string{"-rf", "."}, &rmMockEnv{}, nil, os.Stdout, stderr)
+	if code == 0 {
+		t.Errorf("expected error when removing '.'")
+	}
+	if !strings.Contains(stderr.String(), "refusing to remove '.' or '..' directory") {
+		t.Errorf("expected dot protection message, got: %s", stderr.String())
+	}
+
+	stderr.Reset()
+	code = Rm([]string{"-rf", ".."}, &rmMockEnv{}, nil, os.Stdout, stderr)
+	if code == 0 {
+		t.Errorf("expected error when removing '..'")
+	}
+	if !strings.Contains(stderr.String(), "refusing to remove '.' or '..' directory") {
+		t.Errorf("expected dot protection message, got: %s", stderr.String())
+	}
+}

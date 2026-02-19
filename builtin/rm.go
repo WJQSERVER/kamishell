@@ -25,6 +25,8 @@ func Rm(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	recursive := fs.Bool("r", false, "remove directories and their contents recursively")
 	recursiveUpper := fs.Bool("R", false, "remove directories and their contents recursively")
 	verbose := fs.Bool("v", false, "explain what is being done")
+	noPreserveRoot := fs.Bool("no-preserve-root", false, "do not treat '/' specially")
+	_ = fs.Bool("preserve-root", true, "do not remove '/' (default)")
 
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -42,6 +44,19 @@ func Rm(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	reader := bufio.NewReader(stdin)
 
 	for _, target := range targets {
+		if target == "." || target == ".." {
+			fmt.Fprintf(stderr, "rm: refusing to remove '.' or '..' directory: skipping '%s'\n", target)
+			exitCode = 1
+			continue
+		}
+
+		if isRecursive && !*noPreserveRoot && isRoot(target) {
+			fmt.Fprintf(stderr, "rm: it is dangerous to operate recursively on '/'\n")
+			fmt.Fprintf(stderr, "rm: use --no-preserve-root to override this failsafe\n")
+			exitCode = 1
+			continue
+		}
+
 		info, err := os.Lstat(target)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -95,6 +110,16 @@ func Rm(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	}
 
 	return exitCode
+}
+
+func isRoot(path string) bool {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	// On Unix-like, VolumeName is empty and root is "/"
+	// On Windows, VolumeName is e.g. "C:" and root is "C:\"
+	return abs == filepath.VolumeName(abs)+string(os.PathSeparator)
 }
 
 func removeRecursiveInteractive(path string, reader *bufio.Reader, stdout, stderr io.Writer, verbose bool) error {
