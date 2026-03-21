@@ -2,10 +2,20 @@ package render
 
 import (
 	"bytes"
+	"github.com/WJQSERVER/readline/internal/buffer"
 	"strings"
 	"testing"
-	"github.com/WJQSERVER/readline/internal/buffer"
 )
+
+type sizedBuffer struct {
+	bytes.Buffer
+	width  int
+	height int
+}
+
+func (s *sizedBuffer) GetSize() (int, int, error) {
+	return s.width, s.height, nil
+}
 
 func TestRenderer_Refresh(t *testing.T) {
 	var buf bytes.Buffer
@@ -41,5 +51,33 @@ func TestStripANSI(t *testing.T) {
 		if got != c.expected {
 			t.Errorf("stripANSI(%q) = %q, expected %q", c.input, got, c.expected)
 		}
+	}
+}
+
+func TestRendererRefreshClearsPreviousWrappedRows(t *testing.T) {
+	out := &sizedBuffer{width: 5, height: 20}
+	r := NewRenderer(out)
+	r.SetPrompt("> ")
+
+	b := buffer.NewBuffer()
+	for _, ch := range "abcdef" {
+		b.Insert(ch)
+	}
+	if err := r.Refresh(b); err != nil {
+		t.Fatalf("first refresh failed: %v", err)
+	}
+
+	out.Reset()
+	b.SetContent("a")
+	if err := r.Refresh(b); err != nil {
+		t.Fatalf("second refresh failed: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "\x1b[1A") {
+		t.Fatalf("expected refresh to move up and clear wrapped rows, got %q", output)
+	}
+	if strings.Count(output, "\x1b[2K") < 2 {
+		t.Fatalf("expected refresh to clear previous wrapped rows, got %q", output)
 	}
 }
