@@ -2,6 +2,8 @@ package make
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -148,5 +150,37 @@ func TestTargetEnvOverridesBuildSnapshotForCommand(t *testing.T) {
 	}
 	if got := targetOutputName(target); got != "kami.exe" {
 		t.Fatalf("expected target_env GOOS override to affect output name, got %q", got)
+	}
+}
+
+func TestMakeUsesSpecifiedFilePath(t *testing.T) {
+	tempDir := t.TempDir()
+	buildFile := filepath.Join(tempDir, "custom_build.km")
+	if err := os.WriteFile(buildFile, []byte("project \"path-script\"\n"), 0o644); err != nil {
+		t.Fatalf("write build file failed: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := Make([]string{buildFile}, core.NewEnvironment(), bytes.NewReader(nil), stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected make to succeed, code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Building project: path-script") {
+		t.Fatalf("expected project from specified file, got stdout=%q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
 	}
 }

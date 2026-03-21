@@ -37,17 +37,9 @@ func main() {
 
 	args := flag.Args()
 	if len(args) > 0 {
-		// If the first argument is a builtin command and NOT a regular file,
-		// run it as a command instead of a script.
-		info, err := os.Stat(args[0])
-		isDir := err == nil && info.IsDir()
-		isFile := err == nil && !isDir
-
-		if !isFile {
-			if _, ok := builtin.Builtins[args[0]]; ok {
-				runBuiltinArgs(args, env)
-				return
-			}
+		if shouldRunAsBuiltin(args[0]) {
+			runBuiltinArgs(args, env)
+			return
 		}
 
 		// Script mode
@@ -57,6 +49,17 @@ func main() {
 		// REPL mode
 		startRepl(env)
 	}
+}
+
+func shouldRunAsBuiltin(name string) bool {
+	info, err := os.Stat(name)
+	isDir := err == nil && info.IsDir()
+	isFile := err == nil && !isDir
+	if isFile {
+		return false
+	}
+	_, ok := builtin.Builtins[name]
+	return ok
 }
 
 func runBuiltinArgs(args []string, env *core.Environment) {
