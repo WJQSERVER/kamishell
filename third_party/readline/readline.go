@@ -29,6 +29,7 @@ type Instance struct {
 	historyIdx int // -1 means current line
 	tempBuffer string
 	closeOnce  sync.Once
+	closed     bool
 }
 
 func NewInstance(cfg *Config) (*Instance, error) {
@@ -53,6 +54,9 @@ func NewInstance(cfg *Config) (*Instance, error) {
 }
 
 func (i *Instance) Readline() (string, error) {
+	if i.isClosed() {
+		return "", ErrEOF
+	}
 	restore, err := i.terminal.SetRaw()
 	if err != nil {
 		return "", err
@@ -149,6 +153,9 @@ func (i *Instance) Readline() (string, error) {
 func (i *Instance) MoveLeft() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return
+	}
 	i.buffer.MoveLeft()
 	i.renderer.Refresh(i.buffer)
 }
@@ -156,6 +163,9 @@ func (i *Instance) MoveLeft() {
 func (i *Instance) MoveRight() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return
+	}
 	i.buffer.MoveRight()
 	i.renderer.Refresh(i.buffer)
 }
@@ -163,6 +173,9 @@ func (i *Instance) MoveRight() {
 func (i *Instance) MoveHome() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return
+	}
 	i.buffer.MoveHome()
 	i.renderer.Refresh(i.buffer)
 }
@@ -170,6 +183,9 @@ func (i *Instance) MoveHome() {
 func (i *Instance) MoveEnd() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return
+	}
 	i.buffer.MoveEnd()
 	i.renderer.Refresh(i.buffer)
 }
@@ -177,6 +193,9 @@ func (i *Instance) MoveEnd() {
 func (i *Instance) InsertRune(r rune) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return
+	}
 	i.buffer.Insert(r)
 	i.renderer.Refresh(i.buffer)
 }
@@ -184,6 +203,9 @@ func (i *Instance) InsertRune(r rune) {
 func (i *Instance) Backspace() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return
+	}
 	i.buffer.Backspace()
 	i.renderer.Refresh(i.buffer)
 }
@@ -191,6 +213,9 @@ func (i *Instance) Backspace() {
 func (i *Instance) Delete() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return
+	}
 	i.buffer.Delete()
 	i.renderer.Refresh(i.buffer)
 }
@@ -238,6 +263,9 @@ func (i *Instance) handleCompletion() {
 
 func (i *Instance) Close() error {
 	i.closeOnce.Do(func() {
+		i.mu.Lock()
+		i.closed = true
+		i.mu.Unlock()
 		if i.parser != nil {
 			_ = i.parser.Close()
 		}
@@ -249,6 +277,9 @@ func (i *Instance) Close() error {
 }
 
 func (i *Instance) NotifyKeyPress(k string) {
+	if i.isClosed() {
+		return
+	}
 	switch k {
 	case "Left":
 		i.MoveLeft()
@@ -273,4 +304,10 @@ func (i *Instance) NotifyKeyPress(k string) {
 	case "Delete":
 		i.Delete()
 	}
+}
+
+func (i *Instance) isClosed() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.closed
 }
