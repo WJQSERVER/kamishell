@@ -2,7 +2,6 @@ package core
 
 import (
 	"strings"
-	"unicode"
 )
 
 type Lexer struct {
@@ -71,41 +70,36 @@ func (l *Lexer) NextToken() Token {
 	switch l.ch {
 	case '=':
 		if l.peekChar() == '=' {
-			ch := l.ch
 			l.readChar()
-			tok = Token{Type: EQ, Literal: string(ch) + string(l.ch)}
+			tok = Token{Type: EQ, Literal: "=="}
 		} else {
 			tok = newToken(ASSIGN, l.ch)
 		}
 	case ':':
 		if l.peekChar() == '=' {
-			ch := l.ch
 			l.readChar()
-			tok = Token{Type: COLON_ASSIGN, Literal: string(ch) + string(l.ch)}
+			tok = Token{Type: COLON_ASSIGN, Literal: ":="}
 		} else {
 			tok = newToken(ILLEGAL, l.ch)
 		}
 	case '|':
 		if l.peekChar() == '|' {
-			ch := l.ch
 			l.readChar()
-			tok = Token{Type: OR, Literal: string(ch) + string(l.ch)}
+			tok = Token{Type: OR, Literal: "||"}
 		} else {
 			tok = newToken(PIPE, l.ch)
 		}
 	case '&':
 		if l.peekChar() == '&' {
-			ch := l.ch
 			l.readChar()
-			tok = Token{Type: AND, Literal: string(ch) + string(l.ch)}
+			tok = Token{Type: AND, Literal: "&&"}
 		} else {
 			tok = newToken(AMPERSAND, l.ch)
 		}
 	case '>':
 		if l.peekChar() == '>' {
-			ch := l.ch
 			l.readChar()
-			tok = Token{Type: APPEND, Literal: string(ch) + string(l.ch)}
+			tok = Token{Type: APPEND, Literal: ">>"}
 		} else {
 			tok = newToken(GREATER, l.ch)
 		}
@@ -113,9 +107,8 @@ func (l *Lexer) NextToken() Token {
 		tok = newToken(LESS, l.ch)
 	case '!':
 		if l.peekChar() == '=' {
-			ch := l.ch
 			l.readChar()
-			tok = Token{Type: NEQ, Literal: string(ch) + string(l.ch)}
+			tok = Token{Type: NEQ, Literal: "!="}
 		} else {
 			tok = newToken(NOT, l.ch)
 		}
@@ -224,12 +217,18 @@ func (l *Lexer) readNumber() string {
 func (l *Lexer) readString() string {
 	position := l.position + 1
 	var out strings.Builder
+	hasEscape := false
 	for {
 		l.readChar()
 		if l.ch == '"' || l.ch == 0 {
 			break
 		}
 		if l.ch == '\\' {
+			hasEscape = true
+			if out.Cap() == 0 {
+				out.Grow(l.position - position)
+				out.WriteString(l.input[position:l.position])
+			}
 			l.readChar()
 			switch l.ch {
 			case 'n':
@@ -246,11 +245,11 @@ func (l *Lexer) readString() string {
 				out.WriteByte('\\')
 				out.WriteByte(l.ch)
 			}
-		} else {
+		} else if hasEscape {
 			out.WriteByte(l.ch)
 		}
 	}
-	if out.Len() > 0 {
+	if hasEscape {
 		return out.String()
 	}
 	return l.input[position:l.position]
@@ -264,13 +263,56 @@ func (l *Lexer) peekChar() byte {
 }
 
 func newToken(tokenType TokenType, ch byte) Token {
-	return Token{Type: tokenType, Literal: string(ch)}
+	return Token{Type: tokenType, Literal: singleByteLiteral(ch)}
 }
 
 func isLetter(ch byte) bool {
-	return unicode.IsLetter(rune(ch)) || ch == '_' || ch == '-' || ch == '/'
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '-' || ch == '/'
 }
 
 func isDigit(ch byte) bool {
-	return unicode.IsDigit(rune(ch))
+	return ch >= '0' && ch <= '9'
+}
+
+func singleByteLiteral(ch byte) string {
+	switch ch {
+	case '=':
+		return "="
+	case '|':
+		return "|"
+	case '>':
+		return ">"
+	case '<':
+		return "<"
+	case '&':
+		return "&"
+	case '!':
+		return "!"
+	case '+':
+		return "+"
+	case ';':
+		return ";"
+	case ',':
+		return ","
+	case '.':
+		return "."
+	case '(':
+		return "("
+	case ')':
+		return ")"
+	case '{':
+		return "{"
+	case '}':
+		return "}"
+	case '$':
+		return "$"
+	case ':':
+		return ":"
+	case '/':
+		return "/"
+	case '"':
+		return "\""
+	default:
+		return string(ch)
+	}
 }

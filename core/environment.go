@@ -37,11 +37,16 @@ type Environment struct {
 	packageStore map[string]map[string]string
 }
 
-func (e *Environment) Get(name string) (interface{}, bool) {
+func (e *Environment) GetObject(name string) (Object, bool) {
 	obj, ok := e.store[name]
 	if !ok && e.outer != nil {
-		return e.outer.Get(name)
+		return e.outer.GetObject(name)
 	}
+	return obj, ok
+}
+
+func (e *Environment) Get(name string) (interface{}, bool) {
+	obj, ok := e.GetObject(name)
 	return obj, ok
 }
 

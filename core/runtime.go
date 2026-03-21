@@ -143,7 +143,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return executeCommand(node.Name, node.Arguments, env, stdin, stdout, stderr)
 	case *PrintStatement:
 		val := EvalWithIO(node.Expression, env, stdin, stdout, stderr)
-		fmt.Fprintln(stdout, val.Inspect())
+		fmt.Fprintln(stdout, inspectObject(val))
 		return NULL
 	case *ExecStatement:
 		return evalExecStatement(node, env, stdin, stdout, stderr)
@@ -151,10 +151,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalIdentifier(node, env)
 	case *StringLiteral:
 		return &String{Value: os.Expand(node.Value, func(name string) string {
-			if val, ok := env.Get(name); ok {
-				if obj, ok := val.(Object); ok {
-					return obj.Inspect()
-				}
+			if obj, ok := env.GetObject(name); ok {
+				return inspectObject(obj)
 			}
 			return os.Getenv(name)
 		})}
@@ -224,7 +222,7 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 func evalInfixExpression(operator string, left, right Object) Object {
 	if operator == "+" {
 		if left.Type() == STRING_OBJ || right.Type() == STRING_OBJ {
-			return &String{Value: left.Inspect() + right.Inspect()}
+			return &String{Value: inspectObject(left) + inspectObject(right)}
 		}
 	}
 
@@ -232,9 +230,9 @@ func evalInfixExpression(operator string, left, right Object) Object {
 	case left.Type() == INTEGER_OBJ && right.Type() == INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
 	case operator == "==":
-		return nativeBoolToBooleanObject(left.Inspect() == right.Inspect())
+		return nativeBoolToBooleanObject(inspectObject(left) == inspectObject(right))
 	case operator == "!=":
-		return nativeBoolToBooleanObject(left.Inspect() != right.Inspect())
+		return nativeBoolToBooleanObject(inspectObject(left) != inspectObject(right))
 	case left.Type() != right.Type():
 		return &Error{Message: fmt.Sprintf("type mismatch: %s %s %s", left.Type(), operator, right.Type())}
 	default:
@@ -385,7 +383,7 @@ func isTruthy(obj Object) bool {
 
 func executeCommand(name string, args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	// Eval arguments first
-	evaledArgs := []Object{}
+	evaledArgs := make([]Object, 0, len(args))
 	for _, arg := range args {
 		val := EvalWithIO(arg, env, stdin, stdout, stderr)
 		if isError(val) {
@@ -400,13 +398,10 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	}
 
 	// 2. Check for user-defined functions or native functions in env
-	if val, ok := env.Get(name); ok {
+	if val, ok := env.GetObject(name); ok {
 		if fn, ok := val.(*Function); ok {
 			// Convert []Object to []string for user funcs
-			strArgs := make([]string, len(evaledArgs))
-			for i, arg := range evaledArgs {
-				strArgs[i] = arg.Inspect()
-			}
+			strArgs := inspectObjects(evaledArgs)
 			return applyFunction(fn, strArgs, env, stdin, stdout, stderr)
 		}
 		if fn, ok := val.(*NativeFunction); ok {
@@ -415,10 +410,7 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	}
 
 	// Convert []Object to []string for builtins and external commands
-	strArgs := make([]string, len(evaledArgs))
-	for i, arg := range evaledArgs {
-		strArgs[i] = arg.Inspect()
-	}
+	strArgs := inspectObjects(evaledArgs)
 
 	// 3. Check for builtins
 	if cmd, ok := builtin.Builtins[name]; ok {
@@ -445,20 +437,31 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 }
 
 func evalMemberExpression(node *MemberExpression, env *Environment) Object {
+	if ident, ok := node.Object.(*Identifier); ok && ident.Value == "env" {
+		name := "env." + node.Property.Value
+		if fn, ok := NativeFns[name]; ok {
+			return fn
+		}
+		if val, ok := env.GetObject(name); ok {
+			return val
+		}
+		return &Error{Message: "member not found: " + name}
+	}
+
 	left := EvalWithIO(node.Object, env, os.Stdin, os.Stdout, os.Stderr)
 	if isError(left) {
 		return left
 	}
 
-	name := left.Inspect() + "." + node.Property.Value
+	name := inspectObject(left) + "." + node.Property.Value
 	if fn, ok := NativeFns[name]; ok {
 		return fn
 	}
-	if val, ok := env.Get(name); ok {
-		return val.(Object)
+	if val, ok := env.GetObject(name); ok {
+		return val
 	}
 
-	return &Error{Message: fmt.Sprintf("member not found: %s", name)}
+	return &Error{Message: "member not found: " + name}
 }
 
 func evalCallExpression(node *CallExpression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
@@ -480,10 +483,7 @@ func evalCallExpression(node *CallExpression, env *Environment, stdin io.Reader,
 	case *NativeFunction:
 		return fn.Fn(env, args...)
 	case *Function:
-		strArgs := make([]string, len(args))
-		for i, arg := range args {
-			strArgs[i] = arg.Inspect()
-		}
+		strArgs := inspectObjects(args)
 		return applyFunction(fn, strArgs, env, stdin, stdout, stderr)
 	default:
 		return &Error{Message: fmt.Sprintf("not callable: %s", function.Type())}
@@ -495,7 +495,7 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 	// We need to handle native/user functions with evaluated objects.
 	// For simplicity, let's keep the string-based logic for now.
 
-	if val, ok := env.Get(name); ok {
+	if val, ok := env.GetObject(name); ok {
 		if fn, ok := val.(*Function); ok {
 			return applyFunction(fn, args, env, stdin, stdout, stderr)
 		}
@@ -530,11 +530,11 @@ func evalIdentifier(node *Identifier, env *Environment) Object {
 	if fn, ok := NativeFns[node.Value]; ok {
 		return fn
 	}
-	val, ok := env.Get(node.Value)
+	val, ok := env.GetObject(node.Value)
 	if !ok {
-		return &Error{Message: fmt.Sprintf("identifier not found: %s", node.Value)}
+		return &Error{Message: "identifier not found: " + node.Value}
 	}
-	return val.(Object)
+	return val
 }
 
 func nativeBoolToBooleanObject(input bool) *Boolean {
@@ -554,10 +554,61 @@ func isError(obj Object) bool {
 func objectToScriptString(obj Object) (string, bool) {
 	switch obj.Type() {
 	case STRING_OBJ, INTEGER_OBJ, BOOLEAN_OBJ, NULL_OBJ:
-		return obj.Inspect(), true
+		return inspectObject(obj), true
 	default:
 		return "", false
 	}
+}
+
+func inspectObjects(args []Object) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	values := make([]string, len(args))
+	for i, arg := range args {
+		values[i] = inspectObject(arg)
+	}
+	return values
+}
+
+func inspectObject(obj Object) string {
+	switch v := obj.(type) {
+	case *String:
+		return v.Value
+	case *Integer:
+		return integerToString(v.Value)
+	case *Boolean:
+		if v.Value {
+			return "true"
+		}
+		return "false"
+	case *Null:
+		return "nil"
+	default:
+		return obj.Inspect()
+	}
+}
+
+func integerToString(value int64) string {
+	if value == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	idx := len(buf)
+	negative := value < 0
+	if negative {
+		value = -value
+	}
+	for value > 0 {
+		idx--
+		buf[idx] = byte('0' + value%10)
+		value /= 10
+	}
+	if negative {
+		idx--
+		buf[idx] = '-'
+	}
+	return string(buf[idx:])
 }
 
 func evalLogicalStatement(ls *LogicalStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {

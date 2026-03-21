@@ -1,6 +1,6 @@
 package core
 
-import "fmt"
+import "strconv"
 
 type ObjectType string
 
@@ -23,14 +23,19 @@ type Integer struct {
 	Value int64
 }
 
-func (i *Integer) Inspect() string  { return fmt.Sprintf("%d", i.Value) }
+func (i *Integer) Inspect() string  { return strconv.FormatInt(i.Value, 10) }
 func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
 
 type Boolean struct {
 	Value bool
 }
 
-func (b *Boolean) Inspect() string  { return fmt.Sprintf("%t", b.Value) }
+func (b *Boolean) Inspect() string {
+	if b.Value {
+		return "true"
+	}
+	return "false"
+}
 func (b *Boolean) Type() ObjectType { return BOOLEAN_OBJ }
 
 type String struct {
@@ -53,7 +58,7 @@ type Error struct {
 
 func (e *Error) Inspect() string {
 	if e.Op != "" {
-		return fmt.Sprintf("ERROR (%s): %s (code: %d)", e.Op, e.Message, e.Code)
+		return "ERROR (" + e.Op + "): " + e.Message + " (code: " + strconv.Itoa(e.Code) + ")"
 	}
 	return "ERROR: " + e.Message
 }
