@@ -2,6 +2,7 @@ package core
 
 import (
 	"strconv"
+	"strings"
 )
 
 const (
@@ -365,11 +366,16 @@ func (p *Parser) parseIntegerLiteral() Expression {
 	lit := &IntegerLiteral{Token: p.curToken}
 	val, _ := strconv.ParseInt(p.curToken.Literal, 0, 64)
 	lit.Value = val
+	lit.Obj = getIntegerObject(val)
 	return lit
 }
 
 func (p *Parser) parseStringLiteral() Expression {
-	return &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+	lit := &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+	if strings.IndexByte(lit.Value, '$') < 0 {
+		lit.Obj = &String{Value: lit.Value}
+	}
+	return lit
 }
 
 func (p *Parser) parseNilLiteral() Expression {

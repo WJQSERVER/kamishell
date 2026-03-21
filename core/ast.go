@@ -107,6 +107,7 @@ func (i *Identifier) String() string       { return i.Value }
 type StringLiteral struct {
 	Token Token
 	Value string
+	Obj   *String
 }
 
 func (sl *StringLiteral) expressionNode()      {}
@@ -116,6 +117,7 @@ func (sl *StringLiteral) String() string       { return "\"" + sl.Value + "\"" }
 type IntegerLiteral struct {
 	Token Token
 	Value int64
+	Obj   *Integer
 }
 
 func (il *IntegerLiteral) expressionNode()      {}

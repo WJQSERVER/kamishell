@@ -11,9 +11,10 @@ import (
 )
 
 var (
-	NULL  = &Null{}
-	TRUE  = &Boolean{Value: true}
-	FALSE = &Boolean{Value: false}
+	NULL   = &Null{}
+	TRUE   = &Boolean{Value: true}
+	FALSE  = &Boolean{Value: false}
+	ENVPKG = &Package{Name: "env"}
 )
 
 var NativeFns = make(map[string]*NativeFunction)
@@ -150,6 +151,9 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *Identifier:
 		return evalIdentifier(node, env)
 	case *StringLiteral:
+		if node.Obj != nil && strings.IndexByte(node.Value, '$') < 0 {
+			return node.Obj
+		}
 		return &String{Value: os.Expand(node.Value, func(name string) string {
 			if obj, ok := env.GetObject(name); ok {
 				return inspectObject(obj)
@@ -157,7 +161,10 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return os.Getenv(name)
 		})}
 	case *IntegerLiteral:
-		return &Integer{Value: node.Value}
+		if node.Obj != nil {
+			return node.Obj
+		}
+		return getIntegerObject(node.Value)
 	case *NilLiteral:
 		return NULL
 	case *BooleanLiteral:
@@ -254,7 +261,7 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 	case "<":
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case "+":
-		return &Integer{Value: leftVal + rightVal}
+		return getIntegerObject(leftVal + rightVal)
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
@@ -525,7 +532,7 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 
 func evalIdentifier(node *Identifier, env *Environment) Object {
 	if node.Value == "env" {
-		return &Package{Name: "env"}
+		return ENVPKG
 	}
 	if fn, ok := NativeFns[node.Value]; ok {
 		return fn
@@ -706,7 +713,7 @@ func mapTypeName(name string) ObjectType {
 func zeroValueForType(typeName ObjectType) Object {
 	switch typeName {
 	case INTEGER_OBJ:
-		return &Integer{Value: 0}
+		return getIntegerObject(0)
 	case STRING_OBJ:
 		return &String{Value: ""}
 	case BOOLEAN_OBJ:

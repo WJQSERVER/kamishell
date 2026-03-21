@@ -22,6 +22,10 @@ func BenchmarkEvalEnvPackageProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `env.Set("GOOS", "linux"); env.Get("GOOS")`)
 }
 
+func BenchmarkEvalLiteralHeavyProgram(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 100 { print "tick"; i = i + 1 }`)
+}
+
 func BenchmarkEvalPipelineProgram(b *testing.B) {
 	benchmarkEvalProgram(b, "print \"line1\\nline2\" | cat")
 }

@@ -26,6 +26,29 @@ type Integer struct {
 func (i *Integer) Inspect() string  { return strconv.FormatInt(i.Value, 10) }
 func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
 
+const (
+	integerCacheMin int64 = -128
+	integerCacheMax int64 = 1024
+)
+
+var integerCache = initIntegerCache()
+
+func initIntegerCache() []*Integer {
+	size := integerCacheMax - integerCacheMin + 1
+	cache := make([]*Integer, size)
+	for i := range cache {
+		cache[i] = &Integer{Value: integerCacheMin + int64(i)}
+	}
+	return cache
+}
+
+func getIntegerObject(value int64) *Integer {
+	if value >= integerCacheMin && value <= integerCacheMax {
+		return integerCache[value-integerCacheMin]
+	}
+	return &Integer{Value: value}
+}
+
 type Boolean struct {
 	Value bool
 }
