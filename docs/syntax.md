@@ -1,216 +1,423 @@
-# Kamishell 完整语法参考手册
+# Kamishell 当前语法与关键字参考
 
-Kamishell 是一种兼具传统 Shell 简洁性与现代编程语言（如 Go）严谨性的混合型 Shell 环境。本文档详细介绍了 Kamishell 支持的所有语法特性。
+这份文档描述的是 Kamishell **当前代码实际支持** 的语法与关键字，而不是理想设计或长期规划。
 
----
+如果某个能力仍在规划中，本文会明确标记为“未实现”或“部分实现”。
 
-## 1. 基础语法
+## 1. 语言定位
+
+Kamishell 是一种混合型 Shell 语言：
+
+- 可以像传统 Shell 一样直接执行命令、管道、重定向
+- 也可以像轻量脚本语言一样写变量、条件、循环、函数
+- 在 `.km` 构建脚本里还能作为 `make` DSL 使用
+
+## 2. 基础语法
 
 ### 注释
-Kamishell 支持两种风格的注释：
-- **单行注释**: 使用 `//`
-- **多行注释**: 使用 `/* ... */`
+
+支持两种注释：
+
+- 单行注释：`// ...`
+- 多行注释：`/* ... */`
 
 ```go
-// 这是一个单行注释
-x := 10 /* 这是一个
-          多行注释 */
+// 这是单行注释
+x := 10 /* 这是
+一个多行注释 */
 ```
 
 ### 语句分隔
-Kamishell 能够智能识别行尾作为语句结束。你也可以使用分号 `;` 在同一行编写多个语句。
-```bash
-ls -la; echo "Done"
-```
 
----
+支持两种方式：
 
-## 2. 数据类型与变量
-
-### 变量声明与赋值
-- **声明并初始化**: 使用 `:=`（自动类型推断）。
-- **重新赋值**: 使用 `=`。
-- **显式声明**: 使用 `var`，可选类型约束与初始值。
+- 换行
+- 分号 `;`
 
 ```go
-name := "Kamishell" // String
-count := 42         // Integer
-isActive := true    // Boolean
-data := nil         // Nil
+x := 1
+y := 2
 
-var retries int = 3
-var title string
-var ready bool
+name := "kami"; print name
 ```
 
-### `var` 与类型系统
-- `var name type = value`: 显式声明并校验类型。
-- `var name type`: 生成该类型的零值。
-- `:=`: 在当前作用域声明变量，并记录推断出的类型。
-- `=`: 优先更新最近作用域中的同名变量，并保持其原有类型约束。
-- `nil` 是运行时空值，不会被记录为变量的静态类型。
+## 3. 数据类型
 
-当前内置基础类型与零值：
-- `int` / `integer` -> `0`
-- `string` -> `""`
-- `bool` / `boolean` -> `false`
+当前运行时核心对象类型：
+
+- `INTEGER`
+- `STRING`
+- `BOOLEAN`
+- `FUNCTION`
+- `NULL`，源码字面量写作 `nil`
+- `ERROR`
+- `PACKAGE`，目前主要用于脚本内 `env` 包
+
+### 字面量
+
+```go
+1
+"hello"
+true
+false
+nil
+```
+
+### 当前变量静态类型约束
+
+显式和推断出的变量类型目前主要支持：
+
+- `int` / `integer`
+- `string`
+- `bool` / `boolean`
+
+注意：
+
+- `nil` 是运行时空值，不会被记录为变量静态类型
+- 所以 `x := nil; x = 1` 是允许的
+
+## 4. 变量与赋值
+
+### `:=` 短变量声明
+
+在当前作用域声明变量并赋值，同时记录推断出的类型。
+
+```go
+x := 10
+name := "kami"
+ready := true
+```
+
+### `=` 赋值
+
+给已有变量重新赋值。
+
+当前语义：
+
+- 优先更新最近作用域中的同名变量
+- 如果该变量有类型约束，则新值必须匹配
+
+```go
+x := 1
+x = 2
+```
+
+### `var` 显式声明
+
+`var` 支持：
+
+- 仅声明类型
+- 声明类型并初始化
+- 不写类型、只给初始值
 
 ```go
 var count int
-print count      // 0
-
 var name string
-print name       // 空字符串
-
 var ready bool
-print ready      // false
 
+var retries int = 3
+var title = "kami"
+```
+
+### 零值规则
+
+如果 `var` 只写类型不写初始值，则会生成零值：
+
+- `int` -> `0`
+- `string` -> `""`
+- `bool` -> `false`
+
+```go
+var count int
+print count   // 0
+
+var title string
+print title   // 空字符串
+
+var ok bool
+print ok      // false
+```
+
+### `nil` 与变量类型
+
+`nil` 只是空值，不是变量静态类型。
+
+```go
 x := nil
-x = 1            // 允许，nil 不会把 x 锁定为 NULL 类型
+x = 1
+
+var y = nil
+y = true
 ```
 
-### 变量插值
-在双引号字符串中，可以使用 `$变量名` 或 `${变量名}` 语法插入变量值。
+## 5. 字符串与插值
+
+### 字符串字面量
+
 ```go
-user := "Admin"
-echo "Welcome, $user!"
-echo "Path: ${HOME}/bin"
+msg := "hello"
 ```
 
----
+### 插值
 
-## 3. 命令执行与流程控制
+支持在字符串中用 `$变量名` 读取变量值：
 
-### 外部命令执行
-直接输入命令及其参数即可。Kamishell 会自动在系统 `PATH` 中搜索对应的可执行文件。
-```bash
-git status
-go build -o app main.go
-```
-
-### 逻辑运算符 (Command Chaining)
-- `&&`: 前一个命令成功（退出码为 0）时执行。
-- `||`: 前一个命令失败（退出码非 0）时执行。
-
-```bash
-mkdir build && cd build
-ls /root || echo "Access denied"
-```
-
-### 管道与重定向
-- **管道 (`|`)**: 将前一命令的输出作为后一命令的输入。
-- **重定向 (`>`, `>>`)**: 覆盖写入或追加写入到文件。
-
-```bash
-cat logs.txt | grep "Error" | wc -l
-echo "Initial config" > config.yaml
-echo "New line" >> config.yaml
-```
-
----
-
-## 4. 控制结构
-
-### 条件判断 (If-Else)
-条件不需要括号，但大括号 `{` 必须与 `if`/`else` 在同一行。
 ```go
-score := 85
-if score >= 60 {
-    echo "Passed"
-} else {
-    echo "Failed"
+name := "kami"
+print "hello $name"
+```
+
+也支持独立插值：
+
+```go
+print $name
+```
+
+### 环境变量回退
+
+如果当前脚本变量中找不到某个名字，字符串展开时会继续尝试读取系统环境变量。
+
+```go
+print $PATH
+```
+
+### 转义字符
+
+当前支持常见转义：
+
+- `\n`
+- `\t`
+- `\r`
+- `\"`
+- `\\`
+
+## 6. 表达式
+
+当前已实现的核心表达式：
+
+- 加法 / 字符串拼接：`+`
+- 等于：`==`
+- 不等于：`!=`
+- 大于：`>`
+- 小于：`<`
+- 括号分组：`( ... )`
+
+```go
+x := 10 + 20
+print x
+
+if x == 30 {
+    print "ok"
 }
 ```
 
-### 循环 (For)
-Kamishell 提供了灵活的 `for` 循环：
-- **条件循环**:
+### 拼接规则
+
+`+` 在当前语义下：
+
+- 两边都是整数时做整数加法
+- 任一边是字符串时做字符串拼接
+
+```go
+print 1 + 2
+print "hello " + "kami"
+print "count=" + 3
+```
+
+## 7. 控制结构
+
+### `if` / `else`
+
+```go
+x := 10
+if x > 5 {
+    print "high"
+} else {
+    print "low"
+}
+```
+
+说明：
+
+- 条件不需要括号
+- 块必须使用 `{ ... }`
+- `else` 可选
+
+### `for`
+
+当前支持：
+
+- 条件循环
+- 无限循环
+
 ```go
 i := 0
-for i < 5 {
-    echo "Count: $i"
+for i < 3 {
+    print i
     i = i + 1
 }
 ```
-- **无限循环**:
+
 ```go
 for {
-    // 使用 break 退出
-    if some_condition { break }
+    print "loop"
 }
 ```
 
----
+## 8. 函数
 
-## 5. 函数定义与调用
-
-函数使用 `func` 关键字定义，支持参数传递和词法作用域。
+### `func` 定义函数
 
 ```go
-func say_hello(name, times) {
-    i := 0
-    for i < times {
-        echo "Hello, $name! (count: $i)"
-        i = i + 1
-    }
+func greet(name) {
+    print "hello " + name
 }
-
-say_hello "User" 3
 ```
 
----
+### 调用函数
 
-## 6. 异步与并发执行
+当前常见可用形式：
 
-Kamishell 结合了 Shell 的便捷与 Go 的并发特性：
-- **后台运行 (`&`)**: 传统的 Shell 后台执行。
-- **并发块 (`go`)**: 类似于 Go 语言的 goroutine，可以异步运行代码块。
+- 表达式调用：`greet("kami")`
+- 命令式调用：`greet "kami"`
+
+```go
+func greet(name) {
+    print name
+}
+
+greet("kami")
+greet "shell"
+```
+
+### 作用域
+
+函数支持词法作用域，可以读取外层变量，也可以更新最近作用域中的同名变量。
+
+```go
+x := 1
+
+func update() {
+    x = 2
+}
+
+update()
+print x
+```
+
+## 9. 命令执行
+
+### 直接命令执行
+
+输入命令名和参数即可执行。
 
 ```bash
-# Shell 风格
-long_task &
-
-# Go 风格
-go {
-    sleep 5
-    echo "Background process finished"
-}
+ls -la
+pwd
+go build
 ```
 
----
+### 命令查找顺序
 
-## 7. 错误处理
+当前大致按以下顺序解析：
 
-Kamishell 内置了一个全局变量 `err`，它保存了最近一次执行命令的错误信息。
+1. 原生函数
+2. 用户定义函数 / 环境中的可调用对象
+3. 内置命令
+4. 系统 PATH 下的外部命令
 
-```go
-rm "/protected/file"
-if err != nil {
-    echo "Error occurred!"
-    echo "Message: " + err.Message
-    echo "Exit Code: " + err.Code
-}
-```
+### `exec`
 
----
+把字符串强制当命令执行，适合处理关键字冲突或动态拼接命令。
 
-## 8. 进阶特性
-
-### 强制执行 (`exec`)
-当你的命令名称与 Kamishell 的关键字（如 `if`, `for`, `func`）冲突时，使用 `exec`：
 ```go
 exec "go run main.go"
 ```
 
-### 环境变元访问
-可以直接访问系统环境变量：
-```go
-echo $PATH
-HOME_DIR := $HOME
+## 10. 管道、重定向与逻辑链
+
+### `|` 管道
+
+```bash
+print "line1\nline2" | cat
 ```
 
-### 脚本内 `env` 包
-Kamishell 还提供脚本级的 `env` 包，用于保存脚本内部的键值状态，不会与普通变量混用。
+### `>` 覆盖重定向
+
+```bash
+print "hello" > "out.txt"
+```
+
+### `>>` 追加重定向
+
+```bash
+print "hello" >> "out.txt"
+```
+
+### `&&` 逻辑与命令链
+
+```bash
+mkdir build && cd build
+```
+
+### `||` 逻辑或命令链
+
+```bash
+ls missing || print "not found"
+```
+
+## 11. 并发与后台执行
+
+### `&` 后台执行
+
+把当前语句放到后台执行。
+
+```bash
+sleep 10 &
+```
+
+### `go`
+
+以 goroutine 风格异步执行命令或代码块。
+
+```go
+go {
+    print "async"
+}
+```
+
+```go
+go sleep 5
+```
+
+## 12. 错误处理
+
+运行时会维护一个特殊变量 `err`。
+
+- 上一次执行失败时，`err` 是一个错误对象
+- 成功时，`err` 为 `nil`
+
+```go
+ls missing_file
+if err != nil {
+    print err
+}
+```
+
+注意：
+
+- 目前 `err` 作为变量可用
+- 但像 `err.Message` 这种通用对象字段访问，目前还不是完整对象系统的一部分，文档里不要把它当成稳定能力依赖
+
+## 13. 脚本内 `env` 包
+
+当前内置了脚本级 `env` 包，用来保存脚本内部键值状态，不和普通变量混用。
+
+### 已实现函数
+
+- `env.Set("KEY", "VALUE")`
+- `env.Get("KEY")`
+- `env.Unset("KEY")`
 
 ```go
 env.Set("GOOS", "linux")
@@ -218,14 +425,131 @@ print env.Get("GOOS")
 env.Unset("GOOS")
 ```
 
-这套作用域特别适合 `make` 构建变量、脚本内部配置和目标级参数传递。
+这个作用域特别适合：
 
----
+- 构建变量
+- 脚本内部配置
+- `.km` 中的目标级参数传递
 
-## 9. 转义字符
+## 14. `.km` / make DSL
 
-在字符串中支持常见的转义序列：
-- `\n`: 换行
-- `\t`: 制表符
-- `\"`: 双引号
-- `\\`: 反斜杠
+Kamishell 内置了 `make` 构建系统，使用 `.km` 脚本。
+
+### 入口命令
+
+```bash
+make
+make build.km
+```
+
+### 已实现关键字
+
+- `project`
+- `add_executable`
+- `add_library`
+- `target_link_libraries`
+- `target_env`
+
+### 示例
+
+```go
+project "Demo"
+
+env.Set("GOOS", "linux")
+env.Set("GOARCH", "amd64")
+
+add_executable "app" "main.go"
+target_env "app" "CGO_ENABLED=0"
+```
+
+更详细的构建说明见 `docs/make.md`。
+
+## 15. 当前关键字总览
+
+### 已实现关键字
+
+- `if`
+- `else`
+- `for`
+- `func`
+- `go`
+- `var`
+- `print`
+- `exec`
+- `nil`
+- `true`
+- `false`
+
+### 已实现的重要符号/操作符
+
+- `:=`
+- `=`
+- `+`
+- `==`
+- `!=`
+- `>`
+- `<`
+- `|`
+- `>>`
+- `&&`
+- `||`
+- `&`
+- `$`
+- `.`
+- `,`
+- `;`
+- `(` `)` `{` `}`
+
+### make 相关关键字
+
+- `make`
+- `project`
+- `add_executable`
+- `add_library`
+- `target_link_libraries`
+- `target_env`
+
+## 16. 当前未实现或未完整实现
+
+下面这些名字可能出现在文档、帮助系统或规划里，但当前不能当成稳定能力使用：
+
+- `return`
+- `range`
+- `const`
+- `import`
+- `break`
+- `continue`
+- `>=`
+- `<=`
+- `-`
+- `*`
+- `/`
+- 通用对象字段访问
+- 完整集合类型（数组、map 等）
+
+## 17. 一个当前真实可用的例子
+
+```go
+var count int
+name := "kami"
+
+env.Set("GOOS", "linux")
+
+func greet(user) {
+    if user == "kami" {
+        print "hello " + user
+    } else {
+        print "unknown"
+    }
+}
+
+greet(name)
+
+i := 0
+for i < 3 {
+    print i
+    i = i + 1
+}
+
+print env.Get("GOOS")
+```
