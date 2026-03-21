@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	chreadline "github.com/chzyer/readline"
 	wjqreadline "github.com/WJQSERVER/readline"
+	chreadline "github.com/chzyer/readline"
+	"kamishell/builtin"
 	"kamishell/core"
 	"kamishell/make"
-	"kamishell/builtin"
 )
 
 func init() {
@@ -45,7 +45,7 @@ func main() {
 
 		if !isFile {
 			if _, ok := builtin.Builtins[args[0]]; ok {
-				runInput(strings.Join(args, " "), env, false)
+				runBuiltinArgs(args, env)
 				return
 			}
 		}
@@ -56,6 +56,23 @@ func main() {
 	} else {
 		// REPL mode
 		startRepl(env)
+	}
+}
+
+func runBuiltinArgs(args []string, env *core.Environment) {
+	if len(args) == 0 {
+		return
+	}
+
+	cmd, ok := builtin.Builtins[args[0]]
+	if !ok {
+		runInput(strings.Join(args, " "), env, false)
+		return
+	}
+
+	exitCode := cmd.Action(args[1:], env, os.Stdin, os.Stdout, os.Stderr)
+	if exitCode != 0 {
+		fmt.Fprintf(os.Stderr, "ERROR (%s): builtin %s failed (code: %d)\n", cmd.Name, cmd.Name, exitCode)
 	}
 }
 
@@ -201,4 +218,3 @@ func (h *WjqFileHistory) Append(line string) {
 		f.WriteString(line + "\n")
 	}
 }
-
