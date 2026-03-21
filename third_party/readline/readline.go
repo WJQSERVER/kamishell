@@ -1,15 +1,16 @@
 package readline
 
 import (
-	"runtime"
-	"time"
 	"errors"
-	"io"
-	"sync"
 	"github.com/WJQSERVER/readline/internal/buffer"
 	"github.com/WJQSERVER/readline/internal/input"
 	"github.com/WJQSERVER/readline/internal/render"
 	"github.com/WJQSERVER/readline/internal/term"
+	"io"
+	"os"
+	"runtime"
+	"sync"
+	"time"
 )
 
 var (
@@ -27,6 +28,7 @@ type Instance struct {
 
 	historyIdx int // -1 means current line
 	tempBuffer string
+	closeOnce  sync.Once
 }
 
 func NewInstance(cfg *Config) (*Instance, error) {
@@ -41,11 +43,11 @@ func NewInstance(cfg *Config) (*Instance, error) {
 	}
 
 	return &Instance{
-		cfg:      cfg,
-		terminal: t,
-		buffer:   buffer.NewBuffer(),
-		renderer: render.NewRenderer(t),
-		parser:   input.NewParser(t),
+		cfg:        cfg,
+		terminal:   t,
+		buffer:     buffer.NewBuffer(),
+		renderer:   render.NewRenderer(t),
+		parser:     input.NewParser(t),
 		historyIdx: -1,
 	}, nil
 }
@@ -235,6 +237,14 @@ func (i *Instance) handleCompletion() {
 }
 
 func (i *Instance) Close() error {
+	i.closeOnce.Do(func() {
+		if i.parser != nil {
+			_ = i.parser.Close()
+		}
+		if i.cfg != nil && i.cfg.Stdin != nil && i.cfg.Stdin != os.Stdin {
+			_ = i.cfg.Stdin.Close()
+		}
+	})
 	return nil
 }
 

@@ -42,3 +42,17 @@ func TestParser_CtrlDelete(t *testing.T) {
 		t.Errorf("expected KeyCtrlDelete, got %v", ev.Key)
 	}
 }
+
+func TestParserCloseUnblocksNextEvent(t *testing.T) {
+	p := NewParser(bytes.NewReader(nil))
+	if err := p.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("second close failed: %v", err)
+	}
+	_, err := p.NextEvent()
+	if err == nil {
+		t.Fatal("expected EOF after parser close")
+	}
+}

@@ -2,9 +2,13 @@ package input
 
 import (
 	"bufio"
+	"errors"
 	"io"
+	"sync"
 	"time"
 )
+
+var errParserClosed = errors.New("parser closed")
 
 type Key int
 
@@ -47,8 +51,10 @@ type InputEvent struct {
 }
 
 type Parser struct {
-	reader  *bufio.Reader
-	results chan readResult
+	reader    *bufio.Reader
+	results   chan readResult
+	closed    chan struct{}
+	closeOnce sync.Once
 }
 
 type readResult struct {
@@ -60,6 +66,7 @@ func NewParser(r io.Reader) *Parser {
 	p := &Parser{
 		reader:  bufio.NewReader(r),
 		results: make(chan readResult, 100),
+		closed:  make(chan struct{}),
 	}
 	go p.fill()
 	return p
@@ -68,6 +75,12 @@ func NewParser(r io.Reader) *Parser {
 func (p *Parser) fill() {
 	defer close(p.results)
 	for {
+		select {
+		case <-p.closed:
+			p.results <- readResult{err: errParserClosed}
+			return
+		default:
+		}
 		r, _, err := p.reader.ReadRune()
 		if err != nil {
 			p.results <- readResult{err: err}
@@ -83,12 +96,22 @@ func (p *Parser) NextEvent() (InputEvent, error) {
 		return InputEvent{}, io.EOF
 	}
 	if result.err != nil {
+		if result.err == errParserClosed {
+			return InputEvent{}, io.EOF
+		}
 		if result.err != io.EOF {
 			return InputEvent{}, result.err
 		}
 		return InputEvent{}, io.EOF
 	}
 	return p.parseRune(result.rune)
+}
+
+func (p *Parser) Close() error {
+	p.closeOnce.Do(func() {
+		close(p.closed)
+	})
+	return nil
 }
 
 func (p *Parser) parseRune(r rune) (InputEvent, error) {
