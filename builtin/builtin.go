@@ -34,6 +34,7 @@ type Job struct {
 	ID      int
 	Command string
 	Status  string
+	Error   string
 }
 
 var (
@@ -56,10 +57,20 @@ func RegisterJob(cmd string) int {
 }
 
 func CompleteJob(id int) {
+	CompleteJobWithResult(id, true, "")
+}
+
+func CompleteJobWithResult(id int, success bool, errMsg string) {
 	JobsMu.Lock()
 	defer JobsMu.Unlock()
 	if job, ok := Jobs[id]; ok {
-		job.Status = "Done"
+		if success {
+			job.Status = "Done"
+			job.Error = ""
+		} else {
+			job.Status = "Failed"
+			job.Error = errMsg
+		}
 	}
 }
 

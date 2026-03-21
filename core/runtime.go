@@ -96,15 +96,23 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *GoStatement:
 		id := builtin.RegisterJob(node.String())
 		go func() {
-			EvalWithIO(node.Node, env, stdin, stdout, stderr)
-			builtin.CompleteJob(id)
+			result := EvalWithIO(node.Node, env, stdin, stdout, stderr)
+			if isError(result) {
+				builtin.CompleteJobWithResult(id, false, result.Inspect())
+				return
+			}
+			builtin.CompleteJobWithResult(id, true, "")
 		}()
 		return NULL
 	case *BackgroundStatement:
 		id := builtin.RegisterJob(node.String())
 		go func() {
-			EvalWithIO(node.Stmt, env, stdin, stdout, stderr)
-			builtin.CompleteJob(id)
+			result := EvalWithIO(node.Stmt, env, stdin, stdout, stderr)
+			if isError(result) {
+				builtin.CompleteJobWithResult(id, false, result.Inspect())
+				return
+			}
+			builtin.CompleteJobWithResult(id, true, "")
 		}()
 		return NULL
 	case *FunctionStatement:

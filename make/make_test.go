@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"kamishell/builtin"
 	"kamishell/core"
 )
 
@@ -182,5 +183,32 @@ func TestMakeUsesSpecifiedFilePath(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+}
+
+func TestRegisterBuildFunctionsRestoresGlobalBuiltins(t *testing.T) {
+	originalProject := builtin.Builtins["project"]
+	originalAddExecutable := builtin.Builtins["add_executable"]
+	originalAddLibrary := builtin.Builtins["add_library"]
+	originalTargetLinkLibraries := builtin.Builtins["target_link_libraries"]
+	originalTargetEnv := builtin.Builtins["target_env"]
+
+	restore := registerBuildFunctions()
+	restore()
+
+	if builtin.Builtins["project"] != originalProject {
+		t.Fatal("expected project builtin to be restored")
+	}
+	if builtin.Builtins["add_executable"] != originalAddExecutable {
+		t.Fatal("expected add_executable builtin to be restored")
+	}
+	if builtin.Builtins["add_library"] != originalAddLibrary {
+		t.Fatal("expected add_library builtin to be restored")
+	}
+	if builtin.Builtins["target_link_libraries"] != originalTargetLinkLibraries {
+		t.Fatal("expected target_link_libraries builtin to be restored")
+	}
+	if builtin.Builtins["target_env"] != originalTargetEnv {
+		t.Fatal("expected target_env builtin to be restored")
 	}
 }

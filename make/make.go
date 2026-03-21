@@ -107,7 +107,8 @@ func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Wri
 	}
 
 	buildEnv := core.NewScriptEnvironment(coreEnv)
-	registerBuildFunctions()
+	restoreBuiltins := registerBuildFunctions()
+	defer restoreBuiltins()
 
 	// 5. Run the script
 	l := core.NewLexer(string(content))
@@ -183,7 +184,13 @@ func printMakeHelp(w io.Writer) {
 	fmt.Fprintln(w, "--------------------------------------------------")
 }
 
-func registerBuildFunctions() {
+func registerBuildFunctions() func() {
+	names := []string{"project", "add_executable", "add_library", "target_link_libraries", "target_env"}
+	previous := make(map[string]*builtin.BuiltinCommand, len(names))
+	for _, name := range names {
+		previous[name] = builtin.Builtins[name]
+	}
+
 	builtin.RegisterBuiltin(&builtin.BuiltinCommand{
 		Name: "project",
 		Action: func(args []string, e builtin.Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -284,6 +291,16 @@ func registerBuildFunctions() {
 			return 0
 		},
 	})
+
+	return func() {
+		for _, name := range names {
+			if previous[name] == nil {
+				delete(builtin.Builtins, name)
+				continue
+			}
+			builtin.Builtins[name] = previous[name]
+		}
+	}
 }
 
 func buildTarget(t *Target, stdout, stderr io.Writer) error {
