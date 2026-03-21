@@ -74,3 +74,40 @@ func TestParseCommandStatement(t *testing.T) {
 		t.Errorf("argument value not %s. got=%s", "-la", arg.Value)
 	}
 }
+
+func TestParseVarStatement(t *testing.T) {
+	input := `var count int = 42
+var name string
+var ready = true`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 3 {
+		t.Fatalf("program.Statements does not contain 3 statements. got=%d", len(program.Statements))
+	}
+
+	stmt0, ok := program.Statements[0].(*VarStatement)
+	if !ok {
+		t.Fatalf("stmt0 is not *VarStatement. got=%T", program.Statements[0])
+	}
+	if stmt0.Name.Value != "count" || stmt0.Type.Value != "int" || stmt0.Value.String() != "42" {
+		t.Fatalf("unexpected first var statement: %#v", stmt0)
+	}
+
+	stmt1, ok := program.Statements[1].(*VarStatement)
+	if !ok {
+		t.Fatalf("stmt1 is not *VarStatement. got=%T", program.Statements[1])
+	}
+	if stmt1.Name.Value != "name" || stmt1.Type.Value != "string" || stmt1.Value != nil {
+		t.Fatalf("unexpected second var statement: %#v", stmt1)
+	}
+
+	stmt2, ok := program.Statements[2].(*VarStatement)
+	if !ok {
+		t.Fatalf("stmt2 is not *VarStatement. got=%T", program.Statements[2])
+	}
+	if stmt2.Name.Value != "ready" || stmt2.Type != nil || stmt2.Value.String() != "true" {
+		t.Fatalf("unexpected third var statement: %#v", stmt2)
+	}
+}

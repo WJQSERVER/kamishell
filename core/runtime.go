@@ -130,9 +130,13 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		}
 
 		if node.Token.Literal == ":=" {
-			env.SetWithType(node.Name.Value, val, string(val.Type()))
+			typeName := ""
+			if shouldTrackType(string(val.Type())) {
+				typeName = string(val.Type())
+			}
+			env.SetWithType(node.Name.Value, val, typeName)
 		} else {
-			env.Set(node.Name.Value, val)
+			env.Assign(node.Name.Value, val)
 		}
 		return val
 	case *CommandStatement:
@@ -597,26 +601,42 @@ func applyFunction(fn *Function, args []string, env *Environment, stdin io.Reade
 }
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	var val Object = NULL
-	if vs.Value != nil {
-		val = EvalWithIO(vs.Value, env, stdin, stdout, stderr)
-		if isError(val) {
-			return val
-		}
-	}
-
 	typeName := ""
 	if vs.Type != nil {
 		typeName = string(mapTypeName(vs.Type.Value))
-		if val != NULL && string(val.Type()) != typeName {
-			return &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
-		}
-	} else if val != NULL {
+	}
+
+	val, errObj := evaluateDeclaredValue(vs, env, stdin, stdout, stderr, typeName)
+	if errObj != nil {
+		return errObj
+	}
+
+	if typeName == "" && shouldTrackType(string(val.Type())) {
 		typeName = string(val.Type())
 	}
 
 	env.SetWithType(vs.Name.Value, val, typeName)
 	return val
+}
+
+func evaluateDeclaredValue(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer, typeName string) (Object, *Error) {
+	if vs.Value == nil {
+		if typeName == "" {
+			return NULL, nil
+		}
+		return zeroValueForType(ObjectType(typeName)), nil
+	}
+
+	val := EvalWithIO(vs.Value, env, stdin, stdout, stderr)
+	if isError(val) {
+		return nil, val.(*Error)
+	}
+
+	if typeName != "" && string(val.Type()) != typeName {
+		return nil, &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
+	}
+
+	return val, nil
 }
 
 func mapTypeName(name string) ObjectType {
@@ -629,5 +649,18 @@ func mapTypeName(name string) ObjectType {
 		return BOOLEAN_OBJ
 	default:
 		return ObjectType(strings.ToUpper(name))
+	}
+}
+
+func zeroValueForType(typeName ObjectType) Object {
+	switch typeName {
+	case INTEGER_OBJ:
+		return &Integer{Value: 0}
+	case STRING_OBJ:
+		return &String{Value: ""}
+	case BOOLEAN_OBJ:
+		return FALSE
+	default:
+		return NULL
 	}
 }

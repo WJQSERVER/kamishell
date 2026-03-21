@@ -192,3 +192,81 @@ func TestScriptEnvPackageExpressionResult(t *testing.T) {
 		t.Errorf("expected linux, got %v", result)
 	}
 }
+
+func TestVarWithTypeZeroValue(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := "var count int; var name string; var ready bool; print count; print name; print ready"
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+
+	lines := strings.Split(stdout, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected 3 lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "0" || lines[1] != "" || lines[2] != "false" {
+		t.Errorf("unexpected zero values: %v", lines)
+	}
+	if lines[3] != "" {
+		t.Errorf("expected trailing newline terminator, got %q", lines[3])
+	}
+}
+
+func TestVarTypeMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami("var count int = true", env)
+	if !strings.Contains(stderr, "cannot initialize INTEGER with value of type BOOLEAN") {
+		t.Errorf("expected type mismatch error, got %q", stderr)
+	}
+}
+
+func TestAssignmentUpdatesOuterScope(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := "x := 1; func update() { x = 2 }; update(); print x"
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "2" {
+		t.Errorf("expected 2, got %q", stdout)
+	}
+}
+
+func TestTypedAssignmentRejectsMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami("var count int = 1; count = true", env)
+	if !strings.Contains(stderr, "cannot assign BOOLEAN to variable of type INTEGER") {
+		t.Errorf("expected typed assignment failure, got %q", stderr)
+	}
+}
+
+func TestNilDoesNotBecomeTrackedVariableType(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("x := nil; x = 1; print x", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "1" {
+		t.Errorf("expected 1, got %q", stdout)
+	}
+	if tracked, ok := env.GetType("x"); ok && tracked == string(NULL_OBJ) {
+		t.Errorf("did not expect x to be typed as NULL")
+	}
+}
+
+func TestVarNilDoesNotFreezeNullType(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("var x = nil; x = true; print x", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "true" {
+		t.Errorf("expected true, got %q", stdout)
+	}
+	if tracked, ok := env.GetType("x"); ok && tracked == string(NULL_OBJ) {
+		t.Errorf("did not expect x to be typed as NULL")
+	}
+}

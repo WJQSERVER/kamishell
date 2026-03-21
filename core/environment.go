@@ -54,26 +54,32 @@ func (e *Environment) GetType(name string) (string, bool) {
 }
 
 func (e *Environment) Set(name string, val interface{}) {
-	if obj, ok := val.(Object); ok {
-		e.store[name] = obj
-	} else if s, ok := val.(string); ok {
-		e.store[name] = &String{Value: s}
-	} else if i, ok := val.(int64); ok {
-		e.store[name] = &Integer{Value: i}
-	} else if b, ok := val.(bool); ok {
-		if b {
-			e.store[name] = TRUE
-		} else {
-			e.store[name] = FALSE
-		}
+	obj, typeName, ok := normalizeValue(val)
+	if !ok {
+		return
+	}
+	e.store[name] = obj
+	if shouldTrackType(typeName) {
+		e.types[name] = typeName
 	}
 }
 
 func (e *Environment) SetWithType(name string, val Object, typeName string) {
 	e.store[name] = val
-	if typeName != "" {
+	if shouldTrackType(typeName) {
 		e.types[name] = typeName
 	}
+}
+
+func (e *Environment) Assign(name string, val Object) {
+	if scope := e.scopeWithValue(name); scope != nil {
+		scope.store[name] = val
+		if _, ok := scope.types[name]; !ok && shouldTrackType(string(val.Type())) {
+			scope.types[name] = string(val.Type())
+		}
+		return
+	}
+	e.Set(name, val)
 }
 
 func NewEmptyEnvironment() *Environment {
@@ -93,6 +99,16 @@ func (e *Environment) Keys() []string {
 		keys = append(keys, e.outer.Keys()...)
 	}
 	return keys
+}
+
+func (e *Environment) scopeWithValue(name string) *Environment {
+	if _, ok := e.store[name]; ok {
+		return e
+	}
+	if e.outer != nil {
+		return e.outer.scopeWithValue(name)
+	}
+	return nil
 }
 
 func (e *Environment) SetPackageValue(pkg, name, value string) {
@@ -148,4 +164,27 @@ func (e *Environment) PackageSnapshot(pkg string) map[string]string {
 		snapshot[key] = value
 	}
 	return snapshot
+}
+
+func normalizeValue(val interface{}) (Object, string, bool) {
+	if obj, ok := val.(Object); ok {
+		return obj, string(obj.Type()), true
+	}
+	if s, ok := val.(string); ok {
+		return &String{Value: s}, string(STRING_OBJ), true
+	}
+	if i, ok := val.(int64); ok {
+		return &Integer{Value: i}, string(INTEGER_OBJ), true
+	}
+	if b, ok := val.(bool); ok {
+		if b {
+			return TRUE, string(BOOLEAN_OBJ), true
+		}
+		return FALSE, string(BOOLEAN_OBJ), true
+	}
+	return nil, "", false
+}
+
+func shouldTrackType(typeName string) bool {
+	return typeName != "" && typeName != string(NULL_OBJ)
 }

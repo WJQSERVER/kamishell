@@ -30,12 +30,43 @@ ls -la; echo "Done"
 ### 变量声明与赋值
 - **声明并初始化**: 使用 `:=`（自动类型推断）。
 - **重新赋值**: 使用 `=`。
+- **显式声明**: 使用 `var`，可选类型约束与初始值。
 
 ```go
 name := "Kamishell" // String
 count := 42         // Integer
 isActive := true    // Boolean
 data := nil         // Nil
+
+var retries int = 3
+var title string
+var ready bool
+```
+
+### `var` 与类型系统
+- `var name type = value`: 显式声明并校验类型。
+- `var name type`: 生成该类型的零值。
+- `:=`: 在当前作用域声明变量，并记录推断出的类型。
+- `=`: 优先更新最近作用域中的同名变量，并保持其原有类型约束。
+- `nil` 是运行时空值，不会被记录为变量的静态类型。
+
+当前内置基础类型与零值：
+- `int` / `integer` -> `0`
+- `string` -> `""`
+- `bool` / `boolean` -> `false`
+
+```go
+var count int
+print count      // 0
+
+var name string
+print name       // 空字符串
+
+var ready bool
+print ready      // false
+
+x := nil
+x = 1            // 允许，nil 不会把 x 锁定为 NULL 类型
 ```
 
 ### 变量插值
@@ -177,6 +208,17 @@ exec "go run main.go"
 echo $PATH
 HOME_DIR := $HOME
 ```
+
+### 脚本内 `env` 包
+Kamishell 还提供脚本级的 `env` 包，用于保存脚本内部的键值状态，不会与普通变量混用。
+
+```go
+env.Set("GOOS", "linux")
+print env.Get("GOOS")
+env.Unset("GOOS")
+```
+
+这套作用域特别适合 `make` 构建变量、脚本内部配置和目标级参数传递。
 
 ---
 
