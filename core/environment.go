@@ -37,6 +37,27 @@ type Environment struct {
 	packageStore map[string]map[string]string
 }
 
+func (e *Environment) Clone() *Environment {
+	if e == nil {
+		return nil
+	}
+	clone := &Environment{
+		store:        make(map[string]Object, len(e.store)),
+		types:        make(map[string]string, len(e.types)),
+		packageStore: clonePackageStore(e.packageStore),
+	}
+	for key, value := range e.types {
+		clone.types[key] = value
+	}
+	if e.outer != nil {
+		clone.outer = e.outer.Clone()
+	}
+	for key, value := range e.store {
+		clone.store[key] = cloneObjectForEnv(value, clone)
+	}
+	return clone
+}
+
 func (e *Environment) GetObject(name string) (Object, bool) {
 	obj, ok := e.store[name]
 	if !ok && e.outer != nil {
@@ -192,4 +213,29 @@ func normalizeValue(val interface{}) (Object, string, bool) {
 
 func shouldTrackType(typeName string) bool {
 	return typeName != "" && typeName != string(NULL_OBJ)
+}
+
+func clonePackageStore(src map[string]map[string]string) map[string]map[string]string {
+	if src == nil {
+		return make(map[string]map[string]string)
+	}
+	dst := make(map[string]map[string]string, len(src))
+	for pkg, values := range src {
+		inner := make(map[string]string, len(values))
+		for key, value := range values {
+			inner[key] = value
+		}
+		dst[pkg] = inner
+	}
+	return dst
+}
+
+func cloneObjectForEnv(obj Object, owner *Environment) Object {
+	fn, ok := obj.(*Function)
+	if !ok {
+		return obj
+	}
+	cloned := *fn
+	cloned.Env = owner
+	return &cloned
 }

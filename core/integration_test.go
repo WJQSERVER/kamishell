@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func runKami(input string, env *Environment) (string, string, Object) {
@@ -268,5 +269,37 @@ func TestVarNilDoesNotFreezeNullType(t *testing.T) {
 	}
 	if tracked, ok := env.GetType("x"); ok && tracked == string(NULL_OBJ) {
 		t.Errorf("did not expect x to be typed as NULL")
+	}
+}
+
+func TestBackgroundExecutionDoesNotMutateParentVariableScope(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami("x := 1; go { x = 2 }", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	time.Sleep(20 * time.Millisecond)
+	value, ok := env.GetObject("x")
+	if !ok {
+		t.Fatal("expected x to exist in parent env")
+	}
+	if value.(*Integer).Value != 1 {
+		t.Fatalf("expected parent x to stay 1, got %s", value.Inspect())
+	}
+}
+
+func TestBackgroundExecutionDoesNotMutateParentScriptEnvPackage(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami("env.Set(\"GOOS\", \"linux\"); go { env.Set(\"GOOS\", \"windows\") }", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	time.Sleep(20 * time.Millisecond)
+	value, ok := env.GetPackageValue("env", "GOOS")
+	if !ok {
+		t.Fatal("expected GOOS in parent script env package")
+	}
+	if value != "linux" {
+		t.Fatalf("expected parent GOOS to stay linux, got %q", value)
 	}
 }

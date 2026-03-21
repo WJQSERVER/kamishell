@@ -95,8 +95,9 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalLogicalStatement(node, env, stdin, stdout, stderr)
 	case *GoStatement:
 		id := builtin.RegisterJob(node.String())
+		asyncEnv := env.Clone()
 		go func() {
-			result := EvalWithIO(node.Node, env, stdin, stdout, stderr)
+			result := EvalWithIO(node.Node, asyncEnv, stdin, stdout, stderr)
 			if isError(result) {
 				builtin.CompleteJobWithResult(id, false, result.Inspect())
 				return
@@ -106,8 +107,9 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return NULL
 	case *BackgroundStatement:
 		id := builtin.RegisterJob(node.String())
+		asyncEnv := env.Clone()
 		go func() {
-			result := EvalWithIO(node.Stmt, env, stdin, stdout, stderr)
+			result := EvalWithIO(node.Stmt, asyncEnv, stdin, stdout, stderr)
 			if isError(result) {
 				builtin.CompleteJobWithResult(id, false, result.Inspect())
 				return
