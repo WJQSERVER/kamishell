@@ -5,10 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"kamishell/builtin"
+	"kamishell/core"
 )
 
 type KamiCompleter struct {
-	env *Environment
+	env *core.Environment
 }
 
 func (c *KamiCompleter) Do(line []rune, pos int) ([][]rune, int) {

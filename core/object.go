@@ -1,4 +1,4 @@
-package main
+package core
 
 import "fmt"
 
@@ -11,6 +11,7 @@ const (
 	NULL_OBJ     ObjectType = "NULL"
 	ERROR_OBJ    ObjectType = "ERROR"
 	FUNCTION_OBJ ObjectType = "FUNCTION"
+	PACKAGE_OBJ  ObjectType = "PACKAGE"
 )
 
 type Object interface {
@@ -66,3 +67,17 @@ type Function struct {
 
 func (f *Function) Inspect() string  { return "func" }
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
+
+type NativeFunction struct {
+	Fn func(env *Environment, args ...Object) Object
+}
+
+func (nf *NativeFunction) Type() ObjectType { return "NATIVE_FUNCTION" }
+func (nf *NativeFunction) Inspect() string  { return "native function" }
+
+type Package struct {
+	Name string
+}
+
+func (p *Package) Type() ObjectType { return PACKAGE_OBJ }
+func (p *Package) Inspect() string  { return p.Name }

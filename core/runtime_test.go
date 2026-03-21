@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"testing"
@@ -79,5 +79,13 @@ func TestInterpolation(t *testing.T) {
 	evaluated := testEval(input)
 	if evaluated != NULL {
 		t.Errorf("expected NULL from print, got %v", evaluated)
+	}
+}
+
+func TestCallExpressionWithMemberAccess(t *testing.T) {
+	input := `env.Set("GOOS", "linux"); env.Get("GOOS")`
+	evaluated := testEval(input)
+	if evaluated.Inspect() != "linux" {
+		t.Errorf("expected linux, got %s", evaluated.Inspect())
 	}
 }

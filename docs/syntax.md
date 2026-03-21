@@ -1,153 +1,189 @@
-# Kamishell 语法指南
+# Kamishell 完整语法参考手册
 
-Kamishell 是一种混合了 Bash 简洁性和 Go 语言严谨性的跨平台 Shell。
+Kamishell 是一种兼具传统 Shell 简洁性与现代编程语言（如 Go）严谨性的混合型 Shell 环境。本文档详细介绍了 Kamishell 支持的所有语法特性。
 
-## 1. 文件头 (Shebang)
+---
 
-Kamishell 支持标准的 Unix Shebang 文件头，允许脚本作为可执行文件运行。
+## 1. 基础语法
 
-```bash
-#!/usr/bin/env kami
-print "Hello from an executable script!"
+### 注释
+Kamishell 支持两种风格的注释：
+- **单行注释**: 使用 `//`
+- **多行注释**: 使用 `/* ... */`
+
+```go
+// 这是一个单行注释
+x := 10 /* 这是一个
+          多行注释 */
 ```
 
-## 2. 变量与赋值
+### 语句分隔
+Kamishell 能够智能识别行尾作为语句结束。你也可以使用分号 `;` 在同一行编写多个语句。
+```bash
+ls -la; echo "Done"
+```
 
-使用 `:=` 进行变量声明和赋值。使用 `=` 对已存在的变量进行重新赋值。Kamishell 是动态类型的。
+---
 
-### 基础类型
-- **Integer**: `x := 10`
-- **String**: `name := "Kamishell"`
-- **Boolean**: `isValid := true`
-- **Nil**: `empty := nil`
-- **Function**: `f := func() { ... }`
+## 2. 数据类型与变量
+
+### 变量声明与赋值
+- **声明并初始化**: 使用 `:=`（自动类型推断）。
+- **重新赋值**: 使用 `=`。
+
+```go
+name := "Kamishell" // String
+count := 42         // Integer
+isActive := true    // Boolean
+data := nil         // Nil
+```
 
 ### 变量插值
-在字符串字面量中，可以使用 `$VAR` 语法进行变量插值：
+在双引号字符串中，可以使用 `$变量名` 或 `${变量名}` 语法插入变量值。
 ```go
-name := "Jules"
-print "Hello, $name"
+user := "Admin"
+echo "Welcome, $user!"
+echo "Path: ${HOME}/bin"
 ```
 
-## 3. 命令执行
+---
 
-直接输入命令及其参数即可执行。Kamishell 搜索顺序：
-1. **当前作用域函数**
-2. **Shell 内置命令** (如 `ls`, `cd`)
-3. **系统 PATH 中的外部命令**
+## 3. 命令执行与流程控制
 
-### 管道 (Pipes)
-使用 `|` 连接多个命令，将前一个命令的 `stdout` 作为下一个命令的 `stdin`。
+### 外部命令执行
+直接输入命令及其参数即可。Kamishell 会自动在系统 `PATH` 中搜索对应的可执行文件。
 ```bash
-ls -la | grep "kami" | wc -l
+git status
+go build -o app main.go
 ```
 
-### 重定向 (Redirection)
-- `>`: 覆盖写入文件。
-- `>>`: 追加写入文件。
-```bash
-print "log entry" >> access.log
-ls /tmp > file_list.txt
-```
-
-## 4. 逻辑运算符
-
-Kamishell 支持命令链式执行和逻辑判断：
-- `&&`: 仅当前一个命令成功（退出码 0）时执行后续命令。
-- `||`: 仅当前一个命令失败（退出码非 0）时执行后续命令。
+### 逻辑运算符 (Command Chaining)
+- `&&`: 前一个命令成功（退出码为 0）时执行。
+- `||`: 前一个命令失败（退出码非 0）时执行。
 
 ```bash
-mkdir new_dir && cd new_dir
-ls non_existent || print "File not found"
+mkdir build && cd build
+ls /root || echo "Access denied"
 ```
 
-## 5. 异步执行
+### 管道与重定向
+- **管道 (`|`)**: 将前一命令的输出作为后一命令的输入。
+- **重定向 (`>`, `>>`)**: 覆盖写入或追加写入到文件。
 
-### 后缀 `&` (Shell 风格)
-将整个命令行放入后台运行。
 ```bash
-sleep 10 &
-print "I am not waiting for sleep"
+cat logs.txt | grep "Error" | wc -l
+echo "Initial config" > config.yaml
+echo "New line" >> config.yaml
 ```
 
-### 关键字 `go` (Go 风格)
-用于异步运行一个代码块或单个命令。
+---
+
+## 4. 控制结构
+
+### 条件判断 (If-Else)
+条件不需要括号，但大括号 `{` 必须与 `if`/`else` 在同一行。
 ```go
-go {
-    sleep 5
-    print "Background task done"
-}
-
-go updatedb
-```
-
-## 6. 函数定义 (`func`)
-
-支持类 Go 的函数定义语法，支持参数传递和词法作用域。
-
-```go
-func greet(name) {
-    print "Hello, " + name
-}
-
-greet "Kamishell"
-
-// 闭包支持
-x := 10
-func check() {
-    print x // 访问外部变量
-}
-```
-
-## 7. 控制流
-
-### If-Else 语句
-注意：`{` 必须与 `if` 或 `else` 在同一行。
-
-```go
-x := 10
-if x > 5 {
-    print "High"
+score := 85
+if score >= 60 {
+    echo "Passed"
 } else {
-    print "Low"
+    echo "Failed"
 }
 ```
 
-### For 循环
-目前支持基础的无限循环或带条件的循环。
+### 循环 (For)
+Kamishell 提供了灵活的 `for` 循环：
+- **条件循环**:
 ```go
 i := 0
-for i < 3 {
-    print i
+for i < 5 {
+    echo "Count: $i"
     i = i + 1
 }
 ```
-
-## 8. 错误处理
-
-Kamishell 运行时会自动维护一个名为 `err` 的特殊变量。每次命令执行后，该变量都会被更新。
-
-- 如果命令成功，`err` 为 `nil`。
-- 如果命令失败，`err` 为一个 Error 对象，包含以下字段：
-  - `err.Message`: 错误描述信息。
-  - `err.Code`: 退出码。
-  - `err.Op`: 产生错误的命令名称。
-
+- **无限循环**:
 ```go
-cp source.txt dest.txt
-if err != nil {
-    print "Operation failed: " + err.Message
+for {
+    // 使用 break 退出
+    if some_condition { break }
 }
 ```
 
-## 9. 强制命令执行 (`exec`)
+---
 
-当命令名称与关键字冲突时使用：
+## 5. 函数定义与调用
+
+函数使用 `func` 关键字定义，支持参数传递和词法作用域。
+
 ```go
-exec "go run ."
+func say_hello(name, times) {
+    i := 0
+    for i < times {
+        echo "Hello, $name! (count: $i)"
+        i = i + 1
+    }
+}
+
+say_hello "User" 3
 ```
 
-## 10. 注释
+---
 
-- **单行**: `//`
-- **多行**: `/* ... */`
+## 6. 异步与并发执行
+
+Kamishell 结合了 Shell 的便捷与 Go 的并发特性：
+- **后台运行 (`&`)**: 传统的 Shell 后台执行。
+- **并发块 (`go`)**: 类似于 Go 语言的 goroutine，可以异步运行代码块。
+
+```bash
+# Shell 风格
+long_task &
+
+# Go 风格
+go {
+    sleep 5
+    echo "Background process finished"
+}
+```
+
+---
+
+## 7. 错误处理
+
+Kamishell 内置了一个全局变量 `err`，它保存了最近一次执行命令的错误信息。
+
+```go
+rm "/protected/file"
+if err != nil {
+    echo "Error occurred!"
+    echo "Message: " + err.Message
+    echo "Exit Code: " + err.Code
+}
+```
+
+---
+
+## 8. 进阶特性
+
+### 强制执行 (`exec`)
+当你的命令名称与 Kamishell 的关键字（如 `if`, `for`, `func`）冲突时，使用 `exec`：
+```go
+exec "go run main.go"
+```
+
+### 环境变元访问
+可以直接访问系统环境变量：
+```go
+echo $PATH
+HOME_DIR := $HOME
+```
+
+---
+
+## 9. 转义字符
+
+在字符串中支持常见的转义序列：
+- `\n`: 换行
+- `\t`: 制表符
+- `\"`: 双引号
+- `\\`: 反斜杠

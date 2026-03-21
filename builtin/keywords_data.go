@@ -156,9 +156,34 @@ func init() {
 		Usage:       "defer 表达式",
 		Details:     "（计划中）在函数返回前执行指定的表达式。",
 	}
-	KeywordsDoc["alias"] = KeywordInfo{
-		Description: "定义别名",
-		Usage:       "alias 别名='命令'",
-		Details:     "（计划中）为长命令定义一个简短的替代名称。",
+	KeywordsDoc["make"] = KeywordInfo{
+		Description: "构建系统 (类似 CMake)",
+		Usage:       "make [脚本文件.km]",
+		Details:     "默认搜寻当前目录下以 .km 结尾的文件（如 Kami.km 或 build.km）。它会执行脚本并根据定义的项目目标调用编译器（目前默认支持 Go 语言）。",
+	}
+	KeywordsDoc["project"] = KeywordInfo{
+		Description: "定义项目名称 (仅限 make)",
+		Usage:       "project 项目名",
+		Details:     "设置当前构建项目的名称，用于日志输出和默认目标标识。",
+	}
+	KeywordsDoc["add_executable"] = KeywordInfo{
+		Description: "定义可执行文件目标 (仅限 make)",
+		Usage:       "add_executable 目标名 源文件1 [源文件2 ...]",
+		Details:     "指定一个可执行程序目标及其源代码。构建时会调用编译器生成对应的可执行文件。",
+	}
+	KeywordsDoc["add_library"] = KeywordInfo{
+		Description: "定义库文件目标 (仅限 make)",
+		Usage:       "add_library 库名 源文件1 [源文件2 ...]",
+		Details:     "指定一个库文件目标及其源代码。构建时会调用编译器生成对应的库文件。",
+	}
+	KeywordsDoc["target_link_libraries"] = KeywordInfo{
+		Description: "定义链接依赖 (仅限 make)",
+		Usage:       "target_link_libraries 目标名 依赖库1 [依赖库2 ...]",
+		Details:     "指定一个目标需要链接的外部库或其他库目标。",
+	}
+	KeywordsDoc["target_env"] = KeywordInfo{
+		Description: "设置目标构建变量 (仅限 make)",
+		Usage:       "target_env 目标名 变量=值 [变量=值 ...]",
+		Details:     "为指定目标追加或覆盖构建环境变量，例如 GOOS、GOARCH、CGO_ENABLED。make 也会在创建目标时快照脚本内 env 包中的变量，并在构建时传给 go build。",
 	}
 }

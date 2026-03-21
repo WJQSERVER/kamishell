@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"bytes"
@@ -155,5 +155,40 @@ func TestEnvironment(t *testing.T) {
 	}
 	if strings.TrimSpace(stdout) != "123" {
 		t.Errorf("expected 123, got %s", stdout)
+	}
+}
+
+func TestScriptEnvPackage(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := "env.Set(\"GOOS\", \"linux\"); print env.Get(\"GOOS\"); env.Unset(\"GOOS\"); print env.Get(\"GOOS\")"
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+
+	lines := strings.Split(stdout, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	}
+	if strings.TrimSpace(lines[0]) != "linux" {
+		t.Errorf("expected first line linux, got %q", lines[0])
+	}
+	if lines[1] != "" {
+		t.Errorf("expected second line empty after unset, got %q", lines[1])
+	}
+	if lines[2] != "" {
+		t.Errorf("expected trailing newline terminator, got %q", lines[2])
+	}
+}
+
+func TestScriptEnvPackageExpressionResult(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, result := runKami("env.Set(\"GOOS\", \"linux\"); env.Get(\"GOOS\")", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if result == nil || result.Inspect() != "linux" {
+		t.Errorf("expected linux, got %v", result)
 	}
 }
