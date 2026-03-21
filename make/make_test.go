@@ -124,3 +124,29 @@ func TestNormalizeTargetInputsRejectsMixedPackageAndFiles(t *testing.T) {
 		t.Fatalf("expected helpful error, got %q", stderr.String())
 	}
 }
+
+func TestTargetEnvOverridesBuildSnapshotForCommand(t *testing.T) {
+	target := &Target{
+		Name:    "kami",
+		Sources: []string{"main.go"},
+		BuildEnv: map[string]string{
+			"GOOS":        "linux",
+			"GOARCH":      "amd64",
+			"CGO_ENABLED": "0",
+		},
+	}
+
+	setEnvValue(target.BuildEnv, "GOOS", "windows")
+	setEnvValue(target.BuildEnv, "CGO_ENABLED", "1")
+
+	cmd := newBuildCommand(target)
+	joinedEnv := strings.Join(cmd.Env, "\n")
+	for _, expected := range []string{"GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=1"} {
+		if !strings.Contains(joinedEnv, expected) {
+			t.Fatalf("expected command env to contain %q, got %q", expected, joinedEnv)
+		}
+	}
+	if got := targetOutputName(target); got != "kami.exe" {
+		t.Fatalf("expected target_env GOOS override to affect output name, got %q", got)
+	}
+}

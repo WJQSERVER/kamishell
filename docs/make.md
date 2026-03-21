@@ -55,6 +55,7 @@ make my_project.km
 - **语法**: `target_env "目标名称" "变量1=值1" "变量2=值2" ...`
 - **示例**: `target_env "server" "GOOS=linux" "GOARCH=arm64" "CGO_ENABLED=0"`
 - **说明**: 适合给不同目标设置不同的构建变量，且不会影响其他目标。
+- **重要**: 这些变量会传给 `go build` 构建过程本身，不会自动嵌入到生成程序的运行时环境中。
 
 ### 构建时变量快照
 `make` 在执行 `add_executable` / `add_library` 时，会自动快照当前脚本内 `env` 包中的变量，并把它们作为该目标的构建环境。
