@@ -15,6 +15,7 @@ import (
 type Target struct {
 	Name      string
 	Sources   []string
+	Package   string
 	DependsOn []string
 	IsLibrary bool
 	BuildEnv  map[string]string
@@ -200,10 +201,14 @@ func registerBuildFunctions() {
 				return 1
 			}
 			name := args[0]
-			sources := args[1:]
+			sources, pkg, ok := normalizeTargetInputs(args[1:], stderr)
+			if !ok {
+				return 1
+			}
 			currentProject.Targets[name] = &Target{
 				Name:      name,
 				Sources:   sources,
+				Package:   pkg,
 				IsLibrary: false,
 				BuildEnv:  snapshotBuildEnv(e),
 			}
@@ -218,10 +223,14 @@ func registerBuildFunctions() {
 				return 1
 			}
 			name := args[0]
-			sources := args[1:]
+			sources, pkg, ok := normalizeTargetInputs(args[1:], stderr)
+			if !ok {
+				return 1
+			}
 			currentProject.Targets[name] = &Target{
 				Name:      name,
 				Sources:   sources,
+				Package:   pkg,
 				IsLibrary: true,
 				BuildEnv:  snapshotBuildEnv(e),
 			}
@@ -293,11 +302,39 @@ func buildTarget(t *Target, stdout, stderr io.Writer) error {
 
 func newBuildCommand(t *Target) *exec.Cmd {
 	args := []string{"build", "-o", targetOutputName(t)}
-	args = append(args, t.Sources...)
+	if t.Package != "" {
+		args = append(args, t.Package)
+	} else {
+		args = append(args, t.Sources...)
+	}
 
 	cmd := exec.Command("go", args...)
 	cmd.Env = envListFromMap(effectiveBuildEnv(t))
 	return cmd
+}
+
+func normalizeTargetInputs(inputs []string, stderr io.Writer) ([]string, string, bool) {
+	if len(inputs) == 0 {
+		fmt.Fprintln(stderr, "target sources cannot be empty")
+		return nil, "", false
+	}
+
+	if len(inputs) == 1 && isPackageSource(inputs[0]) {
+		return nil, inputs[0], true
+	}
+
+	for _, input := range inputs {
+		if isPackageSource(input) {
+			fmt.Fprintln(stderr, "package source '.' cannot be mixed with explicit source files")
+			return nil, "", false
+		}
+	}
+
+	return inputs, "", true
+}
+
+func isPackageSource(input string) bool {
+	return input == "."
 }
 
 func effectiveBuildEnv(t *Target) map[string]string {

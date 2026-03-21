@@ -35,12 +35,14 @@ make my_project.km
 定义一个可执行二进制文件目标。
 - **语法**: `add_executable "目标名称" "源文件1" "源文件2" ...`
 - **示例**: `add_executable "server" "main.go" "router.go"`
+- **Go 包入口**: 也支持 `add_executable "server" "."`，此时会直接执行 `go build -o server .`
 - **注意**: 在 Windows 平台上，构建系统会自动为目标名称添加 `.exe` 后缀。
 
 ### `add_library`
 定义一个库文件（或模块）目标。
 - **语法**: `add_library "库名称" "源文件1" ...`
 - **示例**: `add_library "utils" "logger.go" "helpers.go"`
+- **Go 包入口**: 也支持 `add_library "utils" "."`，按当前目录包构建。
 
 ### `target_link_libraries`
 声明一个目标对其他库的依赖关系。
@@ -74,6 +76,15 @@ project "HelloWorld"
 
 # 定义主程序及其源码
 add_executable "hello" "main.go"
+```
+
+### 示例 A-2：直接构建当前 Go 包
+**文件名: `build.km`**
+```bash
+project "HelloPkg"
+
+# 使用 go build . 的方式构建当前包
+add_executable "hello" "."
 ```
 
 ### 示例 B：使用变量管理多源文件
@@ -128,6 +139,7 @@ target_env "kami-linux" "CGO_ENABLED=1"
 
 - **编译器**: 当前版本的 `make` 底层调用 `go build`。
 - **构建命令**: 实际执行的命令格式为 `go build -o <目标> <所有源文件>`。
+- **包模式**: 如果源写成 `"."`，实际执行命令会变成 `go build -o <目标> .`。
 - **环境变量传递**: 目标的构建变量会作为环境变量传递给 `go build`，支持交叉编译。
 - **跨平台**: `make` 会根据目标的 `GOOS` 判断是否为可执行文件补全 `.exe` 后缀，而不是只看当前宿主系统。
 

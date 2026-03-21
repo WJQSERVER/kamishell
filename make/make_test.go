@@ -1,6 +1,7 @@
 package make
 
 import (
+	"bytes"
 	"runtime"
 	"strings"
 	"testing"
@@ -84,5 +85,42 @@ func TestTargetGOOSFallsBackToHost(t *testing.T) {
 	target := &Target{Name: "kami"}
 	if got := targetGOOS(target); got != runtime.GOOS {
 		t.Fatalf("expected fallback GOOS %q, got %q", runtime.GOOS, got)
+	}
+}
+
+func TestNewBuildCommandUsesPackageSource(t *testing.T) {
+	target := &Target{
+		Name:     "kami",
+		Package:  ".",
+		BuildEnv: map[string]string{"GOOS": "linux"},
+	}
+
+	cmd := newBuildCommand(target)
+	if got, want := strings.Join(cmd.Args, " "), "go build -o kami ."; got != want {
+		t.Fatalf("expected args %q, got %q", want, got)
+	}
+}
+
+func TestNormalizeTargetInputsAllowsPackageSource(t *testing.T) {
+	sources, pkg, ok := normalizeTargetInputs([]string{"."}, &bytes.Buffer{})
+	if !ok {
+		t.Fatal("expected package source to be accepted")
+	}
+	if pkg != "." {
+		t.Fatalf("expected package '.', got %q", pkg)
+	}
+	if len(sources) != 0 {
+		t.Fatalf("expected no explicit sources, got %v", sources)
+	}
+}
+
+func TestNormalizeTargetInputsRejectsMixedPackageAndFiles(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	_, _, ok := normalizeTargetInputs([]string{".", "main.go"}, stderr)
+	if ok {
+		t.Fatal("expected mixed package source and file list to be rejected")
+	}
+	if !strings.Contains(stderr.String(), "cannot be mixed") {
+		t.Fatalf("expected helpful error, got %q", stderr.String())
 	}
 }
