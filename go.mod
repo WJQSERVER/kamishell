@@ -14,4 +14,4 @@ require (
 	golang.org/x/term v0.40.0 // indirect
 )
 
-replace github.com/WJQSERVER/readline => ./third_party/readline
+replace github.com/WJQSERVER/readline => ./readline
