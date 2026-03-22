@@ -91,3 +91,22 @@ func TestSemicolonInsertion(t *testing.T) {
 		t.Fatalf("expected print, got %v", tok)
 	}
 }
+
+func TestAssignWithoutSpacesDoesNotBecomeSingleIdentifier(t *testing.T) {
+	l := NewLexer("x=1")
+
+	tok := l.NextToken()
+	if tok.Type != IDENT || tok.Literal != "x" {
+		t.Fatalf("expected first token IDENT x, got type=%q literal=%q", tok.Type, tok.Literal)
+	}
+
+	tok = l.NextToken()
+	if tok.Type != ASSIGN || tok.Literal != "=" {
+		t.Fatalf("expected second token ASSIGN =, got type=%q literal=%q", tok.Type, tok.Literal)
+	}
+
+	tok = l.NextToken()
+	if tok.Type != NUMBER || tok.Literal != "1" {
+		t.Fatalf("expected third token NUMBER 1, got type=%q literal=%q", tok.Type, tok.Literal)
+	}
+}

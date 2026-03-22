@@ -141,6 +141,10 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseGoStatement()
 	case IDENT:
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
+			if p.peekToken.Type == ASSIGN && p.curToken.End == p.peekToken.Start {
+				stmt = p.parseInvalidTightAssignStatement()
+				break
+			}
 			stmt = p.parseAssignStatement()
 		} else if p.peekToken.Type == DOT || p.peekToken.Type == LPAREN {
 			stmt = p.parseExpressionStatement()
@@ -233,6 +237,22 @@ func (p *Parser) parseAssignStatement() *AssignStatement {
 	p.nextToken() // cur is start of expression
 
 	stmt.Value = p.parseExpression(LOWEST)
+
+	if p.peekToken.Type == SEMICOLON {
+		p.nextToken()
+	}
+
+	return stmt
+}
+
+func (p *Parser) parseInvalidTightAssignStatement() *InvalidStatement {
+	stmt := &InvalidStatement{Token: p.peekToken, Message: "syntax error: assignments with '=' require spaces around the operator"}
+
+	p.nextToken() // move to =
+	if p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF {
+		p.nextToken() // move to start of expression
+		_ = p.parseExpression(LOWEST)
+	}
 
 	if p.peekToken.Type == SEMICOLON {
 		p.nextToken()

@@ -303,3 +303,22 @@ func TestBackgroundExecutionDoesNotMutateParentScriptEnvPackage(t *testing.T) {
 		t.Fatalf("expected parent GOOS to stay linux, got %q", value)
 	}
 }
+
+func TestAssignmentWithSpacesStillWorks(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("x := 1; x = 2; print x", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "2" {
+		t.Errorf("expected 2, got %q", stdout)
+	}
+}
+
+func TestAssignmentWithoutSpacesReportsSyntaxError(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami("x=1", env)
+	if !strings.Contains(stderr, "syntax error") {
+		t.Errorf("expected syntax error for x=1, got %q", stderr)
+	}
+}

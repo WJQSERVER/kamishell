@@ -83,6 +83,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalStatements(node.Statements, env, stdin, stdout, stderr)
 	case *ExpressionStatement:
 		return EvalWithIO(node.Expression, env, stdin, stdout, stderr)
+	case *InvalidStatement:
+		return &Error{Message: node.Message}
 	case *IfStatement:
 		return evalIfStatement(node, env, stdin, stdout, stderr)
 	case *ForStatement:

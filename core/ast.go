@@ -58,6 +58,15 @@ func (cs *CommandStatement) String() string {
 	return out.String()
 }
 
+type InvalidStatement struct {
+	Token   Token
+	Message string
+}
+
+func (is *InvalidStatement) statementNode()       {}
+func (is *InvalidStatement) TokenLiteral() string { return is.Token.Literal }
+func (is *InvalidStatement) String() string       { return is.Message }
+
 type PrintStatement struct {
 	Token      Token
 	Expression Expression
