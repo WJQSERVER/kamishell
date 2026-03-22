@@ -39,3 +39,25 @@ func TestMv(t *testing.T) {
 		t.Errorf("file should have been moved into directory")
 	}
 }
+
+func TestMvInteractiveReadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	src := filepath.Join(tmpDir, "src.txt")
+	dst := filepath.Join(tmpDir, "dst.txt")
+	if err := os.WriteFile(src, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write src failed: %v", err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0644); err != nil {
+		t.Fatalf("write dst failed: %v", err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := Mv([]string{"-i", src, dst}, &rmMockEnv{}, errReader{}, stdout, stderr)
+	if code == 0 {
+		t.Fatal("expected interactive read failure to return non-zero exit code")
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Fatalf("expected source to remain after failed prompt read, got %v", err)
+	}
+}

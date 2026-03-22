@@ -59,7 +59,12 @@ func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		if _, err := os.Stat(actualDest); err == nil && !*force {
 			if *interactive {
 				fmt.Fprintf(stdout, "mv: overwrite '%s'? ", actualDest)
-				resp, _ := reader.ReadString('\n')
+				resp, readErr := reader.ReadString('\n')
+				if readErr != nil {
+					fmt.Fprintf(stderr, "mv: failed to read confirmation: %v\n", readErr)
+					exitCode = 1
+					continue
+				}
 				resp = strings.ToLower(strings.TrimSpace(resp))
 				if resp != "y" && resp != "yes" {
 					continue

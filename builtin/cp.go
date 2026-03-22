@@ -87,7 +87,10 @@ func doCopy(src, dst string, recursive, preserve, force, interactive bool, reade
 	if _, err := os.Stat(dst); err == nil {
 		if interactive {
 			fmt.Fprintf(stdout, "cp: overwrite '%s'? ", dst)
-			resp, _ := reader.ReadString('\n')
+			resp, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return fmt.Errorf("cp: failed to read confirmation: %w", readErr)
+			}
 			resp = strings.ToLower(strings.TrimSpace(resp))
 			if resp != "y" && resp != "yes" {
 				return nil

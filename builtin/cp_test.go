@@ -37,3 +37,29 @@ func TestCp(t *testing.T) {
 		t.Errorf("recursive copy failed")
 	}
 }
+
+func TestCpInteractiveReadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	src := filepath.Join(tmpDir, "src.txt")
+	dst := filepath.Join(tmpDir, "dst.txt")
+	if err := os.WriteFile(src, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write src failed: %v", err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0644); err != nil {
+		t.Fatalf("write dst failed: %v", err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := Cp([]string{"-i", src, dst}, &rmMockEnv{}, errReader{}, stdout, stderr)
+	if code == 0 {
+		t.Fatal("expected interactive read failure to return non-zero exit code")
+	}
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read dst failed: %v", err)
+	}
+	if string(data) != "old" {
+		t.Fatalf("expected destination unchanged, got %q", string(data))
+	}
+}

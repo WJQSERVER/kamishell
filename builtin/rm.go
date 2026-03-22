@@ -83,7 +83,12 @@ func Rm(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 
 		if *interactive {
 			fmt.Fprintf(stdout, "rm: remove '%s'? ", target)
-			response, _ := reader.ReadString('\n')
+			response, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				fmt.Fprintf(stderr, "rm: failed to read confirmation: %v\n", readErr)
+				exitCode = 1
+				continue
+			}
 			response = strings.ToLower(strings.TrimSpace(response))
 			if response != "y" && response != "yes" {
 				continue
@@ -144,14 +149,20 @@ func walkAndRemove(path string, interactive bool, reader *bufio.Reader, stdout, 
 
 		if interactive {
 			fmt.Fprintf(stdout, "rm: descend into directory '%s'? ", path)
-			resp, _ := reader.ReadString('\n')
+			resp, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return fmt.Errorf("rm: failed to read confirmation: %w", readErr)
+			}
 			resp = strings.ToLower(strings.TrimSpace(resp))
 			if resp == "y" || resp == "yes" {
 				for _, entry := range entries {
 					walkAndRemove(filepath.Join(path, entry.Name()), interactive, reader, stdout, stderr, verbose)
 				}
 				fmt.Fprintf(stdout, "rm: remove directory '%s'? ", path)
-				resp, _ = reader.ReadString('\n')
+				resp, readErr = reader.ReadString('\n')
+				if readErr != nil {
+					return fmt.Errorf("rm: failed to read confirmation: %w", readErr)
+				}
 				resp = strings.ToLower(strings.TrimSpace(resp))
 				if resp == "y" || resp == "yes" {
 					err = os.Remove(path)
@@ -175,7 +186,10 @@ func walkAndRemove(path string, interactive bool, reader *bufio.Reader, stdout, 
 	} else {
 		if interactive {
 			fmt.Fprintf(stdout, "rm: remove '%s'? ", path)
-			resp, _ := reader.ReadString('\n')
+			resp, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return fmt.Errorf("rm: failed to read confirmation: %w", readErr)
+			}
 			resp = strings.ToLower(strings.TrimSpace(resp))
 			if resp != "y" && resp != "yes" {
 				return nil
