@@ -22,8 +22,6 @@ func init() {
 	})
 }
 
-const PROMPT = "kami> "
-
 var (
 	readlineLib = flag.String("readline", "wjq", "Select readline library: wjq (default) or base (legacy)")
 )
@@ -103,7 +101,7 @@ func startRepl(env *core.Environment) {
 
 func startChzyerRepl(env *core.Environment, historyFile string) {
 	rl, err := chreadline.NewEx(&chreadline.Config{
-		Prompt:          PROMPT,
+		Prompt:          buildPrompt(false),
 		HistoryFile:     historyFile,
 		AutoComplete:    &KamiCompleter{env: env},
 		InterruptPrompt: "^C",
@@ -116,6 +114,7 @@ func startChzyerRepl(env *core.Environment, historyFile string) {
 	defer rl.Close()
 
 	for {
+		rl.SetPrompt(buildPrompt(false))
 		line, err := rl.Readline()
 		if err != nil { // io.EOF or ctrl-c
 			break
@@ -130,11 +129,8 @@ func startChzyerRepl(env *core.Environment, historyFile string) {
 }
 
 func startWjqRepl(env *core.Environment, historyFile string) {
-	// Cyan prompt for WJQ version to distinguish it
-	cyanPrompt := "\033[36mkami>\033[0m "
-
 	cfg := &wjqreadline.Config{
-		Prompt:    cyanPrompt,
+		Prompt:    buildPrompt(true),
 		Completer: &KamiCompleter{env: env},
 		History:   NewWjqFileHistory(historyFile),
 	}
@@ -146,6 +142,7 @@ func startWjqRepl(env *core.Environment, historyFile string) {
 	}
 
 	for {
+		rl.SetPrompt(buildPrompt(true))
 		line, err := rl.Readline()
 		if err != nil {
 			if err == wjqreadline.ErrInterrupt {
@@ -162,6 +159,26 @@ func startWjqRepl(env *core.Environment, historyFile string) {
 
 		runInput(line, env, true)
 	}
+}
+
+func buildPrompt(color bool) string {
+	wd, err := os.Getwd()
+	if err != nil || wd == "" {
+		if color {
+			return "\033[36mkami>\033[0m "
+		}
+		return "kami> "
+	}
+
+	name := filepath.Base(wd)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = wd
+	}
+
+	if color {
+		return fmt.Sprintf("\033[90m[%s]\033[0m \033[36mkami>\033[0m ", name)
+	}
+	return fmt.Sprintf("[%s] kami> ", name)
 }
 
 func runInput(input string, env *core.Environment, isRepl bool) {

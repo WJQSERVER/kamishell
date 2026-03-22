@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"kamishell/builtin"
@@ -89,4 +90,51 @@ func runBuiltinArgsCase(t *testing.T, args []string, expected []string) {
 
 func noopBuiltin(args []string, env builtin.Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	return 0
+}
+
+func TestBuildPromptUsesCurrentDirectoryBaseName(t *testing.T) {
+	tempDir := t.TempDir()
+	childDir := filepath.Join(tempDir, "prompt-target")
+	if err := os.Mkdir(childDir, 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
+
+	if err := os.Chdir(childDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	prompt := buildPrompt(false)
+	if !strings.Contains(prompt, "prompt-target") {
+		t.Fatalf("expected prompt to contain current dir base name, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "kami>") {
+		t.Fatalf("expected prompt to contain kami marker, got %q", prompt)
+	}
+}
+
+func TestBuildPromptWithColorKeepsANSIAndPath(t *testing.T) {
+	tempDir := t.TempDir()
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	prompt := buildPrompt(true)
+	if !strings.Contains(prompt, "\033[") {
+		t.Fatalf("expected colored prompt to contain ANSI escape, got %q", prompt)
+	}
+	if !strings.Contains(prompt, filepath.Base(tempDir)) {
+		t.Fatalf("expected colored prompt to contain current dir name, got %q", prompt)
+	}
 }

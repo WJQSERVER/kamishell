@@ -220,6 +220,16 @@ func (i *Instance) Delete() {
 	i.renderer.Refresh(i.buffer)
 }
 
+func (i *Instance) SetPrompt(prompt string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		return
+	}
+	i.cfg.Prompt = prompt
+	i.renderer.SetPrompt(prompt)
+}
+
 func (i *Instance) handleHistory(up bool) {
 	if up {
 		if i.historyIdx == -1 {
