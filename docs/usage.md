@@ -13,9 +13,8 @@ go build -o kami ./cmd/kamishell
 直接运行 `./kami` 即可进入交互式 Shell。
 
 ### REPL 特性
-- **Readline 实现选择**: 使用 `-readline` 标志。
-  - `chzyer` (默认): 成熟的 Readline 实现。
-  - `wjq` (实验性): 纯 Go 实现的彩色提示符 Readline。
+- **统一 Readline 实现**: 当前默认使用项目内维护的 `readline` 实现。
+- **动态提示符**: 提示符会显示当前目录名，并在 `cd` 后自动刷新。
 - **历史记录**: 使用方向键（上/下）浏览执行过的历史记录。历史保存在 `~/.kami_history`。
 - **自动补全**: 输入部分命令、变量名或文件路径后按下 **Tab** 键。
 - **启动配置**: 启动时自动加载并执行 `$HOME/.kamirc` 和当前目录下的 `.kamirc`。
