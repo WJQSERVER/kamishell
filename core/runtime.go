@@ -1,27 +1,75 @@
-package main
+package core
 
 import (
 	"fmt"
 	"io"
+	"kamishell/builtin"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
-	"kamishell/builtin"
 )
-
-
-
-
-
-
-
 
 var (
-	NULL  = &Null{}
-	TRUE  = &Boolean{Value: true}
-	FALSE = &Boolean{Value: false}
+	NULL   = &Null{}
+	TRUE   = &Boolean{Value: true}
+	FALSE  = &Boolean{Value: false}
+	ENVPKG = &Package{Name: "env"}
 )
+
+var NativeFns = make(map[string]*NativeFunction)
+
+func init() {
+	NativeFns["env.Get"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 1 {
+				return &Error{Message: "env.Get() expects exactly one argument"}
+			}
+			arg, ok := args[0].(*String)
+			if !ok {
+				return &Error{Message: "env.Get() argument must be a string"}
+			}
+			if val, ok := env.GetPackageValue("env", arg.Value); ok {
+				return &String{Value: val}
+			}
+			return &String{Value: ""}
+		},
+	}
+
+	NativeFns["env.Set"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 2 {
+				return &Error{Message: "env.Set() expects exactly two arguments"}
+			}
+
+			name, ok := args[0].(*String)
+			if !ok {
+				return &Error{Message: "env.Set() first argument must be a string"}
+			}
+
+			value, ok := objectToScriptString(args[1])
+			if !ok {
+				return &Error{Message: "env.Set() second argument must be string-compatible"}
+			}
+
+			env.SetPackageValue("env", name.Value, value)
+			return &String{Value: value}
+		},
+	}
+
+	NativeFns["env.Unset"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 1 {
+				return &Error{Message: "env.Unset() expects exactly one argument"}
+			}
+			name, ok := args[0].(*String)
+			if !ok {
+				return &Error{Message: "env.Unset() argument must be a string"}
+			}
+			return nativeBoolToBooleanObject(env.DeletePackageValue("env", name.Value))
+		},
+	}
+}
 
 func Eval(node Node, env *Environment) Object {
 	return EvalWithIO(node, env, os.Stdin, os.Stdout, os.Stderr)
@@ -35,6 +83,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalStatements(node.Statements, env, stdin, stdout, stderr)
 	case *ExpressionStatement:
 		return EvalWithIO(node.Expression, env, stdin, stdout, stderr)
+	case *InvalidStatement:
+		return &Error{Message: node.Message}
 	case *IfStatement:
 		return evalIfStatement(node, env, stdin, stdout, stderr)
 	case *ForStatement:
@@ -47,16 +97,26 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalLogicalStatement(node, env, stdin, stdout, stderr)
 	case *GoStatement:
 		id := builtin.RegisterJob(node.String())
+		asyncEnv := env.Clone()
 		go func() {
-			EvalWithIO(node.Node, env, stdin, stdout, stderr)
-			builtin.CompleteJob(id)
+			result := EvalWithIO(node.Node, asyncEnv, stdin, stdout, stderr)
+			if isError(result) {
+				builtin.CompleteJobWithResult(id, false, result.Inspect())
+				return
+			}
+			builtin.CompleteJobWithResult(id, true, "")
 		}()
 		return NULL
 	case *BackgroundStatement:
 		id := builtin.RegisterJob(node.String())
+		asyncEnv := env.Clone()
 		go func() {
-			EvalWithIO(node.Stmt, env, stdin, stdout, stderr)
-			builtin.CompleteJob(id)
+			result := EvalWithIO(node.Stmt, asyncEnv, stdin, stdout, stderr)
+			if isError(result) {
+				builtin.CompleteJobWithResult(id, false, result.Inspect())
+				return
+			}
+			builtin.CompleteJobWithResult(id, true, "")
 		}()
 		return NULL
 	case *FunctionStatement:
@@ -65,6 +125,10 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
 		return evalInfixExpression(node.Operator, left, right)
+	case *MemberExpression:
+		return evalMemberExpression(node, env)
+	case *CallExpression:
+		return evalCallExpression(node, env, stdin, stdout, stderr)
 	case *VarStatement:
 		return evalVarStatement(node, env, stdin, stdout, stderr)
 	case *AssignStatement:
@@ -79,32 +143,40 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		}
 
 		if node.Token.Literal == ":=" {
-			env.SetWithType(node.Name.Value, val, string(val.Type()))
+			typeName := ""
+			if shouldTrackType(string(val.Type())) {
+				typeName = string(val.Type())
+			}
+			env.SetWithType(node.Name.Value, val, typeName)
 		} else {
-			env.Set(node.Name.Value, val)
+			env.Assign(node.Name.Value, val)
 		}
 		return val
 	case *CommandStatement:
 		return executeCommand(node.Name, node.Arguments, env, stdin, stdout, stderr)
 	case *PrintStatement:
 		val := EvalWithIO(node.Expression, env, stdin, stdout, stderr)
-		fmt.Fprintln(stdout, val.Inspect())
+		fmt.Fprintln(stdout, inspectObject(val))
 		return NULL
 	case *ExecStatement:
 		return evalExecStatement(node, env, stdin, stdout, stderr)
 	case *Identifier:
 		return evalIdentifier(node, env)
 	case *StringLiteral:
+		if node.Obj != nil && strings.IndexByte(node.Value, '$') < 0 {
+			return node.Obj
+		}
 		return &String{Value: os.Expand(node.Value, func(name string) string {
-			if val, ok := env.Get(name); ok {
-				if obj, ok := val.(Object); ok {
-					return obj.Inspect()
-				}
+			if obj, ok := env.GetObject(name); ok {
+				return inspectObject(obj)
 			}
 			return os.Getenv(name)
 		})}
 	case *IntegerLiteral:
-		return &Integer{Value: node.Value}
+		if node.Obj != nil {
+			return node.Obj
+		}
+		return getIntegerObject(node.Value)
 	case *NilLiteral:
 		return NULL
 	case *BooleanLiteral:
@@ -166,11 +238,10 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 	return result
 }
 
-
 func evalInfixExpression(operator string, left, right Object) Object {
 	if operator == "+" {
 		if left.Type() == STRING_OBJ || right.Type() == STRING_OBJ {
-			return &String{Value: left.Inspect() + right.Inspect()}
+			return &String{Value: inspectObject(left) + inspectObject(right)}
 		}
 	}
 
@@ -178,18 +249,15 @@ func evalInfixExpression(operator string, left, right Object) Object {
 	case left.Type() == INTEGER_OBJ && right.Type() == INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
 	case operator == "==":
-		return nativeBoolToBooleanObject(left.Inspect() == right.Inspect())
+		return nativeBoolToBooleanObject(inspectObject(left) == inspectObject(right))
 	case operator == "!=":
-		return nativeBoolToBooleanObject(left.Inspect() != right.Inspect())
+		return nativeBoolToBooleanObject(inspectObject(left) != inspectObject(right))
 	case left.Type() != right.Type():
 		return &Error{Message: fmt.Sprintf("type mismatch: %s %s %s", left.Type(), operator, right.Type())}
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
 }
-
-
-
 
 func evalIntegerInfixExpression(operator string, left, right Object) Object {
 	leftVal := left.(*Integer).Value
@@ -205,7 +273,7 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 	case "<":
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case "+":
-		return &Integer{Value: leftVal + rightVal}
+		return getIntegerObject(leftVal + rightVal)
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
@@ -333,21 +401,123 @@ func isTruthy(obj Object) bool {
 }
 
 func executeCommand(name string, args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	evaledArgs := make([]string, len(args))
-	for i, arg := range args {
+	// Eval arguments first
+	evaledArgs := make([]Object, 0, len(args))
+	for _, arg := range args {
 		val := EvalWithIO(arg, env, stdin, stdout, stderr)
 		if isError(val) {
 			return val
 		}
-		evaledArgs[i] = val.Inspect()
+		evaledArgs = append(evaledArgs, val)
 	}
-	return executeCommandWithStrings(name, evaledArgs, env, stdin, stdout, stderr)
+
+	// 1. Check for native functions (global)
+	if fn, ok := NativeFns[name]; ok {
+		return fn.Fn(env, evaledArgs...)
+	}
+
+	// 2. Check for user-defined functions or native functions in env
+	if val, ok := env.GetObject(name); ok {
+		if fn, ok := val.(*Function); ok {
+			return applyFunction(fn, evaledArgs, env, stdin, stdout, stderr)
+		}
+		if fn, ok := val.(*NativeFunction); ok {
+			return fn.Fn(env, evaledArgs...)
+		}
+	}
+
+	// Convert []Object to []string for builtins and external commands
+	strArgs := inspectObjects(evaledArgs)
+
+	// 3. Check for builtins
+	if cmd, ok := builtin.Builtins[name]; ok {
+		exitCode := cmd.Action(strArgs, env, stdin, stdout, stderr)
+		if exitCode != 0 {
+			return &Error{Message: fmt.Sprintf("builtin %s failed", name), Code: exitCode, Op: name}
+		}
+		return NULL
+	}
+
+	// 4. External command
+	cmd := exec.Command(name, strArgs...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.Stdin = stdin
+	err := cmd.Run()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			return &Error{Message: err.Error(), Code: exitError.ExitCode(), Op: name}
+		}
+		return &Error{Message: err.Error(), Code: 1, Op: name}
+	}
+	return NULL
+}
+
+func evalMemberExpression(node *MemberExpression, env *Environment) Object {
+	if ident, ok := node.Object.(*Identifier); ok && ident.Value == "env" {
+		name := "env." + node.Property.Value
+		if fn, ok := NativeFns[name]; ok {
+			return fn
+		}
+		if val, ok := env.GetObject(name); ok {
+			return val
+		}
+		return &Error{Message: "member not found: " + name}
+	}
+
+	left := EvalWithIO(node.Object, env, os.Stdin, os.Stdout, os.Stderr)
+	if isError(left) {
+		return left
+	}
+
+	name := inspectObject(left) + "." + node.Property.Value
+	if fn, ok := NativeFns[name]; ok {
+		return fn
+	}
+	if val, ok := env.GetObject(name); ok {
+		return val
+	}
+
+	return &Error{Message: "member not found: " + name}
+}
+
+func evalCallExpression(node *CallExpression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	function := EvalWithIO(node.Function, env, stdin, stdout, stderr)
+	if isError(function) {
+		return function
+	}
+
+	args := make([]Object, 0, len(node.Arguments))
+	for _, arg := range node.Arguments {
+		value := EvalWithIO(arg, env, stdin, stdout, stderr)
+		if isError(value) {
+			return value
+		}
+		args = append(args, value)
+	}
+
+	switch fn := function.(type) {
+	case *NativeFunction:
+		return fn.Fn(env, args...)
+	case *Function:
+		return applyFunction(fn, args, env, stdin, stdout, stderr)
+	default:
+		return &Error{Message: fmt.Sprintf("not callable: %s", function.Type())}
+	}
 }
 
 func executeCommandWithStrings(name string, args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	if val, ok := env.Get(name); ok {
+	// This function is now mostly for builtins and external commands.
+	// We need to handle native/user functions with evaluated objects.
+	// For simplicity, let's keep the string-based logic for now.
+
+	if val, ok := env.GetObject(name); ok {
 		if fn, ok := val.(*Function); ok {
-			return applyFunction(fn, args, env, stdin, stdout, stderr)
+			objArgs := make([]Object, len(args))
+			for i, arg := range args {
+				objArgs[i] = &String{Value: arg}
+			}
+			return applyFunction(fn, objArgs, env, stdin, stdout, stderr)
 		}
 	}
 
@@ -374,11 +544,17 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 }
 
 func evalIdentifier(node *Identifier, env *Environment) Object {
-	val, ok := env.Get(node.Value)
-	if !ok {
-		return &Error{Message: fmt.Sprintf("identifier not found: %s", node.Value)}
+	if node.Value == "env" {
+		return ENVPKG
 	}
-	return val.(Object)
+	if fn, ok := NativeFns[node.Value]; ok {
+		return fn
+	}
+	val, ok := env.GetObject(node.Value)
+	if !ok {
+		return &Error{Message: "identifier not found: " + node.Value}
+	}
+	return val
 }
 
 func nativeBoolToBooleanObject(input bool) *Boolean {
@@ -393,6 +569,66 @@ func isError(obj Object) bool {
 		return obj.Type() == ERROR_OBJ
 	}
 	return false
+}
+
+func objectToScriptString(obj Object) (string, bool) {
+	switch obj.Type() {
+	case STRING_OBJ, INTEGER_OBJ, BOOLEAN_OBJ, NULL_OBJ:
+		return inspectObject(obj), true
+	default:
+		return "", false
+	}
+}
+
+func inspectObjects(args []Object) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	values := make([]string, len(args))
+	for i, arg := range args {
+		values[i] = inspectObject(arg)
+	}
+	return values
+}
+
+func inspectObject(obj Object) string {
+	switch v := obj.(type) {
+	case *String:
+		return v.Value
+	case *Integer:
+		return integerToString(v.Value)
+	case *Boolean:
+		if v.Value {
+			return "true"
+		}
+		return "false"
+	case *Null:
+		return "nil"
+	default:
+		return obj.Inspect()
+	}
+}
+
+func integerToString(value int64) string {
+	if value == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	idx := len(buf)
+	negative := value < 0
+	if negative {
+		value = -value
+	}
+	for value > 0 {
+		idx--
+		buf[idx] = byte('0' + value%10)
+		value /= 10
+	}
+	if negative {
+		idx--
+		buf[idx] = '-'
+	}
+	return string(buf[idx:])
 }
 
 func evalLogicalStatement(ls *LogicalStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
@@ -423,12 +659,12 @@ func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 	return NULL
 }
 
-func applyFunction(fn *Function, args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	extendEnv := NewEnclosedEnvironment(fn.Env)
 
 	for i, param := range fn.Parameters {
 		if i < len(args) {
-			extendEnv.Set(param.Value, &String{Value: args[i]})
+			extendEnv.Set(param.Value, args[i])
 		}
 	}
 
@@ -436,26 +672,42 @@ func applyFunction(fn *Function, args []string, env *Environment, stdin io.Reade
 }
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	var val Object = NULL
-	if vs.Value != nil {
-		val = EvalWithIO(vs.Value, env, stdin, stdout, stderr)
-		if isError(val) {
-			return val
-		}
-	}
-
 	typeName := ""
 	if vs.Type != nil {
 		typeName = string(mapTypeName(vs.Type.Value))
-		if val != NULL && string(val.Type()) != typeName {
-			return &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
-		}
-	} else if val != NULL {
+	}
+
+	val, errObj := evaluateDeclaredValue(vs, env, stdin, stdout, stderr, typeName)
+	if errObj != nil {
+		return errObj
+	}
+
+	if typeName == "" && shouldTrackType(string(val.Type())) {
 		typeName = string(val.Type())
 	}
 
 	env.SetWithType(vs.Name.Value, val, typeName)
 	return val
+}
+
+func evaluateDeclaredValue(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer, typeName string) (Object, *Error) {
+	if vs.Value == nil {
+		if typeName == "" {
+			return NULL, nil
+		}
+		return zeroValueForType(ObjectType(typeName)), nil
+	}
+
+	val := EvalWithIO(vs.Value, env, stdin, stdout, stderr)
+	if isError(val) {
+		return nil, val.(*Error)
+	}
+
+	if typeName != "" && string(val.Type()) != typeName {
+		return nil, &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
+	}
+
+	return val, nil
 }
 
 func mapTypeName(name string) ObjectType {
@@ -468,5 +720,18 @@ func mapTypeName(name string) ObjectType {
 		return BOOLEAN_OBJ
 	default:
 		return ObjectType(strings.ToUpper(name))
+	}
+}
+
+func zeroValueForType(typeName ObjectType) Object {
+	switch typeName {
+	case INTEGER_OBJ:
+		return getIntegerObject(0)
+	case STRING_OBJ:
+		return &String{Value: ""}
+	case BOOLEAN_OBJ:
+		return FALSE
+	default:
+		return NULL
 	}
 }

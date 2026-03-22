@@ -2,9 +2,13 @@ package input
 
 import (
 	"bufio"
+	"errors"
 	"io"
+	"sync"
 	"time"
 )
+
+var errParserClosed = errors.New("parser closed")
 
 type Key int
 
@@ -47,41 +51,67 @@ type InputEvent struct {
 }
 
 type Parser struct {
-	reader *bufio.Reader
-	runes  chan rune
-	err    error
+	reader    *bufio.Reader
+	results   chan readResult
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+type readResult struct {
+	rune rune
+	err  error
 }
 
 func NewParser(r io.Reader) *Parser {
 	p := &Parser{
-		reader: bufio.NewReader(r),
-		runes:  make(chan rune, 100),
+		reader:  bufio.NewReader(r),
+		results: make(chan readResult, 100),
+		closed:  make(chan struct{}),
 	}
 	go p.fill()
 	return p
 }
 
 func (p *Parser) fill() {
-	defer close(p.runes)
+	defer close(p.results)
 	for {
+		select {
+		case <-p.closed:
+			p.results <- readResult{err: errParserClosed}
+			return
+		default:
+		}
 		r, _, err := p.reader.ReadRune()
 		if err != nil {
-			p.err = err
+			p.results <- readResult{err: err}
 			return
 		}
-		p.runes <- r
+		p.results <- readResult{rune: r}
 	}
 }
 
 func (p *Parser) NextEvent() (InputEvent, error) {
-	r, ok := <-p.runes
+	result, ok := <-p.results
 	if !ok {
-		if p.err != nil && p.err != io.EOF {
-			return InputEvent{}, p.err
+		return InputEvent{}, io.EOF
+	}
+	if result.err != nil {
+		if result.err == errParserClosed {
+			return InputEvent{}, io.EOF
+		}
+		if result.err != io.EOF {
+			return InputEvent{}, result.err
 		}
 		return InputEvent{}, io.EOF
 	}
-	return p.parseRune(r)
+	return p.parseRune(result.rune)
+}
+
+func (p *Parser) Close() error {
+	p.closeOnce.Do(func() {
+		close(p.closed)
+	})
+	return nil
 }
 
 func (p *Parser) parseRune(r rune) (InputEvent, error) {
@@ -124,14 +154,22 @@ func (p *Parser) parseRune(r rune) (InputEvent, error) {
 		next, ok := p.readNext(50 * time.Millisecond)
 		if ok {
 			switch next {
-			case 'H': return InputEvent{Key: KeyUp}, nil
-			case 'P': return InputEvent{Key: KeyDown}, nil
-			case 'M': return InputEvent{Key: KeyRight}, nil
-			case 'K': return InputEvent{Key: KeyLeft}, nil
-			case 'G': return InputEvent{Key: KeyHome}, nil
-			case 'O': return InputEvent{Key: KeyEnd}, nil
-			case 'S': return InputEvent{Key: KeyDelete}, nil
-			case 0x93: return InputEvent{Key: KeyCtrlDelete}, nil
+			case 'H':
+				return InputEvent{Key: KeyUp}, nil
+			case 'P':
+				return InputEvent{Key: KeyDown}, nil
+			case 'M':
+				return InputEvent{Key: KeyRight}, nil
+			case 'K':
+				return InputEvent{Key: KeyLeft}, nil
+			case 'G':
+				return InputEvent{Key: KeyHome}, nil
+			case 'O':
+				return InputEvent{Key: KeyEnd}, nil
+			case 'S':
+				return InputEvent{Key: KeyDelete}, nil
+			case 0x93:
+				return InputEvent{Key: KeyCtrlDelete}, nil
 			}
 		}
 		return InputEvent{Key: KeyRune, Rune: r}, nil
@@ -142,8 +180,11 @@ func (p *Parser) parseRune(r rune) (InputEvent, error) {
 
 func (p *Parser) readNext(timeout time.Duration) (rune, bool) {
 	select {
-	case r, ok := <-p.runes:
-		return r, ok
+	case result, ok := <-p.results:
+		if !ok || result.err != nil {
+			return 0, false
+		}
+		return result.rune, true
 	case <-time.After(timeout):
 		return 0, false
 	}

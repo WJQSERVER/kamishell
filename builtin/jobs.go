@@ -26,6 +26,10 @@ func JobsCmd(args []string, env Environment, stdin io.Reader, stdout io.Writer, 
 
 	for _, id := range ids {
 		job := Jobs[id]
+		if job.Error != "" {
+			fmt.Fprintf(stdout, "[%d] %-10s %s (%s)\n", job.ID, job.Status, job.Command, job.Error)
+			continue
+		}
 		fmt.Fprintf(stdout, "[%d] %-10s %s\n", job.ID, job.Status, job.Command)
 	}
 

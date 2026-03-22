@@ -1,6 +1,6 @@
-package main
+package core
 
-import "fmt"
+import "strconv"
 
 type ObjectType string
 
@@ -11,6 +11,7 @@ const (
 	NULL_OBJ     ObjectType = "NULL"
 	ERROR_OBJ    ObjectType = "ERROR"
 	FUNCTION_OBJ ObjectType = "FUNCTION"
+	PACKAGE_OBJ  ObjectType = "PACKAGE"
 )
 
 type Object interface {
@@ -22,14 +23,42 @@ type Integer struct {
 	Value int64
 }
 
-func (i *Integer) Inspect() string  { return fmt.Sprintf("%d", i.Value) }
+func (i *Integer) Inspect() string  { return strconv.FormatInt(i.Value, 10) }
 func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
+
+const (
+	integerCacheMin int64 = -128
+	integerCacheMax int64 = 1024
+)
+
+var integerCache = initIntegerCache()
+
+func initIntegerCache() []*Integer {
+	size := integerCacheMax - integerCacheMin + 1
+	cache := make([]*Integer, size)
+	for i := range cache {
+		cache[i] = &Integer{Value: integerCacheMin + int64(i)}
+	}
+	return cache
+}
+
+func getIntegerObject(value int64) *Integer {
+	if value >= integerCacheMin && value <= integerCacheMax {
+		return integerCache[value-integerCacheMin]
+	}
+	return &Integer{Value: value}
+}
 
 type Boolean struct {
 	Value bool
 }
 
-func (b *Boolean) Inspect() string  { return fmt.Sprintf("%t", b.Value) }
+func (b *Boolean) Inspect() string {
+	if b.Value {
+		return "true"
+	}
+	return "false"
+}
 func (b *Boolean) Type() ObjectType { return BOOLEAN_OBJ }
 
 type String struct {
@@ -52,7 +81,7 @@ type Error struct {
 
 func (e *Error) Inspect() string {
 	if e.Op != "" {
-		return fmt.Sprintf("ERROR (%s): %s (code: %d)", e.Op, e.Message, e.Code)
+		return "ERROR (" + e.Op + "): " + e.Message + " (code: " + strconv.Itoa(e.Code) + ")"
 	}
 	return "ERROR: " + e.Message
 }
@@ -66,3 +95,17 @@ type Function struct {
 
 func (f *Function) Inspect() string  { return "func" }
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
+
+type NativeFunction struct {
+	Fn func(env *Environment, args ...Object) Object
+}
+
+func (nf *NativeFunction) Type() ObjectType { return "NATIVE_FUNCTION" }
+func (nf *NativeFunction) Inspect() string  { return "native function" }
+
+type Package struct {
+	Name string
+}
+
+func (p *Package) Type() ObjectType { return PACKAGE_OBJ }
+func (p *Package) Inspect() string  { return p.Name }

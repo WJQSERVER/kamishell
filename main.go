@@ -7,11 +7,20 @@ import (
 	"path/filepath"
 	"strings"
 
-	chreadline "github.com/chzyer/readline"
 	wjqreadline "github.com/WJQSERVER/readline"
+	chreadline "github.com/chzyer/readline"
+	"kamishell/builtin"
+	"kamishell/core"
+	"kamishell/make"
 )
 
-const PROMPT = "kami> "
+func init() {
+	builtin.RegisterBuiltin(&builtin.BuiltinCommand{
+		Name:        "make",
+		Description: "Build system inspired by CMake using .km scripts",
+		Action:      make.Make,
+	})
+}
 
 var (
 	readlineLib = flag.String("readline", "wjq", "Select readline library: wjq (default) or base (legacy)")
@@ -19,13 +28,18 @@ var (
 
 func main() {
 	flag.Parse()
-	env := NewEnvironment()
+	env := core.NewEnvironment()
 
 	// Load .kamirc
 	loadConfig(env)
 
 	args := flag.Args()
 	if len(args) > 0 {
+		if shouldRunAsBuiltin(args[0]) {
+			runBuiltinArgs(args, env)
+			return
+		}
+
 		// Script mode
 		filename := args[0]
 		executeFile(filename, env)
@@ -35,7 +49,35 @@ func main() {
 	}
 }
 
-func executeFile(filename string, env *Environment) {
+func shouldRunAsBuiltin(name string) bool {
+	info, err := os.Stat(name)
+	isDir := err == nil && info.IsDir()
+	isFile := err == nil && !isDir
+	if isFile {
+		return false
+	}
+	_, ok := builtin.Builtins[name]
+	return ok
+}
+
+func runBuiltinArgs(args []string, env *core.Environment) {
+	if len(args) == 0 {
+		return
+	}
+
+	cmd, ok := builtin.Builtins[args[0]]
+	if !ok {
+		runInput(strings.Join(args, " "), env, false)
+		return
+	}
+
+	exitCode := cmd.Action(args[1:], env, os.Stdin, os.Stdout, os.Stderr)
+	if exitCode != 0 {
+		fmt.Fprintf(os.Stderr, "ERROR (%s): builtin %s failed (code: %d)\n", cmd.Name, cmd.Name, exitCode)
+	}
+}
+
+func executeFile(filename string, env *core.Environment) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading file: %v\n", err)
@@ -45,7 +87,7 @@ func executeFile(filename string, env *Environment) {
 	runInput(string(content), env, false)
 }
 
-func startRepl(env *Environment) {
+func startRepl(env *core.Environment) {
 	home, _ := os.UserHomeDir()
 	historyFile := filepath.Join(home, ".kami_history")
 
@@ -57,9 +99,9 @@ func startRepl(env *Environment) {
 	}
 }
 
-func startChzyerRepl(env *Environment, historyFile string) {
+func startChzyerRepl(env *core.Environment, historyFile string) {
 	rl, err := chreadline.NewEx(&chreadline.Config{
-		Prompt:          PROMPT,
+		Prompt:          buildPrompt(false),
 		HistoryFile:     historyFile,
 		AutoComplete:    &KamiCompleter{env: env},
 		InterruptPrompt: "^C",
@@ -72,6 +114,7 @@ func startChzyerRepl(env *Environment, historyFile string) {
 	defer rl.Close()
 
 	for {
+		rl.SetPrompt(buildPrompt(false))
 		line, err := rl.Readline()
 		if err != nil { // io.EOF or ctrl-c
 			break
@@ -85,12 +128,9 @@ func startChzyerRepl(env *Environment, historyFile string) {
 	}
 }
 
-func startWjqRepl(env *Environment, historyFile string) {
-	// Cyan prompt for WJQ version to distinguish it
-	cyanPrompt := "\033[36mkami>\033[0m "
-
+func startWjqRepl(env *core.Environment, historyFile string) {
 	cfg := &wjqreadline.Config{
-		Prompt:    cyanPrompt,
+		Prompt:    buildPrompt(true),
 		Completer: &KamiCompleter{env: env},
 		History:   NewWjqFileHistory(historyFile),
 	}
@@ -102,6 +142,7 @@ func startWjqRepl(env *Environment, historyFile string) {
 	}
 
 	for {
+		rl.SetPrompt(buildPrompt(true))
 		line, err := rl.Readline()
 		if err != nil {
 			if err == wjqreadline.ErrInterrupt {
@@ -120,22 +161,42 @@ func startWjqRepl(env *Environment, historyFile string) {
 	}
 }
 
-func runInput(input string, env *Environment, isRepl bool) {
-	l := NewLexer(input)
-	p := NewParser(l)
+func buildPrompt(color bool) string {
+	wd, err := os.Getwd()
+	if err != nil || wd == "" {
+		if color {
+			return "\033[36mkami>\033[0m "
+		}
+		return "kami> "
+	}
+
+	name := filepath.Base(wd)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = wd
+	}
+
+	if color {
+		return fmt.Sprintf("\033[90m[%s]\033[0m \033[36mkami>\033[0m ", name)
+	}
+	return fmt.Sprintf("[%s] kami> ", name)
+}
+
+func runInput(input string, env *core.Environment, isRepl bool) {
+	l := core.NewLexer(input)
+	p := core.NewParser(l)
 
 	program := p.ParseProgram()
-	result := Eval(program, env)
+	result := core.Eval(program, env)
 	if result != nil {
-		if result.Type() == ERROR_OBJ {
+		if result.Type() == core.ERROR_OBJ {
 			fmt.Fprintf(os.Stderr, "%s\n", result.Inspect())
-		} else if isRepl && result.Type() != NULL_OBJ {
+		} else if isRepl && result.Type() != core.NULL_OBJ {
 			fmt.Println(result.Inspect())
 		}
 	}
 }
 
-func loadConfig(env *Environment) {
+func loadConfig(env *core.Environment) {
 	configs := []string{
 		os.ExpandEnv("$HOME/.kamirc"),
 		".kamirc",

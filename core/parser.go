@@ -1,7 +1,8 @@
-package main
+package core
 
 import (
 	"strconv"
+	"strings"
 )
 
 const (
@@ -12,15 +13,18 @@ const (
 	SUM         // +
 	PRODUCT     // *
 	PREFIX      // -X or !X
+	MEMBER      // obj.prop
 	CALL        // myFunction(X)
 )
 
 var precedences = map[TokenType]int{
-	EQ:       EQUALS,
-	NEQ:      EQUALS,
-	GREATER:  LESSGREATER,
-	LESS:     LESSGREATER,
-	PLUS:     SUM,
+	EQ:      EQUALS,
+	NEQ:     EQUALS,
+	GREATER: LESSGREATER,
+	LESS:    LESSGREATER,
+	PLUS:    SUM,
+	DOT:     MEMBER,
+	LPAREN:  CALL,
 }
 
 type (
@@ -48,6 +52,7 @@ func NewParser(l *Lexer) *Parser {
 	p.registerPrefix(FALSE_TOK, p.parseBooleanLiteral)
 	p.registerPrefix(DOLLAR, p.parseInterpolation)
 	p.registerPrefix(NIL, p.parseNilLiteral)
+	p.registerPrefix(LPAREN, p.parseGroupedExpression)
 
 	p.infixParseFns = make(map[TokenType]infixParseFn)
 	p.registerInfix(EQ, p.parseInfixExpression)
@@ -55,6 +60,8 @@ func NewParser(l *Lexer) *Parser {
 	p.registerInfix(GREATER, p.parseInfixExpression)
 	p.registerInfix(LESS, p.parseInfixExpression)
 	p.registerInfix(PLUS, p.parseInfixExpression)
+	p.registerInfix(DOT, p.parseMemberExpression)
+	p.registerInfix(LPAREN, p.parseCallExpression)
 
 	p.nextToken()
 	p.nextToken()
@@ -90,27 +97,27 @@ func (p *Parser) ParseProgram() *Program {
 }
 
 func (p *Parser) parseStatement() Statement {
-    stmt := p.parsePipeOrRedirectStatement()
-    for p.peekToken.Type == AND || p.peekToken.Type == OR {
-        operator := p.peekToken
-        p.nextToken() // move to && or ||
-        p.nextToken() // move to next command
-        right := p.parsePipeOrRedirectStatement()
-        stmt = &LogicalStatement{
-            Token:    operator,
-            Left:     stmt,
-            Operator: operator.Literal,
-            Right:    right,
-        }
-    }
-    if p.peekToken.Type == AMPERSAND {
-        p.nextToken() // move to &
-        stmt = &BackgroundStatement{
-            Token: p.curToken,
-            Stmt:  stmt,
-        }
-    }
-    return stmt
+	stmt := p.parsePipeOrRedirectStatement()
+	for p.peekToken.Type == AND || p.peekToken.Type == OR {
+		operator := p.peekToken
+		p.nextToken() // move to && or ||
+		p.nextToken() // move to next command
+		right := p.parsePipeOrRedirectStatement()
+		stmt = &LogicalStatement{
+			Token:    operator,
+			Left:     stmt,
+			Operator: operator.Literal,
+			Right:    right,
+		}
+	}
+	if p.peekToken.Type == AMPERSAND {
+		p.nextToken() // move to &
+		stmt = &BackgroundStatement{
+			Token: p.curToken,
+			Stmt:  stmt,
+		}
+	}
+	return stmt
 }
 
 func (p *Parser) parsePipeOrRedirectStatement() Statement {
@@ -134,7 +141,13 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseGoStatement()
 	case IDENT:
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
+			if p.peekToken.Type == ASSIGN && p.curToken.End == p.peekToken.Start {
+				stmt = p.parseInvalidTightAssignStatement()
+				break
+			}
 			stmt = p.parseAssignStatement()
+		} else if p.peekToken.Type == DOT || p.peekToken.Type == LPAREN {
+			stmt = p.parseExpressionStatement()
 		} else {
 			stmt = p.parseCommandStatement()
 		}
@@ -232,6 +245,22 @@ func (p *Parser) parseAssignStatement() *AssignStatement {
 	return stmt
 }
 
+func (p *Parser) parseInvalidTightAssignStatement() *InvalidStatement {
+	stmt := &InvalidStatement{Token: p.peekToken, Message: "syntax error: assignments with '=' require spaces around the operator"}
+
+	p.nextToken() // move to =
+	if p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF {
+		p.nextToken() // move to start of expression
+		_ = p.parseExpression(LOWEST)
+	}
+
+	if p.peekToken.Type == SEMICOLON {
+		p.nextToken()
+	}
+
+	return stmt
+}
+
 func (p *Parser) parseIfStatement() *IfStatement {
 	stmt := &IfStatement{Token: p.curToken}
 
@@ -302,12 +331,22 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{Token: p.curToken, Name: p.curToken.Literal}
 
 	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND {
+		if merged, ok := p.tryParseKeyValueArgument(); ok {
+			stmt.Arguments = append(stmt.Arguments, merged)
+			continue
+		}
 		p.nextToken()
 		if p.curToken.Type == IDENT {
 			// In command context, treat bare words as strings
 			stmt.Arguments = append(stmt.Arguments, &StringLiteral{Token: p.curToken, Value: p.curToken.Literal})
 		} else {
-			stmt.Arguments = append(stmt.Arguments, p.parseExpression(CALL))
+			arg := p.parseExpression(CALL)
+			if arg != nil {
+				stmt.Arguments = append(stmt.Arguments, arg)
+			} else {
+				// Fallback: treat unknown operators in command context as literal strings
+				stmt.Arguments = append(stmt.Arguments, &StringLiteral{Token: p.curToken, Value: p.curToken.Literal})
+			}
 		}
 	}
 
@@ -316,6 +355,39 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 	}
 
 	return stmt
+}
+
+func (p *Parser) tryParseKeyValueArgument() (Expression, bool) {
+	if p.peekToken.Type != IDENT {
+		return nil, false
+	}
+	left := p.peekToken
+
+	// Need at least IDENT '=' <value> with no spaces around '='.
+	if p.l == nil {
+		return nil, false
+	}
+	if p.peekToken.End >= len(p.l.input) || p.l.input[p.peekToken.End] != '=' {
+		return nil, false
+	}
+
+	savedCur := p.curToken
+	savedPeek := p.peekToken
+	p.nextToken() // current becomes left ident
+	if p.peekToken.Type != ASSIGN || p.curToken.End != p.peekToken.Start {
+		p.curToken = savedCur
+		p.peekToken = savedPeek
+		return nil, false
+	}
+	p.nextToken() // current becomes =
+	if p.peekToken.Type != IDENT && p.peekToken.Type != NUMBER && p.peekToken.Type != STRING && p.peekToken.Type != TRUE_TOK && p.peekToken.Type != FALSE_TOK && p.peekToken.Type != NIL {
+		p.curToken = savedCur
+		p.peekToken = savedPeek
+		return nil, false
+	}
+	p.nextToken() // current becomes value
+	merged := left.Literal + "=" + p.curToken.Literal
+	return &StringLiteral{Token: left, Value: merged, Obj: &String{Value: merged}}, true
 }
 
 func (p *Parser) parseExpression(precedence int) Expression {
@@ -351,11 +423,16 @@ func (p *Parser) parseIntegerLiteral() Expression {
 	lit := &IntegerLiteral{Token: p.curToken}
 	val, _ := strconv.ParseInt(p.curToken.Literal, 0, 64)
 	lit.Value = val
+	lit.Obj = getIntegerObject(val)
 	return lit
 }
 
 func (p *Parser) parseStringLiteral() Expression {
-	return &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+	lit := &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+	if strings.IndexByte(lit.Value, '$') < 0 {
+		lit.Obj = &String{Value: lit.Value}
+	}
+	return lit
 }
 
 func (p *Parser) parseNilLiteral() Expression {
@@ -478,4 +555,59 @@ func (p *Parser) parseVarStatement() *VarStatement {
 	}
 
 	return stmt
+}
+
+func (p *Parser) parseGroupedExpression() Expression {
+	p.nextToken()
+
+	exp := p.parseExpression(LOWEST)
+
+	if p.peekToken.Type != RPAREN {
+		return nil
+	}
+	p.nextToken()
+
+	return exp
+}
+
+func (p *Parser) parseMemberExpression(left Expression) Expression {
+	exp := &MemberExpression{Token: p.curToken, Object: left}
+
+	p.nextToken()
+	if p.curToken.Type != IDENT {
+		return nil
+	}
+
+	exp.Property = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	return exp
+}
+
+func (p *Parser) parseCallExpression(function Expression) Expression {
+	exp := &CallExpression{Token: p.curToken, Function: function}
+	exp.Arguments = p.parseExpressionList(RPAREN)
+	return exp
+}
+
+func (p *Parser) parseExpressionList(end TokenType) []Expression {
+	args := []Expression{}
+
+	if p.peekToken.Type == end {
+		p.nextToken()
+		return args
+	}
+
+	p.nextToken()
+	args = append(args, p.parseExpression(LOWEST))
+
+	for p.peekToken.Type == COMMA {
+		p.nextToken()
+		p.nextToken()
+		args = append(args, p.parseExpression(LOWEST))
+	}
+
+	if p.peekToken.Type == end {
+		p.nextToken()
+	}
+
+	return args
 }

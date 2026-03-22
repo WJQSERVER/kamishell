@@ -57,9 +57,11 @@ if err != nil {
 
 ## 📖 文档
 
-- [语法指南](./docs/syntax.md) - 详细的语法参考。
+- [当前语法指南](./docs/syntax.md) - 当前代码真实支持的语法、关键字与未实现项总览。
+- [make 构建文档](./docs/make.md) - `.km` 构建脚本与构建变量说明。
 - [使用手册](./docs/usage.md) - REPL 和内置命令的使用说明。
 - [语言规范](./plan/spec.md) - 类型系统与运行时行为定义。
+- [性能说明](./docs/performance.md) - benchmark 覆盖与热点观察。
 - [路线图](./plan/roadmap.md) - 项目开发计划。
 
 ## 🛠 开发与测试

@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"strings"
@@ -58,6 +58,15 @@ func (cs *CommandStatement) String() string {
 	return out.String()
 }
 
+type InvalidStatement struct {
+	Token   Token
+	Message string
+}
+
+func (is *InvalidStatement) statementNode()       {}
+func (is *InvalidStatement) TokenLiteral() string { return is.Token.Literal }
+func (is *InvalidStatement) String() string       { return is.Message }
+
 type PrintStatement struct {
 	Token      Token
 	Expression Expression
@@ -107,6 +116,7 @@ func (i *Identifier) String() string       { return i.Value }
 type StringLiteral struct {
 	Token Token
 	Value string
+	Obj   *String
 }
 
 func (sl *StringLiteral) expressionNode()      {}
@@ -116,6 +126,7 @@ func (sl *StringLiteral) String() string       { return "\"" + sl.Value + "\"" }
 type IntegerLiteral struct {
 	Token Token
 	Value int64
+	Obj   *Integer
 }
 
 func (il *IntegerLiteral) expressionNode()      {}
@@ -221,8 +232,41 @@ func (ie *InfixExpression) String() string {
 	return out.String()
 }
 
+type CallExpression struct {
+	Token     Token
+	Function  Expression
+	Arguments []Expression
+}
+
+func (ce *CallExpression) expressionNode()      {}
+func (ce *CallExpression) TokenLiteral() string { return ce.Token.Literal }
+func (ce *CallExpression) String() string {
+	var out strings.Builder
+	args := make([]string, 0, len(ce.Arguments))
+	for _, arg := range ce.Arguments {
+		args = append(args, arg.String())
+	}
+	out.WriteString(ce.Function.String())
+	out.WriteString("(")
+	out.WriteString(strings.Join(args, ", "))
+	out.WriteString(")")
+	return out.String()
+}
+
+type MemberExpression struct {
+	Token    Token
+	Object   Expression
+	Property *Identifier
+}
+
+func (me *MemberExpression) expressionNode()      {}
+func (me *MemberExpression) TokenLiteral() string { return me.Token.Literal }
+func (me *MemberExpression) String() string {
+	return me.Object.String() + "." + me.Property.String()
+}
+
 type PipeStatement struct {
-	Token    Token // The | token
+	Token    Token       // The | token
 	Commands []Statement // The commands in the pipeline (usually CommandStatements)
 }
 
