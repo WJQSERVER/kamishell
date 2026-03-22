@@ -53,8 +53,11 @@ type InputEvent struct {
 type Parser struct {
 	reader    *bufio.Reader
 	results   chan readResult
+	requests  chan struct{}
 	closed    chan struct{}
 	closeOnce sync.Once
+	mu        sync.Mutex
+	pending   bool
 }
 
 type readResult struct {
@@ -64,9 +67,10 @@ type readResult struct {
 
 func NewParser(r io.Reader) *Parser {
 	p := &Parser{
-		reader:  bufio.NewReader(r),
-		results: make(chan readResult, 100),
-		closed:  make(chan struct{}),
+		reader:   bufio.NewReader(r),
+		results:  make(chan readResult, 1),
+		requests: make(chan struct{}),
+		closed:   make(chan struct{}),
 	}
 	go p.fill()
 	return p
@@ -77,23 +81,33 @@ func (p *Parser) fill() {
 	for {
 		select {
 		case <-p.closed:
-			p.results <- readResult{err: errParserClosed}
 			return
-		default:
+		case <-p.requests:
 		}
+
 		r, _, err := p.reader.ReadRune()
+		p.mu.Lock()
+		p.pending = false
+		p.mu.Unlock()
 		if err != nil {
-			p.results <- readResult{err: err}
+			select {
+			case p.results <- readResult{err: err}:
+			case <-p.closed:
+			}
 			return
 		}
-		p.results <- readResult{rune: r}
+		select {
+		case p.results <- readResult{rune: r}:
+		case <-p.closed:
+			return
+		}
 	}
 }
 
 func (p *Parser) NextEvent() (InputEvent, error) {
-	result, ok := <-p.results
-	if !ok {
-		return InputEvent{}, io.EOF
+	result, err := p.nextResult()
+	if err != nil {
+		return InputEvent{}, err
 	}
 	if result.err != nil {
 		if result.err == errParserClosed {
@@ -112,6 +126,56 @@ func (p *Parser) Close() error {
 		close(p.closed)
 	})
 	return nil
+}
+
+func (p *Parser) nextResult() (readResult, error) {
+	if result, ok, closed := p.tryBufferedResult(); ok {
+		return result, nil
+	} else if closed {
+		return readResult{}, io.EOF
+	}
+
+	if !p.ensurePendingRead() {
+		return readResult{}, io.EOF
+	}
+
+	result, ok := <-p.results
+	if !ok {
+		return readResult{}, io.EOF
+	}
+	return result, nil
+}
+
+func (p *Parser) tryBufferedResult() (readResult, bool, bool) {
+	select {
+	case result, ok := <-p.results:
+		if !ok {
+			return readResult{}, false, true
+		}
+		return result, true, false
+	default:
+		return readResult{}, false, false
+	}
+}
+
+func (p *Parser) ensurePendingRead() bool {
+	p.mu.Lock()
+	if p.pending {
+		p.mu.Unlock()
+		return true
+	}
+	p.pending = true
+	p.mu.Unlock()
+
+	select {
+	case <-p.closed:
+		p.mu.Lock()
+		p.pending = false
+		p.mu.Unlock()
+		return false
+	case p.requests <- struct{}{}:
+		return true
+	}
 }
 
 func (p *Parser) parseRune(r rune) (InputEvent, error) {
@@ -179,6 +243,19 @@ func (p *Parser) parseRune(r rune) (InputEvent, error) {
 }
 
 func (p *Parser) readNext(timeout time.Duration) (rune, bool) {
+	if result, ok, closed := p.tryBufferedResult(); ok {
+		if result.err != nil {
+			return 0, false
+		}
+		return result.rune, true
+	} else if closed {
+		return 0, false
+	}
+
+	if !p.ensurePendingRead() {
+		return 0, false
+	}
+
 	select {
 	case result, ok := <-p.results:
 		if !ok || result.err != nil {
