@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -144,4 +145,38 @@ func TestRunBuiltinArgsKeepsKeyValueArgument(t *testing.T) {
 		[]string{"test_builtin_key_value", `GOOS=linux`, `CGO_ENABLED=0`},
 		[]string{`GOOS=linux`, `CGO_ENABLED=0`},
 	)
+}
+
+func TestResolveHistoryFileFallsBackWhenHomeUnavailable(t *testing.T) {
+	path := resolveHistoryFile(func() (string, error) {
+		return "", os.ErrNotExist
+	})
+	if !strings.HasSuffix(path, ".kami_history") {
+		t.Fatalf("expected fallback history path to end with .kami_history, got %q", path)
+	}
+}
+
+func TestLoadConfigReportsReadFailure(t *testing.T) {
+	tempDir := t.TempDir()
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	path := filepath.Join(tempDir, ".kamirc")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+
+	stderr := &bytes.Buffer{}
+	loadConfigWithIO(core.NewEnvironment(), stderr, func() []string {
+		return []string{path}
+	})
+	if !strings.Contains(stderr.String(), "Error reading config file") {
+		t.Fatalf("expected config read failure to be reported, got %q", stderr.String())
+	}
 }

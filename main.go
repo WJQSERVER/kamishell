@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,11 +85,7 @@ func executeFile(filename string, env *core.Environment) {
 }
 
 func startRepl(env *core.Environment) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-
-	}
-	historyFile := filepath.Join(home, ".kami_history")
+	historyFile := resolveHistoryFile(os.UserHomeDir)
 	runRepl(env, historyFile)
 }
 
@@ -161,17 +158,35 @@ func runInput(input string, env *core.Environment, isRepl bool) {
 }
 
 func loadConfig(env *core.Environment) {
-	configs := []string{
+	loadConfigWithIO(env, os.Stderr, defaultConfigPaths)
+}
+
+func defaultConfigPaths() []string {
+	return []string{
 		os.ExpandEnv("$HOME/.kamirc"),
 		".kamirc",
 	}
+}
 
-	for _, path := range configs {
+func loadConfigWithIO(env *core.Environment, stderr io.Writer, paths func() []string) {
+	for _, path := range paths() {
 		if _, err := os.Stat(path); err == nil {
-			content, _ := os.ReadFile(path)
+			content, err := os.ReadFile(path)
+			if err != nil {
+				fmt.Fprintf(stderr, "Error reading config file %s: %v\n", path, err)
+				continue
+			}
 			runInput(string(content), env, false)
 		}
 	}
+}
+
+func resolveHistoryFile(userHomeDir func() (string, error)) string {
+	home, err := userHomeDir()
+	if err == nil && home != "" {
+		return filepath.Join(home, ".kami_history")
+	}
+	return ".kami_history"
 }
 
 type FileHistory struct {
