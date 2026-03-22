@@ -344,3 +344,14 @@ func TestUserFunctionKeepsBooleanArguments(t *testing.T) {
 		t.Errorf("expected yes, got %q", stdout)
 	}
 }
+
+func TestUnicodeVariableNameWorks(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("变量 := 1; print 变量", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "1" {
+		t.Errorf("expected 1, got %q", stdout)
+	}
+}

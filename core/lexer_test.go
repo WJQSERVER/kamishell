@@ -110,3 +110,12 @@ func TestAssignWithoutSpacesDoesNotBecomeSingleIdentifier(t *testing.T) {
 		t.Fatalf("expected third token NUMBER 1, got type=%q literal=%q", tok.Type, tok.Literal)
 	}
 }
+
+func TestUnicodeIdentifierTokenization(t *testing.T) {
+	l := NewLexer("变量 := 1")
+
+	tok := l.NextToken()
+	if tok.Type != IDENT || tok.Literal != "变量" {
+		t.Fatalf("expected unicode IDENT 变量, got type=%q literal=%q", tok.Type, tok.Literal)
+	}
+}

@@ -138,3 +138,10 @@ func TestBuildPromptWithColorKeepsANSIAndPath(t *testing.T) {
 		t.Fatalf("expected colored prompt to contain current dir name, got %q", prompt)
 	}
 }
+
+func TestRunBuiltinArgsKeepsKeyValueArgument(t *testing.T) {
+	runBuiltinArgsCase(t,
+		[]string{"test_builtin_key_value", `GOOS=linux`, `CGO_ENABLED=0`},
+		[]string{`GOOS=linux`, `CGO_ENABLED=0`},
+	)
+}

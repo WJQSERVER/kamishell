@@ -111,3 +111,26 @@ var ready = true`
 		t.Fatalf("unexpected third var statement: %#v", stmt2)
 	}
 }
+
+func TestParseCommandStatementKeepsKeyValueArgument(t *testing.T) {
+	input := `target_env "app" GOOS=linux`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*CommandStatement)
+	if !ok {
+		t.Fatalf("stmt is not *CommandStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Arguments) != 2 {
+		t.Fatalf("expected 2 arguments, got=%d", len(stmt.Arguments))
+	}
+	if stmt.Arguments[1].String() != `"GOOS=linux"` {
+		t.Fatalf("expected key=value to stay one argument, got %s", stmt.Arguments[1].String())
+	}
+}

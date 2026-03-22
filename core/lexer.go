@@ -2,6 +2,8 @@ package core
 
 import (
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Lexer struct {
@@ -155,7 +157,7 @@ func (l *Lexer) NextToken() Token {
 		tok.Start = l.position
 		tok.End = l.position
 	default:
-		if isLetter(l.ch) {
+		if isIdentifierStart(l.input[l.position:]) {
 			start := l.position
 			tok.Literal = l.readIdentifier()
 			tok.Type = LookupIdent(tok.Literal)
@@ -213,8 +215,12 @@ func (l *Lexer) skipMultiLineComment() {
 
 func (l *Lexer) readIdentifier() string {
 	position := l.position
-	for isLetter(l.ch) || isDigit(l.ch) {
-		l.readChar()
+	for isIdentifierPart(l.input[l.position:]) {
+		_, size := utf8.DecodeRuneInString(l.input[l.position:])
+		if size <= 0 {
+			break
+		}
+		l.advanceBytes(size)
 	}
 	return l.input[position:l.position]
 }
@@ -280,11 +286,48 @@ func newToken(tokenType TokenType, ch byte, start int) Token {
 }
 
 func isLetter(ch byte) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '-' || ch == '/'
+	return isIdentifierStart(string([]byte{ch}))
 }
 
 func isDigit(ch byte) bool {
 	return ch >= '0' && ch <= '9'
+}
+
+func isIdentifierStart(input string) bool {
+	if input == "" {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(input)
+	if r == utf8.RuneError && len(input) > 0 && input[0] < utf8.RuneSelf {
+		r = rune(input[0])
+	}
+	return unicode.IsLetter(r) || r == '_' || r == '-' || r == '/'
+}
+
+func isIdentifierPart(input string) bool {
+	if input == "" {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(input)
+	if r == utf8.RuneError && len(input) > 0 && input[0] < utf8.RuneSelf {
+		r = rune(input[0])
+	}
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '/'
+}
+
+func (l *Lexer) advanceBytes(size int) {
+	if size <= 0 {
+		return
+	}
+	l.readPosition = l.position + size
+	if l.readPosition >= len(l.input) {
+		l.position = len(l.input)
+		l.ch = 0
+		return
+	}
+	l.position = l.readPosition
+	l.ch = l.input[l.position]
+	l.readPosition++
 }
 
 func singleByteLiteral(ch byte) string {

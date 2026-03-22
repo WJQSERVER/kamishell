@@ -331,6 +331,10 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{Token: p.curToken, Name: p.curToken.Literal}
 
 	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND {
+		if merged, ok := p.tryParseKeyValueArgument(); ok {
+			stmt.Arguments = append(stmt.Arguments, merged)
+			continue
+		}
 		p.nextToken()
 		if p.curToken.Type == IDENT {
 			// In command context, treat bare words as strings
@@ -351,6 +355,39 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 	}
 
 	return stmt
+}
+
+func (p *Parser) tryParseKeyValueArgument() (Expression, bool) {
+	if p.peekToken.Type != IDENT {
+		return nil, false
+	}
+	left := p.peekToken
+
+	// Need at least IDENT '=' <value> with no spaces around '='.
+	if p.l == nil {
+		return nil, false
+	}
+	if p.peekToken.End >= len(p.l.input) || p.l.input[p.peekToken.End] != '=' {
+		return nil, false
+	}
+
+	savedCur := p.curToken
+	savedPeek := p.peekToken
+	p.nextToken() // current becomes left ident
+	if p.peekToken.Type != ASSIGN || p.curToken.End != p.peekToken.Start {
+		p.curToken = savedCur
+		p.peekToken = savedPeek
+		return nil, false
+	}
+	p.nextToken() // current becomes =
+	if p.peekToken.Type != IDENT && p.peekToken.Type != NUMBER && p.peekToken.Type != STRING && p.peekToken.Type != TRUE_TOK && p.peekToken.Type != FALSE_TOK && p.peekToken.Type != NIL {
+		p.curToken = savedCur
+		p.peekToken = savedPeek
+		return nil, false
+	}
+	p.nextToken() // current becomes value
+	merged := left.Literal + "=" + p.curToken.Literal
+	return &StringLiteral{Token: left, Value: merged, Obj: &String{Value: merged}}, true
 }
 
 func (p *Parser) parseExpression(precedence int) Expression {
