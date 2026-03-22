@@ -21,7 +21,10 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 			fmt.Fprintf(stderr, "touch: %v\n", err)
 			return 1
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			fmt.Fprintf(stderr, "touch: %v\n", err)
+			return 1
+		}
 	}
 	return 0
 }

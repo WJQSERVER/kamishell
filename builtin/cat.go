@@ -56,7 +56,9 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 
 		_, err := io.Copy(stdout, r)
 		if closer != nil {
-			closer.Close()
+			if closeErr := closer.Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
 		}
 
 		if err != nil {

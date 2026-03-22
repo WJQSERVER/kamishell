@@ -3,15 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	wjqreadline "github.com/WJQSERVER/readline"
-	chreadline "github.com/chzyer/readline"
 	"kamishell/builtin"
 	"kamishell/core"
 	"kamishell/make"
+
+	"github.com/WJQSERVER/readline"
 )
 
 func init() {
@@ -21,10 +22,6 @@ func init() {
 		Action:      make.Make,
 	})
 }
-
-var (
-	readlineLib = flag.String("readline", "wjq", "Select readline library: wjq (default) or base (legacy)")
-)
 
 func main() {
 	flag.Parse()
@@ -88,56 +85,20 @@ func executeFile(filename string, env *core.Environment) {
 }
 
 func startRepl(env *core.Environment) {
-	home, _ := os.UserHomeDir()
-	historyFile := filepath.Join(home, ".kami_history")
-
-	if *readlineLib == "base" || *readlineLib == "chzyer" {
-		startChzyerRepl(env, historyFile)
-	} else {
-		// Default to wjq
-		startWjqRepl(env, historyFile)
-	}
+	historyFile := resolveHistoryFile(os.UserHomeDir)
+	runRepl(env, historyFile)
 }
 
-func startChzyerRepl(env *core.Environment, historyFile string) {
-	rl, err := chreadline.NewEx(&chreadline.Config{
-		Prompt:          buildPrompt(false),
-		HistoryFile:     historyFile,
-		AutoComplete:    &KamiCompleter{env: env},
-		InterruptPrompt: "^C",
-		EOFPrompt:       "exit",
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing chzyer readline: %v\n", err)
-		return
-	}
-	defer rl.Close()
-
-	for {
-		rl.SetPrompt(buildPrompt(false))
-		line, err := rl.Readline()
-		if err != nil { // io.EOF or ctrl-c
-			break
-		}
-
-		if line == "" {
-			continue
-		}
-
-		runInput(line, env, true)
-	}
-}
-
-func startWjqRepl(env *core.Environment, historyFile string) {
-	cfg := &wjqreadline.Config{
+func runRepl(env *core.Environment, historyFile string) {
+	cfg := &readline.Config{
 		Prompt:    buildPrompt(true),
 		Completer: &KamiCompleter{env: env},
-		History:   NewWjqFileHistory(historyFile),
+		History:   NewFileHistory(historyFile),
 	}
 
-	rl, err := wjqreadline.NewInstance(cfg)
+	rl, err := readline.NewInstance(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing wjq readline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error initializing readline: %v\n", err)
 		return
 	}
 
@@ -145,7 +106,7 @@ func startWjqRepl(env *core.Environment, historyFile string) {
 		rl.SetPrompt(buildPrompt(true))
 		line, err := rl.Readline()
 		if err != nil {
-			if err == wjqreadline.ErrInterrupt {
+			if err == readline.ErrInterrupt {
 				fmt.Println("^C")
 				continue
 			}
@@ -197,27 +158,45 @@ func runInput(input string, env *core.Environment, isRepl bool) {
 }
 
 func loadConfig(env *core.Environment) {
-	configs := []string{
+	loadConfigWithIO(env, os.Stderr, defaultConfigPaths)
+}
+
+func defaultConfigPaths() []string {
+	return []string{
 		os.ExpandEnv("$HOME/.kamirc"),
 		".kamirc",
 	}
+}
 
-	for _, path := range configs {
+func loadConfigWithIO(env *core.Environment, stderr io.Writer, paths func() []string) {
+	for _, path := range paths() {
 		if _, err := os.Stat(path); err == nil {
-			content, _ := os.ReadFile(path)
+			content, err := os.ReadFile(path)
+			if err != nil {
+				fmt.Fprintf(stderr, "Error reading config file %s: %v\n", path, err)
+				continue
+			}
 			runInput(string(content), env, false)
 		}
 	}
 }
 
-type WjqFileHistory struct {
-	wjqreadline.History
+func resolveHistoryFile(userHomeDir func() (string, error)) string {
+	home, err := userHomeDir()
+	if err == nil && home != "" {
+		return filepath.Join(home, ".kami_history")
+	}
+	return ".kami_history"
+}
+
+type FileHistory struct {
+	readline.History
 	filepath string
 }
 
-func NewWjqFileHistory(path string) *WjqFileHistory {
-	h := &WjqFileHistory{
-		History:  wjqreadline.NewHistory(),
+func NewFileHistory(path string) *FileHistory {
+	h := &FileHistory{
+		History:  readline.NewHistory(),
 		filepath: path,
 	}
 	if data, err := os.ReadFile(path); err == nil {
@@ -230,11 +209,15 @@ func NewWjqFileHistory(path string) *WjqFileHistory {
 	return h
 }
 
-func (h *WjqFileHistory) Append(line string) {
+func (h *FileHistory) Append(line string) {
 	h.History.Append(line)
 	f, err := os.OpenFile(h.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		defer f.Close()
-		f.WriteString(line + "\n")
+	if err != nil {
+		return
 	}
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		_ = f.Close()
+		return
+	}
+	_ = f.Close()
 }

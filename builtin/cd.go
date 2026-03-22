@@ -65,16 +65,22 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	}
 
 	// Calculate new PWD
-	curDir, _ := os.Getwd()
-	env.Set("OLDPWD", curDir)
+	curDir, err := os.Getwd()
+	if err == nil {
+		env.Set("OLDPWD", curDir)
+	}
 
-	err := os.Chdir(dir)
+	err = os.Chdir(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "cd: %v\n", err)
 		return 1
 	}
 
-	newDir, _ := os.Getwd()
+	newDir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "cd: %v\n", err)
+		return 1
+	}
 	if !usePhysical {
 		// Logical path calculation is complex in general,
 		// but we can try to use filepath.Abs or join if it's relative.

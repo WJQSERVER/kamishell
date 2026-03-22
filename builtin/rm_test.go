@@ -2,11 +2,18 @@ package builtin
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type errReader struct{}
+
+func (errReader) Read(p []byte) (int, error) {
+	return 0, errors.New("read failed")
+}
 
 type rmMockEnv struct {
 	store map[string]interface{}
@@ -110,6 +117,33 @@ func TestRmInteractive(t *testing.T) {
 	Rm([]string{"-i", f1}, &rmMockEnv{}, stdin, stdout, os.Stderr)
 	if _, err := os.Stat(f1); !os.IsNotExist(err) {
 		t.Errorf("file1.txt should have been removed when responding 'y'")
+	}
+}
+
+func TestRmInteractiveReadError(t *testing.T) {
+	tempDir := t.TempDir()
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
+	f1 := "file1.txt"
+	if err := os.WriteFile(f1, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := Rm([]string{"-i", f1}, &rmMockEnv{}, errReader{}, stdout, stderr)
+	if code == 0 {
+		t.Fatal("expected interactive read failure to return non-zero exit code")
+	}
+	if _, err := os.Stat(f1); err != nil {
+		t.Fatalf("expected file to remain after failed prompt read, got %v", err)
 	}
 }
 

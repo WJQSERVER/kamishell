@@ -355,3 +355,11 @@ func TestUnicodeVariableNameWorks(t *testing.T) {
 		t.Errorf("expected 1, got %q", stdout)
 	}
 }
+
+func TestIntegerLiteralOverflowReportsError(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami("print 999999999999999999999999999999999999", env)
+	if !strings.Contains(stderr, "invalid integer literal") {
+		t.Errorf("expected invalid integer literal error, got %q", stderr)
+	}
+}
