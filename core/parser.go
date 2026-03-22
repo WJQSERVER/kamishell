@@ -421,7 +421,11 @@ func (p *Parser) parseInterpolation() Expression {
 
 func (p *Parser) parseIntegerLiteral() Expression {
 	lit := &IntegerLiteral{Token: p.curToken}
-	val, _ := strconv.ParseInt(p.curToken.Literal, 0, 64)
+	val, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
+	if err != nil {
+		lit.Err = "invalid integer literal: " + p.curToken.Literal
+		return lit
+	}
 	lit.Value = val
 	lit.Obj = getIntegerObject(val)
 	return lit

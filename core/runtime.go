@@ -156,6 +156,9 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return executeCommand(node.Name, node.Arguments, env, stdin, stdout, stderr)
 	case *PrintStatement:
 		val := EvalWithIO(node.Expression, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
 		fmt.Fprintln(stdout, inspectObject(val))
 		return NULL
 	case *ExecStatement:
@@ -173,6 +176,9 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return os.Getenv(name)
 		})}
 	case *IntegerLiteral:
+		if node.Err != "" {
+			return &Error{Message: node.Err}
+		}
 		if node.Obj != nil {
 			return node.Obj
 		}

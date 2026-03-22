@@ -127,6 +127,7 @@ type IntegerLiteral struct {
 	Token Token
 	Value int64
 	Obj   *Integer
+	Err   string
 }
 
 func (il *IntegerLiteral) expressionNode()      {}
