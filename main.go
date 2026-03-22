@@ -212,8 +212,12 @@ func NewFileHistory(path string) *FileHistory {
 func (h *FileHistory) Append(line string) {
 	h.History.Append(line)
 	f, err := os.OpenFile(h.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		defer f.Close()
-		f.WriteString(line + "\n")
+	if err != nil {
+		return
 	}
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		_ = f.Close()
+		return
+	}
+	_ = f.Close()
 }

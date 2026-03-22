@@ -180,3 +180,15 @@ func TestLoadConfigReportsReadFailure(t *testing.T) {
 		t.Fatalf("expected config read failure to be reported, got %q", stderr.String())
 	}
 }
+
+func TestFileHistoryAppendKeepsInMemoryHistoryWhenPersistFails(t *testing.T) {
+	h := NewFileHistory(filepath.Join(t.TempDir(), "missing", "history.txt"))
+	h.Append("hello")
+	if h.History.Len() != 1 {
+		t.Fatalf("expected in-memory history to keep appended line, got len=%d", h.History.Len())
+	}
+	line, ok := h.History.Get(0)
+	if !ok || line != "hello" {
+		t.Fatalf("expected first history line to be hello, got %q ok=%v", line, ok)
+	}
+}
