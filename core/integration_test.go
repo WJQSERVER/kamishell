@@ -322,3 +322,25 @@ func TestAssignmentWithoutSpacesReportsSyntaxError(t *testing.T) {
 		t.Errorf("expected syntax error for x=1, got %q", stderr)
 	}
 }
+
+func TestUserFunctionKeepsIntegerArguments(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("func add(a, b) { print a + b }; add(1, 2)", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "3" {
+		t.Errorf("expected 3, got %q", stdout)
+	}
+}
+
+func TestUserFunctionKeepsBooleanArguments(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("func pick(flag) { if flag == true { print \"yes\" } else { print \"no\" } }; pick(true)", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "yes" {
+		t.Errorf("expected yes, got %q", stdout)
+	}
+}

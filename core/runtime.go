@@ -419,9 +419,7 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	// 2. Check for user-defined functions or native functions in env
 	if val, ok := env.GetObject(name); ok {
 		if fn, ok := val.(*Function); ok {
-			// Convert []Object to []string for user funcs
-			strArgs := inspectObjects(evaledArgs)
-			return applyFunction(fn, strArgs, env, stdin, stdout, stderr)
+			return applyFunction(fn, evaledArgs, env, stdin, stdout, stderr)
 		}
 		if fn, ok := val.(*NativeFunction); ok {
 			return fn.Fn(env, evaledArgs...)
@@ -502,8 +500,7 @@ func evalCallExpression(node *CallExpression, env *Environment, stdin io.Reader,
 	case *NativeFunction:
 		return fn.Fn(env, args...)
 	case *Function:
-		strArgs := inspectObjects(args)
-		return applyFunction(fn, strArgs, env, stdin, stdout, stderr)
+		return applyFunction(fn, args, env, stdin, stdout, stderr)
 	default:
 		return &Error{Message: fmt.Sprintf("not callable: %s", function.Type())}
 	}
@@ -516,7 +513,11 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 
 	if val, ok := env.GetObject(name); ok {
 		if fn, ok := val.(*Function); ok {
-			return applyFunction(fn, args, env, stdin, stdout, stderr)
+			objArgs := make([]Object, len(args))
+			for i, arg := range args {
+				objArgs[i] = &String{Value: arg}
+			}
+			return applyFunction(fn, objArgs, env, stdin, stdout, stderr)
 		}
 	}
 
@@ -658,12 +659,12 @@ func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 	return NULL
 }
 
-func applyFunction(fn *Function, args []string, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	extendEnv := NewEnclosedEnvironment(fn.Env)
 
 	for i, param := range fn.Parameters {
 		if i < len(args) {
-			extendEnv.Set(param.Value, &String{Value: args[i]})
+			extendEnv.Set(param.Value, args[i])
 		}
 	}
 
