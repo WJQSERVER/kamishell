@@ -50,9 +50,18 @@ func extractCompletionToken(line string) (token string, prefix string, raw strin
 	}
 
 	inDoubleQuote := false
+	escaped := false
 	start := 0
 	for i := 0; i < len(line); i++ {
+		if escaped {
+			escaped = false
+			continue
+		}
 		switch line[i] {
+		case '\\':
+			if inDoubleQuote {
+				escaped = true
+			}
 		case '"':
 			inDoubleQuote = !inDoubleQuote
 			if inDoubleQuote {

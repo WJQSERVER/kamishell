@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"kamishell/core"
@@ -60,5 +61,21 @@ func TestCompleterDeduplicatesEnvironmentCandidates(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected deduplicated env candidate once, got %d", count)
+	}
+}
+
+func TestExtractCompletionTokenHandlesEscapedQuote(t *testing.T) {
+	line := `make "a path with\" quote/quo`
+	line = strings.Replace(line, `\"a`, `"a`, 1)
+	token, prefix, raw := extractCompletionToken(line)
+
+	if prefix != `"` {
+		t.Fatalf("expected quoted prefix, got %q", prefix)
+	}
+	if token != `a path with\" quote/quo` {
+		t.Fatalf("expected token to preserve escaped quote context, got %q", token)
+	}
+	if raw != `a path with\" quote/quo` {
+		t.Fatalf("expected raw token to preserve escaped quote context, got %q", raw)
 	}
 }
