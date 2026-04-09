@@ -12,11 +12,20 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "sed",
 		Description: "流编辑器，用于过滤和转换文本",
-		Action:      Sed,
+		Usage:       "sed s/old/new/ [file...]",
+		Help: `当前仅支持简单的全局替换表达式 s/old/new/。
+
+示例:
+  sed s/foo/bar/ file.txt
+  print "foo" | sed s/foo/bar/`,
+		Action: Sed,
 	})
 }
 
 func Sed(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	if HandleBuiltinHelp(Builtins["sed"], args, stdout) {
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "sed: replacement expression required (e.g., s/old/new/)")
 		return 1

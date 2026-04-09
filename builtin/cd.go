@@ -12,6 +12,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "cd",
 		Description: "切换工作目录",
+		Usage:       "cd [-L|-P] [dir]",
+		Help:        "切换当前工作目录；不带参数时跳转到 HOME，`cd -` 跳回 OLDPWD。",
 		Action:      Cd,
 	})
 }

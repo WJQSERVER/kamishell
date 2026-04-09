@@ -14,6 +14,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "cp",
 		Description: "复制文件或目录",
+		Usage:       "cp [-r|-R] [-p] [-f] [-i] source... destination",
+		Help:        "复制文件或目录；支持递归复制、保留模式和交互式覆盖确认。",
 		Action:      Cp,
 	})
 }

@@ -67,6 +67,10 @@ func runBuiltinArgs(args []string, env *core.Environment) {
 		runInput(strings.Join(args, " "), env, false)
 		return
 	}
+	if builtin.BuiltinHelpRequested(args[1:]) {
+		builtin.PrintBuiltinHelp(cmd, os.Stdout)
+		return
+	}
 
 	exitCode := cmd.Action(args[1:], env, os.Stdin, os.Stdout, os.Stderr)
 	if exitCode != 0 {

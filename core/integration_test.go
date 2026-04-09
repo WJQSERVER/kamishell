@@ -3,6 +3,8 @@ package core
 import (
 	"bytes"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -143,6 +145,38 @@ func TestBuiltins(t *testing.T) {
 	}
 	if !strings.Contains(stdout, dirName) {
 		t.Errorf("pwd output missing dir name, got %s", stdout)
+	}
+}
+
+func TestHTTPBuiltin(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected GET, got %s", r.Method)
+		}
+		_, _ = w.Write([]byte("kami-http"))
+	}))
+	defer server.Close()
+
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("http \""+server.URL+"\"", env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "kami-http" {
+		t.Errorf("expected kami-http, got %q", stdout)
+	}
+}
+
+func TestBuiltinHelpIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("help http", env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if !strings.Contains(stdout, "用法: http [flags] [METHOD] URL") {
+		t.Errorf("unexpected stdout: %q", stdout)
 	}
 }
 

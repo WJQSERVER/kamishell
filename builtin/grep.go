@@ -12,11 +12,20 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "grep",
 		Description: "在文件中搜索模式",
-		Action:      Grep,
+		Usage:       "grep pattern [file...]",
+		Help: `在输入流或文件中按子串搜索内容。
+
+示例:
+  grep main *.go
+  print "a\nb" | grep b`,
+		Action: Grep,
 	})
 }
 
 func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	if HandleBuiltinHelp(Builtins["grep"], args, stdout) {
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "grep: search pattern required")
 		return 1

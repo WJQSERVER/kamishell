@@ -11,6 +11,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "cat",
 		Description: "连接文件并打印到标准输出",
+		Usage:       "cat [-u] [file...]",
+		Help:        "按顺序输出文件内容；文件名为 - 时从标准输入读取。",
 		Action:      Cat,
 	})
 }

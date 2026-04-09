@@ -14,6 +14,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "ls",
 		Description: "列出目录内容",
+		Usage:       "ls [-a] [-l] [-h] [-F] [-R] [-r] [-t] [-S] [-d] [target...]",
+		Help:        "列出目录内容，支持长列表、人类可读大小、递归和多种排序模式。",
 		Action:      Ls,
 	})
 }

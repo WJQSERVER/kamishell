@@ -14,6 +14,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "mv",
 		Description: "移动或重命名文件或目录",
+		Usage:       "mv [-f] [-i] source... destination",
+		Help:        "移动或重命名文件/目录；跨文件系统失败时回退到复制再删除。",
 		Action:      Mv,
 	})
 }
