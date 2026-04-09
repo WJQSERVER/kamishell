@@ -383,8 +383,8 @@ func normalizeHTTPArgsForFlagSet(args []string) []string {
 		name := arg
 		hasInlineValue := false
 		if strings.HasPrefix(arg, "--") {
-			if idx := strings.Index(arg, "="); idx >= 0 {
-				name = arg[:idx]
+			if before, _, ok := strings.Cut(arg, "="); ok {
+				name = before
 				hasInlineValue = true
 			}
 		}
@@ -922,11 +922,7 @@ func splitHeaderArgument(input string) (string, string, error) {
 	idx := -1
 	switch {
 	case colon >= 0 && equals >= 0:
-		if colon < equals {
-			idx = colon
-		} else {
-			idx = equals
-		}
+		idx = min(colon, equals)
 	case colon >= 0:
 		idx = colon
 	case equals >= 0:
@@ -945,12 +941,12 @@ func splitHeaderArgument(input string) (string, string, error) {
 }
 
 func splitKeyValueArgument(input string) (string, string, error) {
-	idx := strings.Index(input, "=")
-	if idx < 0 {
+	before, after, ok := strings.Cut(input, "=")
+	if !ok {
 		return "", "", errors.New("missing '=' separator")
 	}
-	key := strings.TrimSpace(input[:idx])
-	value := strings.TrimSpace(input[idx+1:])
+	key := strings.TrimSpace(before)
+	value := strings.TrimSpace(after)
 	if key == "" {
 		return "", "", errors.New("missing key")
 	}

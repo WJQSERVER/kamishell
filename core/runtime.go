@@ -318,7 +318,7 @@ func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, std
 	var errs []string
 	var errMu sync.Mutex
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		go func(idx int) {
 			defer wg.Done()
 

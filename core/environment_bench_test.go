@@ -19,7 +19,7 @@ func BenchmarkEnvironmentGetNested(b *testing.B) {
 	root.Set("answer", int64(42))
 
 	env := root
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		env = NewEnclosedEnvironment(env)
 	}
 
@@ -35,7 +35,7 @@ func BenchmarkEnvironmentGetNested(b *testing.B) {
 
 func BenchmarkPackageSnapshot(b *testing.B) {
 	env := NewScriptEnvironment(NewEmptyEnvironment())
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		env.SetPackageValue("env", "KEY_"+strconv.Itoa(i), strconv.Itoa(i))
 	}
 

@@ -21,7 +21,7 @@ func TestPwd(t *testing.T) {
 
 	stdout.Reset()
 	// Test logical with mocked PWD
-	env := &rmMockEnv{store: map[string]interface{}{"PWD": "/mocked/path"}}
+	env := &rmMockEnv{store: map[string]any{"PWD": "/mocked/path"}}
 	// We need to make sure os.Stat("/mocked/path") doesn't fail or matches current dir
 	// But in Pwd we check os.SameFile.
 	// So let's mock PWD with current dir but maybe a different path (e.g. symlink if possible, but hard in test)

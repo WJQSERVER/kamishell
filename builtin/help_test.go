@@ -19,7 +19,7 @@ func TestHelpBuiltinShowsCommandHelp(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := Help([]string{"http"}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := Help([]string{"http"}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d", code)
 	}
@@ -35,7 +35,7 @@ func TestNonFlagBuiltinSupportsDoubleDashHelp(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := Touch([]string{"--help"}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := Touch([]string{"--help"}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d", code)
 	}

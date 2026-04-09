@@ -25,7 +25,7 @@ func TestHTTPBuiltinGet(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := HTTP([]string{server.URL}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP([]string{server.URL}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr: %s", code, stderr.String())
 	}
@@ -59,7 +59,7 @@ func TestHTTPBuiltinJSONAutoUsesPost(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := HTTP([]string{server.URL, "--json", `{"name":"kami"}`}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP([]string{server.URL, "--json", `{"name":"kami"}`}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr: %s", code, stderr.String())
 	}
@@ -95,7 +95,7 @@ func TestHTTPBuiltinFormBodyAndAcceptHeader(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	args := []string{server.URL, "--form", "name=kami", "--form", "lang=zh", "--accept", "application/json"}
 
-	code := HTTP(args, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP(args, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr: %s", code, stderr.String())
 	}
@@ -115,7 +115,7 @@ func TestHTTPBuiltinIncludeWritesMetadataAndBody(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := HTTP([]string{"--include", server.URL}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP([]string{"--include", server.URL}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr: %s", code, stderr.String())
 	}
@@ -140,7 +140,7 @@ func TestHTTPBuiltinHeadersModeSkipsBody(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := HTTP([]string{"--headers", server.URL}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP([]string{"--headers", server.URL}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr: %s", code, stderr.String())
 	}
@@ -173,7 +173,7 @@ func TestHTTPBuiltinReadsBodyFromStdinAndWritesFile(t *testing.T) {
 	stdin := bytes.NewBufferString("stdin payload")
 	outputPath := filepath.Join(t.TempDir(), "response.txt")
 
-	code := HTTP([]string{"--method", "POST", "--data", "-", "--output", outputPath, server.URL}, &rmMockEnv{store: map[string]interface{}{}}, stdin, stdout, stderr)
+	code := HTTP([]string{"--method", "POST", "--data", "-", "--output", outputPath, server.URL}, &rmMockEnv{store: map[string]any{}}, stdin, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr: %s", code, stderr.String())
 	}
@@ -206,7 +206,7 @@ func TestHTTPBuiltinAppliesAuthAndCustomHeaders(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	args := []string{server.URL, "--auth", "kami:secret", "--header", "X-Test: one", "--header", "X-Test: two"}
 
-	code := HTTP(args, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP(args, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr: %s", code, stderr.String())
 	}
@@ -231,7 +231,7 @@ func TestHTTPBuiltinRetriesOnConfiguredStatuses(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	args := []string{"--retries", "2", "--retry-status", "502", server.URL}
 
-	code := HTTP(args, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP(args, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr: %s", code, stderr.String())
 	}
@@ -253,7 +253,7 @@ func TestHTTPBuiltinReturnsFailureOnHTTPError(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := HTTP([]string{server.URL}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP([]string{server.URL}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code == 0 {
 		t.Fatalf("expected non-zero exit code, got %d", code)
 	}
@@ -269,7 +269,7 @@ func TestHTTPBuiltinRejectsConflictingBodyModes(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := HTTP([]string{"https://example.com", "--json", "{}", "--form", "name=kami"}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP([]string{"https://example.com", "--json", "{}", "--form", "name=kami"}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code == 0 {
 		t.Fatal("expected non-zero exit code for conflicting body modes")
 	}
@@ -282,7 +282,7 @@ func TestHTTPBuiltinRejectsConflictingOutputModes(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	code := HTTP([]string{"https://example.com", "--include", "--headers"}, &rmMockEnv{store: map[string]interface{}{}}, nil, stdout, stderr)
+	code := HTTP([]string{"https://example.com", "--include", "--headers"}, &rmMockEnv{store: map[string]any{}}, nil, stdout, stderr)
 	if code == 0 {
 		t.Fatal("expected non-zero exit code for conflicting output modes")
 	}

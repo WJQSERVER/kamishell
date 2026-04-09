@@ -16,11 +16,11 @@ func (errReader) Read(p []byte) (int, error) {
 }
 
 type rmMockEnv struct {
-	store map[string]interface{}
+	store map[string]any
 }
 
-func (m *rmMockEnv) Set(name string, val interface{}) { m.store[name] = val }
-func (m *rmMockEnv) Get(name string) (interface{}, bool) {
+func (m *rmMockEnv) Set(name string, val any) { m.store[name] = val }
+func (m *rmMockEnv) Get(name string) (any, bool) {
 	val, ok := m.store[name]
 	return val, ok
 }

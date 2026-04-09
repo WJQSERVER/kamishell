@@ -204,7 +204,7 @@ func NewFileHistory(path string) *FileHistory {
 		filepath: path,
 	}
 	if data, err := os.ReadFile(path); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
+		for line := range strings.SplitSeq(string(data), "\n") {
 			if line != "" {
 				h.History.Append(line)
 			}

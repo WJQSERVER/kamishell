@@ -1,5 +1,7 @@
 package core
 
+import "maps"
+
 import "os"
 import "strings"
 
@@ -46,9 +48,7 @@ func (e *Environment) Clone() *Environment {
 		types:        make(map[string]string, len(e.types)),
 		packageStore: clonePackageStore(e.packageStore),
 	}
-	for key, value := range e.types {
-		clone.types[key] = value
-	}
+	maps.Copy(clone.types, e.types)
 	if e.outer != nil {
 		clone.outer = e.outer.Clone()
 	}
@@ -66,7 +66,7 @@ func (e *Environment) GetObject(name string) (Object, bool) {
 	return obj, ok
 }
 
-func (e *Environment) Get(name string) (interface{}, bool) {
+func (e *Environment) Get(name string) (any, bool) {
 	obj, ok := e.GetObject(name)
 	return obj, ok
 }
@@ -79,7 +79,7 @@ func (e *Environment) GetType(name string) (string, bool) {
 	return t, ok
 }
 
-func (e *Environment) Set(name string, val interface{}) {
+func (e *Environment) Set(name string, val any) {
 	obj, typeName, ok := normalizeValue(val)
 	if !ok {
 		return
@@ -186,13 +186,11 @@ func (e *Environment) PackageSnapshot(pkg string) map[string]string {
 	if !ok {
 		return snapshot
 	}
-	for key, value := range values {
-		snapshot[key] = value
-	}
+	maps.Copy(snapshot, values)
 	return snapshot
 }
 
-func normalizeValue(val interface{}) (Object, string, bool) {
+func normalizeValue(val any) (Object, string, bool) {
 	if obj, ok := val.(Object); ok {
 		return obj, string(obj.Type()), true
 	}
@@ -222,9 +220,7 @@ func clonePackageStore(src map[string]map[string]string) map[string]map[string]s
 	dst := make(map[string]map[string]string, len(src))
 	for pkg, values := range src {
 		inner := make(map[string]string, len(values))
-		for key, value := range values {
-			inner[key] = value
-		}
+		maps.Copy(inner, values)
 		dst[pkg] = inner
 	}
 	return dst

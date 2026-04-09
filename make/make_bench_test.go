@@ -9,7 +9,7 @@ import (
 
 func BenchmarkSnapshotBuildEnv(b *testing.B) {
 	env := core.NewScriptEnvironment(core.NewEmptyEnvironment())
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		env.SetPackageValue("env", "KEY_"+strconv.Itoa(i), strconv.Itoa(i))
 	}
 

@@ -3,14 +3,15 @@ package builtin
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 )
 
 type Environment interface {
-	Set(name string, val interface{})
-	Get(name string) (interface{}, bool)
+	Set(name string, val any)
+	Get(name string) (any, bool)
 }
 
 type Inspector interface {
@@ -36,12 +37,7 @@ func RegisterBuiltin(cmd *BuiltinCommand) {
 }
 
 func BuiltinHelpRequested(args []string) bool {
-	for _, arg := range args {
-		if arg == "--help" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, "--help")
 }
 
 func HandleBuiltinHelp(cmd *BuiltinCommand, args []string, stdout io.Writer) bool {
