@@ -134,3 +134,72 @@ func TestParseCommandStatementKeepsKeyValueArgument(t *testing.T) {
 		t.Fatalf("expected key=value to stay one argument, got %s", stmt.Arguments[1].String())
 	}
 }
+
+func TestParseCommandStatementKeepsMultipleKeyValueArguments(t *testing.T) {
+	input := `target_env "app" GOOS=linux GOARCH=amd64 CGO_ENABLED=0`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*CommandStatement)
+	if !ok {
+		t.Fatalf("stmt is not *CommandStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Arguments) != 4 {
+		t.Fatalf("expected 4 arguments, got=%d", len(stmt.Arguments))
+	}
+
+	for i, want := range []string{`"app"`, `"GOOS=linux"`, `"GOARCH=amd64"`, `"CGO_ENABLED=0"`} {
+		if got := stmt.Arguments[i].String(); got != want {
+			t.Fatalf("argument[%d] expected %s, got %s", i, want, got)
+		}
+	}
+}
+
+func TestParsePipelineWithLogicalAndBackgroundStatements(t *testing.T) {
+	input := `print "a" | cat && print "b" &`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
+	}
+
+	background, ok := program.Statements[0].(*BackgroundStatement)
+	if !ok {
+		t.Fatalf("stmt is not *BackgroundStatement. got=%T", program.Statements[0])
+	}
+
+	logical, ok := background.Stmt.(*LogicalStatement)
+	if !ok {
+		t.Fatalf("background stmt is not *LogicalStatement. got=%T", background.Stmt)
+	}
+
+	if logical.Operator != "&&" {
+		t.Fatalf("expected logical operator &&, got %q", logical.Operator)
+	}
+
+	pipe, ok := logical.Left.(*PipeStatement)
+	if !ok {
+		t.Fatalf("left stmt is not *PipeStatement. got=%T", logical.Left)
+	}
+
+	if len(pipe.Commands) != 2 {
+		t.Fatalf("expected 2 pipeline commands, got=%d", len(pipe.Commands))
+	}
+
+	right, ok := logical.Right.(*PrintStatement)
+	if !ok {
+		t.Fatalf("right stmt is not *PrintStatement. got=%T", logical.Right)
+	}
+
+	if right.TokenLiteral() != "print" {
+		t.Fatalf("expected right command print, got %q", right.TokenLiteral())
+	}
+}

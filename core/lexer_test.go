@@ -119,3 +119,17 @@ func TestUnicodeIdentifierTokenization(t *testing.T) {
 		t.Fatalf("expected unicode IDENT 变量, got type=%q literal=%q", tok.Type, tok.Literal)
 	}
 }
+
+func TestASCIIIdentifierTokenizationWithPathCharacters(t *testing.T) {
+	l := NewLexer("cmd/sub-command_1 := 1")
+
+	tok := l.NextToken()
+	if tok.Type != IDENT || tok.Literal != "cmd/sub-command_1" {
+		t.Fatalf("expected path-like IDENT, got type=%q literal=%q", tok.Type, tok.Literal)
+	}
+
+	tok = l.NextToken()
+	if tok.Type != COLON_ASSIGN {
+		t.Fatalf("expected := after identifier, got %v", tok)
+	}
+}

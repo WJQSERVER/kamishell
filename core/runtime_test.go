@@ -1,6 +1,8 @@
 package core
 
 import (
+	"io"
+	"strings"
 	"testing"
 )
 
@@ -87,5 +89,53 @@ func TestCallExpressionWithMemberAccess(t *testing.T) {
 	evaluated := testEval(input)
 	if evaluated.Inspect() != "linux" {
 		t.Errorf("expected linux, got %s", evaluated.Inspect())
+	}
+}
+
+func TestEvalStringEqualityDoesNotRequireStringificationFallback(t *testing.T) {
+	result := evalInfixExpression("==", &String{Value: "kami"}, &String{Value: "kami"})
+	if result != TRUE {
+		t.Fatalf("expected TRUE, got %s", result.Inspect())
+	}
+
+	result = evalInfixExpression("!=", &String{Value: "kami"}, &String{Value: "shell"})
+	if result != TRUE {
+		t.Fatalf("expected TRUE, got %s", result.Inspect())
+	}
+}
+
+func TestEvalBooleanEqualityUsesTypedComparison(t *testing.T) {
+	result := evalInfixExpression("==", TRUE, TRUE)
+	if result != TRUE {
+		t.Fatalf("expected TRUE, got %s", result.Inspect())
+	}
+
+	result = evalInfixExpression("!=", TRUE, FALSE)
+	if result != TRUE {
+		t.Fatalf("expected TRUE, got %s", result.Inspect())
+	}
+}
+
+func TestExecuteCommandRunsUserFunctionWithoutStringifyingArguments(t *testing.T) {
+	env := NewEmptyEnvironment()
+	fn := &Function{
+		Parameters: []*Identifier{{Value: "value"}},
+		Body: &BlockStatement{Statements: []Statement{
+			&ExpressionStatement{Expression: &Identifier{Value: "value"}},
+		}},
+		Env: env,
+	}
+	env.Set("identity", fn)
+
+	result := executeCommand("identity", []Expression{
+		&IntegerLiteral{Value: 7, Obj: getIntegerObject(7)},
+	}, env, strings.NewReader(""), io.Discard, io.Discard)
+
+	str, ok := result.(*String)
+	if !ok {
+		t.Fatalf("expected string result, got %T", result)
+	}
+	if str.Value != "7" {
+		t.Fatalf("expected 7, got %q", str.Value)
 	}
 }

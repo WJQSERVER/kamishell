@@ -97,6 +97,16 @@ func (e *Environment) SetWithType(name string, val Object, typeName string) {
 	}
 }
 
+func (e *Environment) SetObject(name string, val Object) {
+	e.store[name] = val
+	if val != nil {
+		typeName := string(val.Type())
+		if shouldTrackType(typeName) {
+			e.types[name] = typeName
+		}
+	}
+}
+
 func (e *Environment) Assign(name string, val Object) {
 	if scope := e.scopeWithValue(name); scope != nil {
 		scope.store[name] = val
@@ -106,6 +116,16 @@ func (e *Environment) Assign(name string, val Object) {
 		return
 	}
 	e.Set(name, val)
+}
+
+func (e *Environment) ResolveForAssign(name string) (*Environment, string, bool) {
+	for scope := e; scope != nil; scope = scope.outer {
+		if _, ok := scope.store[name]; ok {
+			typeName, hasType := scope.types[name]
+			return scope, typeName, hasType
+		}
+	}
+	return nil, "", false
 }
 
 func NewEmptyEnvironment() *Environment {

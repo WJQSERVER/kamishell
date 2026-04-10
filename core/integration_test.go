@@ -379,6 +379,22 @@ func TestUserFunctionKeepsBooleanArguments(t *testing.T) {
 	}
 }
 
+func TestCommandAndExecUserFunctionUseStringArguments(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("func describe(v) { print v }; describe 7; exec \"describe 7\"", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "7" || lines[1] != "7" {
+		t.Fatalf("expected both command paths to print 7, got %v", lines)
+	}
+}
+
 func TestUnicodeVariableNameWorks(t *testing.T) {
 	env := NewEmptyEnvironment()
 	stdout, stderr, _ := runKami("变量 := 1; print 变量", env)

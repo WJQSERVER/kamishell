@@ -30,6 +30,36 @@ func BenchmarkEvalPipelineProgram(b *testing.B) {
 	benchmarkEvalProgram(b, "print \"line1\\nline2\" | cat")
 }
 
+func BenchmarkEvalInterpolatedStringProgram(b *testing.B) {
+	benchmarkEvalProgram(b, `name := "kami"; print "hello $name from $name"`)
+}
+
+func BenchmarkExecuteCommandUserFunction(b *testing.B) {
+	env := NewEmptyEnvironment()
+	fn := &Function{
+		Parameters: []*Identifier{{Value: "value"}},
+		Body: &BlockStatement{Statements: []Statement{
+			&ExpressionStatement{Expression: &Identifier{Value: "value"}},
+		}},
+		Env: env,
+	}
+	env.Set("identity", fn)
+	args := []Expression{&IntegerLiteral{Value: 7, Obj: getIntegerObject(7)}}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		result := executeCommand("identity", args, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+		str, ok := result.(*String)
+		if !ok || str.Value != "7" {
+			b.Fatalf("unexpected result: %#v", result)
+		}
+	}
+}
+
 func BenchmarkExecuteCommandBuiltinCat(b *testing.B) {
 	env := NewEmptyEnvironment()
 	payload := strings.Repeat("hello world\n", 32)
@@ -42,6 +72,20 @@ func BenchmarkExecuteCommandBuiltinCat(b *testing.B) {
 		if isError(result) {
 			b.Fatalf("unexpected error: %s", result.Inspect())
 		}
+	}
+}
+
+func BenchmarkEvalPipelineScaling(b *testing.B) {
+	benchmarks := map[string]string{
+		"two-stages":   `print "line1\nline2" | cat`,
+		"three-stages": `print "line1\nline2" | cat | cat`,
+		"four-stages":  `print "line1\nline2" | cat | cat | cat`,
+	}
+
+	for name, input := range benchmarks {
+		b.Run(name, func(b *testing.B) {
+			benchmarkEvalProgram(b, input)
+		})
 	}
 }
 

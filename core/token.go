@@ -57,25 +57,35 @@ type Token struct {
 	End     int
 }
 
-var keywords = map[string]TokenType{
-	"if":     IF,
-	"else":   ELSE,
-	"for":    FOR,
-	"range":  RANGE,
-	"func":   FUNC,
-	"return": RETURN,
-	"go":     GO,
-	"var":    VAR,
-	"print":  PRINT,
-	"exec":   EXEC,
-	"nil":    NIL,
-	"true":   TRUE_TOK,
-	"false":  FALSE_TOK,
-}
-
 func LookupIdent(ident string) TokenType {
-	if tok, ok := keywords[ident]; ok {
-		return tok
+	switch ident {
+	case "if":
+		return IF
+	case "else":
+		return ELSE
+	case "for":
+		return FOR
+	case "range":
+		return RANGE
+	case "func":
+		return FUNC
+	case "return":
+		return RETURN
+	case "go":
+		return GO
+	case "var":
+		return VAR
+	case "print":
+		return PRINT
+	case "exec":
+		return EXEC
+	case "nil":
+		return NIL
+	case "true":
+		return TRUE_TOK
+	case "false":
+		return FALSE_TOK
+	default:
+		return IDENT
 	}
-	return IDENT
 }

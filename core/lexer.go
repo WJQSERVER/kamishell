@@ -286,7 +286,7 @@ func newToken(tokenType TokenType, ch byte, start int) Token {
 }
 
 func isLetter(ch byte) bool {
-	return isIdentifierStart(string([]byte{ch}))
+	return isASCIIIdentifierStart(ch)
 }
 
 func isDigit(ch byte) bool {
@@ -296,6 +296,9 @@ func isDigit(ch byte) bool {
 func isIdentifierStart(input string) bool {
 	if input == "" {
 		return false
+	}
+	if input[0] < utf8.RuneSelf {
+		return isASCIIIdentifierStart(input[0])
 	}
 	r, _ := utf8.DecodeRuneInString(input)
 	if r == utf8.RuneError && len(input) > 0 && input[0] < utf8.RuneSelf {
@@ -308,11 +311,22 @@ func isIdentifierPart(input string) bool {
 	if input == "" {
 		return false
 	}
+	if input[0] < utf8.RuneSelf {
+		return isASCIIIdentifierPart(input[0])
+	}
 	r, _ := utf8.DecodeRuneInString(input)
 	if r == utf8.RuneError && len(input) > 0 && input[0] < utf8.RuneSelf {
 		r = rune(input[0])
 	}
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '/'
+}
+
+func isASCIIIdentifierStart(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '-' || ch == '/'
+}
+
+func isASCIIIdentifierPart(ch byte) bool {
+	return isASCIIIdentifierStart(ch) || (ch >= '0' && ch <= '9')
 }
 
 func (l *Lexer) advanceBytes(size int) {

@@ -137,7 +137,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return val
 		}
 
-		expectedType, ok := env.GetType(node.Name.Value)
+		scope, expectedType, ok := env.ResolveForAssign(node.Name.Value)
 		if ok && expectedType != "" && string(val.Type()) != expectedType {
 			return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
 		}
@@ -149,7 +149,14 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			}
 			env.SetWithType(node.Name.Value, val, typeName)
 		} else {
-			env.Assign(node.Name.Value, val)
+			if scope != nil {
+				scope.store[node.Name.Value] = val
+				if _, hasType := scope.types[node.Name.Value]; !hasType && shouldTrackType(string(val.Type())) {
+					scope.types[node.Name.Value] = string(val.Type())
+				}
+			} else {
+				env.Set(node.Name.Value, val)
+			}
 		}
 		return val
 	case *CommandStatement:
@@ -196,9 +203,9 @@ func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout
 	for _, statement := range stmts {
 		result = EvalWithIO(statement, env, stdin, stdout, stderr)
 		if errObj, ok := result.(*Error); ok {
-			env.Set("err", errObj)
+			env.SetObject("err", errObj)
 		} else {
-			env.Set("err", NULL)
+			env.SetObject("err", NULL)
 		}
 	}
 	return result
@@ -254,6 +261,12 @@ func evalInfixExpression(operator string, left, right Object) Object {
 	switch {
 	case left.Type() == INTEGER_OBJ && right.Type() == INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
+	case left.Type() == STRING_OBJ && right.Type() == STRING_OBJ:
+		return evalStringInfixExpression(operator, left.(*String).Value, right.(*String).Value)
+	case left.Type() == BOOLEAN_OBJ && right.Type() == BOOLEAN_OBJ:
+		return evalBooleanInfixExpression(operator, left.(*Boolean).Value, right.(*Boolean).Value)
+	case left.Type() == NULL_OBJ && right.Type() == NULL_OBJ:
+		return evalNullInfixExpression(operator)
 	case operator == "==":
 		return nativeBoolToBooleanObject(inspectObject(left) == inspectObject(right))
 	case operator == "!=":
@@ -282,6 +295,39 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 		return getIntegerObject(leftVal + rightVal)
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
+	}
+}
+
+func evalStringInfixExpression(operator string, left, right string) Object {
+	switch operator {
+	case "==":
+		return nativeBoolToBooleanObject(left == right)
+	case "!=":
+		return nativeBoolToBooleanObject(left != right)
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", STRING_OBJ, operator, STRING_OBJ)}
+	}
+}
+
+func evalBooleanInfixExpression(operator string, left, right bool) Object {
+	switch operator {
+	case "==":
+		return nativeBoolToBooleanObject(left == right)
+	case "!=":
+		return nativeBoolToBooleanObject(left != right)
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", BOOLEAN_OBJ, operator, BOOLEAN_OBJ)}
+	}
+}
+
+func evalNullInfixExpression(operator string) Object {
+	switch operator {
+	case "==":
+		return TRUE
+	case "!=":
+		return FALSE
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", NULL_OBJ, operator, NULL_OBJ)}
 	}
 }
 
@@ -425,18 +471,16 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	// 2. Check for user-defined functions or native functions in env
 	if val, ok := env.GetObject(name); ok {
 		if fn, ok := val.(*Function); ok {
-			return applyFunction(fn, evaledArgs, env, stdin, stdout, stderr)
+			return applyFunction(fn, objectsToStringArgs(evaledArgs), env, stdin, stdout, stderr)
 		}
 		if fn, ok := val.(*NativeFunction); ok {
 			return fn.Fn(env, evaledArgs...)
 		}
 	}
 
-	// Convert []Object to []string for builtins and external commands
-	strArgs := inspectObjects(evaledArgs)
-
 	// 3. Check for builtins
 	if cmd, ok := builtin.Builtins[name]; ok {
+		strArgs := inspectObjects(evaledArgs)
 		exitCode := cmd.Action(strArgs, env, stdin, stdout, stderr)
 		if exitCode != 0 {
 			return &Error{Message: fmt.Sprintf("builtin %s failed", name), Code: exitCode, Op: name}
@@ -445,6 +489,7 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	}
 
 	// 4. External command
+	strArgs := inspectObjects(evaledArgs)
 	cmd := exec.Command(name, strArgs...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -593,6 +638,17 @@ func inspectObjects(args []Object) []string {
 	values := make([]string, len(args))
 	for i, arg := range args {
 		values[i] = inspectObject(arg)
+	}
+	return values
+}
+
+func objectsToStringArgs(args []Object) []Object {
+	if len(args) == 0 {
+		return nil
+	}
+	values := make([]Object, len(args))
+	for i, arg := range args {
+		values[i] = &String{Value: inspectObject(arg)}
 	}
 	return values
 }
