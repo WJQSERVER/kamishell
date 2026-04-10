@@ -347,6 +347,7 @@ type FunctionStatement struct {
 	Name       *Identifier
 	Parameters []*Identifier
 	Body       *BlockStatement
+	Obj        *Function
 }
 
 func (fs *FunctionStatement) statementNode()       {}

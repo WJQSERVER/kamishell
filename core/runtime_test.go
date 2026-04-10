@@ -139,3 +139,34 @@ func TestExecuteCommandRunsUserFunctionWithoutStringifyingArguments(t *testing.T
 		t.Fatalf("expected 7, got %q", str.Value)
 	}
 }
+
+func TestRepeatedEvalReusesParsedFunctionStatementWithCurrentEnv(t *testing.T) {
+	program := func() *Program {
+		l := NewLexer("prefix := \"first\"; func greet() { print prefix }; greet()")
+		p := NewParser(l)
+		return p.ParseProgram()
+	}()
+
+	env1 := NewEmptyEnvironment()
+	stdout1 := &strings.Builder{}
+	result1 := EvalWithIO(program, env1, strings.NewReader(""), stdout1, io.Discard)
+	if isError(result1) {
+		t.Fatalf("first eval returned error: %s", result1.Inspect())
+	}
+	if strings.TrimSpace(stdout1.String()) != "first" {
+		t.Fatalf("expected first eval to print first, got %q", stdout1.String())
+	}
+
+	assign := program.Statements[0].(*AssignStatement)
+	assign.Value = &StringLiteral{Value: "second", Obj: &String{Value: "second"}}
+
+	env2 := NewEmptyEnvironment()
+	stdout2 := &strings.Builder{}
+	result2 := EvalWithIO(program, env2, strings.NewReader(""), stdout2, io.Discard)
+	if isError(result2) {
+		t.Fatalf("second eval returned error: %s", result2.Inspect())
+	}
+	if strings.TrimSpace(stdout2.String()) != "second" {
+		t.Fatalf("expected second eval to print second, got %q", stdout2.String())
+	}
+}

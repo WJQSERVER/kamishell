@@ -6,30 +6,23 @@ import "os"
 import "strings"
 
 func NewEnvironment() *Environment {
-	s := make(map[string]Object)
-	t := make(map[string]string)
-	for _, e := range os.Environ() {
-		pair := strings.SplitN(e, "=", 2)
-		s[pair[0]] = &String{Value: pair[1]}
-		t[pair[0]] = string(STRING_OBJ)
+	environ := os.Environ()
+	s := make(map[string]Object, len(environ))
+	t := make(map[string]string, len(environ))
+	for _, e := range environ {
+		key, value, _ := strings.Cut(e, "=")
+		s[key] = &String{Value: value}
+		t[key] = string(STRING_OBJ)
 	}
-	return &Environment{store: s, types: t, packageStore: make(map[string]map[string]string)}
+	return &Environment{store: s, types: t}
 }
 
 func NewEnclosedEnvironment(outer *Environment) *Environment {
-	env := NewEmptyEnvironment()
-	env.outer = outer
-	if outer != nil {
-		env.packageStore = outer.packageStore
-	}
-	return env
+	return &Environment{store: make(map[string]Object), types: make(map[string]string), outer: outer, packageStore: outerPackageStore(outer)}
 }
 
 func NewScriptEnvironment(outer *Environment) *Environment {
-	env := NewEmptyEnvironment()
-	env.outer = outer
-	env.packageStore = make(map[string]map[string]string)
-	return env
+	return &Environment{store: make(map[string]Object), types: make(map[string]string), outer: outer}
 }
 
 type Environment struct {
@@ -48,7 +41,9 @@ func (e *Environment) Clone() *Environment {
 		types:        make(map[string]string, len(e.types)),
 		packageStore: clonePackageStore(e.packageStore),
 	}
-	maps.Copy(clone.types, e.types)
+	if len(e.types) > 0 {
+		maps.Copy(clone.types, e.types)
+	}
 	if e.outer != nil {
 		clone.outer = e.outer.Clone()
 	}
@@ -86,6 +81,7 @@ func (e *Environment) Set(name string, val any) {
 	}
 	e.store[name] = obj
 	if shouldTrackType(typeName) {
+		e.ensureTypes()
 		e.types[name] = typeName
 	}
 }
@@ -93,6 +89,7 @@ func (e *Environment) Set(name string, val any) {
 func (e *Environment) SetWithType(name string, val Object, typeName string) {
 	e.store[name] = val
 	if shouldTrackType(typeName) {
+		e.ensureTypes()
 		e.types[name] = typeName
 	}
 }
@@ -102,6 +99,7 @@ func (e *Environment) SetObject(name string, val Object) {
 	if val != nil {
 		typeName := string(val.Type())
 		if shouldTrackType(typeName) {
+			e.ensureTypes()
 			e.types[name] = typeName
 		}
 	}
@@ -129,11 +127,7 @@ func (e *Environment) ResolveForAssign(name string) (*Environment, string, bool)
 }
 
 func NewEmptyEnvironment() *Environment {
-	return &Environment{
-		store:        make(map[string]Object),
-		types:        make(map[string]string),
-		packageStore: make(map[string]map[string]string),
-	}
+	return &Environment{store: make(map[string]Object), types: make(map[string]string)}
 }
 
 func (e *Environment) Keys() []string {
@@ -161,9 +155,7 @@ func (e *Environment) SetPackageValue(pkg, name, value string) {
 	if pkg == "" || name == "" {
 		return
 	}
-	if e.packageStore == nil {
-		e.packageStore = make(map[string]map[string]string)
-	}
+	e.ensurePackageStore()
 	if _, ok := e.packageStore[pkg]; !ok {
 		e.packageStore[pkg] = make(map[string]string)
 	}
@@ -218,7 +210,7 @@ func normalizeValue(val any) (Object, string, bool) {
 		return &String{Value: s}, string(STRING_OBJ), true
 	}
 	if i, ok := val.(int64); ok {
-		return &Integer{Value: i}, string(INTEGER_OBJ), true
+		return getIntegerObject(i), string(INTEGER_OBJ), true
 	}
 	if b, ok := val.(bool); ok {
 		if b {
@@ -235,7 +227,7 @@ func shouldTrackType(typeName string) bool {
 
 func clonePackageStore(src map[string]map[string]string) map[string]map[string]string {
 	if src == nil {
-		return make(map[string]map[string]string)
+		return nil
 	}
 	dst := make(map[string]map[string]string, len(src))
 	for pkg, values := range src {
@@ -254,4 +246,23 @@ func cloneObjectForEnv(obj Object, owner *Environment) Object {
 	cloned := *fn
 	cloned.Env = owner
 	return &cloned
+}
+
+func outerPackageStore(outer *Environment) map[string]map[string]string {
+	if outer == nil {
+		return nil
+	}
+	return outer.packageStore
+}
+
+func (e *Environment) ensurePackageStore() {
+	if e.packageStore == nil {
+		e.packageStore = make(map[string]map[string]string)
+	}
+}
+
+func (e *Environment) ensureTypes() {
+	if e.types == nil {
+		e.types = make(map[string]string)
+	}
 }

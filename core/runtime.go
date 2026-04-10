@@ -152,6 +152,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			if scope != nil {
 				scope.store[node.Name.Value] = val
 				if _, hasType := scope.types[node.Name.Value]; !hasType && shouldTrackType(string(val.Type())) {
+					scope.ensureTypes()
 					scope.types[node.Name.Value] = string(val.Type())
 				}
 			} else {
@@ -453,34 +454,39 @@ func isTruthy(obj Object) bool {
 }
 
 func executeCommand(name string, args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	// Eval arguments first
-	evaledArgs := make([]Object, 0, len(args))
-	for _, arg := range args {
-		val := EvalWithIO(arg, env, stdin, stdout, stderr)
-		if isError(val) {
-			return val
-		}
-		evaledArgs = append(evaledArgs, val)
-	}
-
 	// 1. Check for native functions (global)
 	if fn, ok := NativeFns[name]; ok {
+		evaledArgs, errObj := evalCommandArgsAsObjects(args, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return errObj
+		}
 		return fn.Fn(env, evaledArgs...)
 	}
 
 	// 2. Check for user-defined functions or native functions in env
 	if val, ok := env.GetObject(name); ok {
 		if fn, ok := val.(*Function); ok {
-			return applyFunction(fn, objectsToStringArgs(evaledArgs), env, stdin, stdout, stderr)
+			stringArgs, errObj := evalCommandArgsAsStringObjects(args, env, stdin, stdout, stderr)
+			if errObj != nil {
+				return errObj
+			}
+			return applyFunction(fn, stringArgs, env, stdin, stdout, stderr)
 		}
 		if fn, ok := val.(*NativeFunction); ok {
+			evaledArgs, errObj := evalCommandArgsAsObjects(args, env, stdin, stdout, stderr)
+			if errObj != nil {
+				return errObj
+			}
 			return fn.Fn(env, evaledArgs...)
 		}
 	}
 
 	// 3. Check for builtins
 	if cmd, ok := builtin.Builtins[name]; ok {
-		strArgs := inspectObjects(evaledArgs)
+		strArgs, errObj := evalCommandArgsAsStrings(args, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return errObj
+		}
 		exitCode := cmd.Action(strArgs, env, stdin, stdout, stderr)
 		if exitCode != 0 {
 			return &Error{Message: fmt.Sprintf("builtin %s failed", name), Code: exitCode, Op: name}
@@ -489,7 +495,10 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	}
 
 	// 4. External command
-	strArgs := inspectObjects(evaledArgs)
+	strArgs, errObj := evalCommandArgsAsStrings(args, env, stdin, stdout, stderr)
+	if errObj != nil {
+		return errObj
+	}
 	cmd := exec.Command(name, strArgs...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -631,6 +640,62 @@ func objectToScriptString(obj Object) (string, bool) {
 	}
 }
 
+func evalCommandArgsAsObjects(args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) ([]Object, *Error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	values := make([]Object, 0, len(args))
+	for _, arg := range args {
+		value := EvalWithIO(arg, env, stdin, stdout, stderr)
+		if isError(value) {
+			return nil, value.(*Error)
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func evalCommandArgsAsStrings(args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) ([]string, *Error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	values := make([]string, 0, len(args))
+	for _, arg := range args {
+		value, errObj := evalCommandArgString(arg, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return nil, errObj
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func evalCommandArgsAsStringObjects(args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) ([]Object, *Error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	values := make([]Object, 0, len(args))
+	for _, arg := range args {
+		value, errObj := evalCommandArgString(arg, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return nil, errObj
+		}
+		values = append(values, &String{Value: value})
+	}
+	return values, nil
+}
+
+func evalCommandArgString(arg Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) (string, *Error) {
+	if literal, ok := arg.(*StringLiteral); ok && strings.IndexByte(literal.Value, '$') < 0 {
+		return literal.Value, nil
+	}
+	value := EvalWithIO(arg, env, stdin, stdout, stderr)
+	if isError(value) {
+		return "", value.(*Error)
+	}
+	return inspectObject(value), nil
+}
+
 func inspectObjects(args []Object) []string {
 	if len(args) == 0 {
 		return nil
@@ -712,12 +777,20 @@ func evalLogicalStatement(ls *LogicalStatement, env *Environment, stdin io.Reade
 }
 
 func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
-	fn := &Function{
-		Parameters: fs.Parameters,
-		Body:       fs.Body,
-		Env:        env,
+	fn := fs.Obj
+	if fn == nil {
+		fn = &Function{
+			Parameters: fs.Parameters,
+			Body:       fs.Body,
+		}
+		fs.Obj = fn
 	}
-	env.Set(fs.Name.Value, fn)
+	if fn.Env != env {
+		cloned := *fn
+		cloned.Env = env
+		fn = &cloned
+	}
+	env.SetObject(fs.Name.Value, fn)
 	return NULL
 }
 
@@ -726,7 +799,7 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 
 	for i, param := range fn.Parameters {
 		if i < len(args) {
-			extendEnv.Set(param.Value, args[i])
+			extendEnv.SetObject(param.Value, args[i])
 		}
 	}
 

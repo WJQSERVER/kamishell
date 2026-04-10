@@ -479,12 +479,12 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 }
 
 func (p *Parser) parseFunctionParameters() []*Identifier {
-	identifiers := []*Identifier{}
-
 	if p.peekToken.Type == RPAREN {
 		p.nextToken()
-		return identifiers
+		return nil
 	}
+
+	identifiers := make([]*Identifier, 0, 4)
 
 	p.nextToken()
 
@@ -577,12 +577,12 @@ func (p *Parser) parseCallExpression(function Expression) Expression {
 }
 
 func (p *Parser) parseExpressionList(end TokenType) []Expression {
-	args := []Expression{}
-
 	if p.peekToken.Type == end {
 		p.nextToken()
-		return args
+		return nil
 	}
+
+	args := make([]Expression, 0, 4)
 
 	p.nextToken()
 	args = append(args, p.parseExpression(LOWEST))
