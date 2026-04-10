@@ -186,7 +186,7 @@ func (p *Parser) parseExecStatement() *ExecStatement {
 
 func (p *Parser) parseAssignStatement() *AssignStatement {
 	stmt := &AssignStatement{Token: p.peekToken}
-	stmt.Name = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	stmt.Name = p.curToken.Literal
 
 	p.nextToken() // cur is :=
 	p.nextToken() // cur is start of expression
@@ -463,7 +463,7 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 	stmt := &FunctionStatement{Token: p.curToken}
 
 	p.nextToken() // move to name
-	stmt.Name = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	stmt.Name = p.curToken.Literal
 
 	if p.peekToken.Type == LPAREN {
 		p.nextToken() // move to (
@@ -478,24 +478,21 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 	return stmt
 }
 
-func (p *Parser) parseFunctionParameters() []*Identifier {
+func (p *Parser) parseFunctionParameters() []string {
 	if p.peekToken.Type == RPAREN {
 		p.nextToken()
 		return nil
 	}
 
-	identifiers := make([]*Identifier, 0, 4)
+	identifiers := make([]string, 0, 4)
 
 	p.nextToken()
-
-	ident := &Identifier{Token: p.curToken, Value: p.curToken.Literal}
-	identifiers = append(identifiers, ident)
+	identifiers = append(identifiers, p.curToken.Literal)
 
 	for p.peekToken.Type == COMMA {
 		p.nextToken()
 		p.nextToken()
-		ident := &Identifier{Token: p.curToken, Value: p.curToken.Literal}
-		identifiers = append(identifiers, ident)
+		identifiers = append(identifiers, p.curToken.Literal)
 	}
 
 	if p.peekToken.Type == RPAREN {
@@ -523,12 +520,12 @@ func (p *Parser) parseVarStatement() *VarStatement {
 		return nil
 	}
 	p.nextToken()
-	stmt.Name = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	stmt.Name = p.curToken.Literal
 
 	// Optional type
 	if p.peekToken.Type == IDENT {
 		p.nextToken()
-		stmt.Type = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+		stmt.TypeName = p.curToken.Literal
 	}
 
 	// Optional value
@@ -566,7 +563,7 @@ func (p *Parser) parseMemberExpression(left Expression) Expression {
 		return nil
 	}
 
-	exp.Property = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	exp.Property = p.curToken.Literal
 	return exp
 }
 

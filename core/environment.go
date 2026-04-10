@@ -25,6 +25,19 @@ func NewScriptEnvironment(outer *Environment) *Environment {
 	return &Environment{store: make(map[string]Object), types: make(map[string]string), outer: outer}
 }
 
+func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environment {
+	storeCap := paramCapacity
+	if storeCap < 1 {
+		storeCap = 1
+	}
+	return &Environment{
+		store:        make(map[string]Object, storeCap),
+		types:        make(map[string]string, storeCap),
+		outer:        outer,
+		packageStore: outerPackageStore(outer),
+	}
+}
+
 type Environment struct {
 	store        map[string]Object
 	types        map[string]string

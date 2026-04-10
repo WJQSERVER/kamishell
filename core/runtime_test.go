@@ -119,7 +119,7 @@ func TestEvalBooleanEqualityUsesTypedComparison(t *testing.T) {
 func TestExecuteCommandRunsUserFunctionWithoutStringifyingArguments(t *testing.T) {
 	env := NewEmptyEnvironment()
 	fn := &Function{
-		Parameters: []*Identifier{{Value: "value"}},
+		Parameters: []string{"value"},
 		Body: &BlockStatement{Statements: []Statement{
 			&ExpressionStatement{Expression: &Identifier{Value: "value"}},
 		}},

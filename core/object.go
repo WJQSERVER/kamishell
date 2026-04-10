@@ -88,7 +88,7 @@ func (e *Error) Inspect() string {
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
 
 type Function struct {
-	Parameters []*Identifier
+	Parameters []string
 	Body       *BlockStatement
 	Env        *Environment
 }

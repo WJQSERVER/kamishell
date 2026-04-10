@@ -137,7 +137,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return val
 		}
 
-		scope, expectedType, ok := env.ResolveForAssign(node.Name.Value)
+		scope, expectedType, ok := env.ResolveForAssign(node.Name)
 		if ok && expectedType != "" && string(val.Type()) != expectedType {
 			return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
 		}
@@ -147,16 +147,16 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			if shouldTrackType(string(val.Type())) {
 				typeName = string(val.Type())
 			}
-			env.SetWithType(node.Name.Value, val, typeName)
+			env.SetWithType(node.Name, val, typeName)
 		} else {
 			if scope != nil {
-				scope.store[node.Name.Value] = val
-				if _, hasType := scope.types[node.Name.Value]; !hasType && shouldTrackType(string(val.Type())) {
+				scope.store[node.Name] = val
+				if _, hasType := scope.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
 					scope.ensureTypes()
-					scope.types[node.Name.Value] = string(val.Type())
+					scope.types[node.Name] = string(val.Type())
 				}
 			} else {
-				env.Set(node.Name.Value, val)
+				env.Set(node.Name, val)
 			}
 		}
 		return val
@@ -515,7 +515,7 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 
 func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 	if ident, ok := node.Object.(*Identifier); ok && ident.Value == "env" {
-		name := "env." + node.Property.Value
+		name := "env." + node.Property
 		if fn, ok := NativeFns[name]; ok {
 			return fn
 		}
@@ -530,7 +530,7 @@ func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 		return left
 	}
 
-	name := inspectObject(left) + "." + node.Property.Value
+	name := inspectObject(left) + "." + node.Property
 	if fn, ok := NativeFns[name]; ok {
 		return fn
 	}
@@ -790,16 +790,16 @@ func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 		cloned.Env = env
 		fn = &cloned
 	}
-	env.SetObject(fs.Name.Value, fn)
+	env.SetObject(fs.Name, fn)
 	return NULL
 }
 
 func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	extendEnv := NewEnclosedEnvironment(fn.Env)
+	extendEnv := NewFunctionCallEnvironment(fn.Env, len(fn.Parameters))
 
 	for i, param := range fn.Parameters {
 		if i < len(args) {
-			extendEnv.SetObject(param.Value, args[i])
+			extendEnv.SetObject(param, args[i])
 		}
 	}
 
@@ -808,8 +808,8 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	typeName := ""
-	if vs.Type != nil {
-		typeName = string(mapTypeName(vs.Type.Value))
+	if vs.TypeName != "" {
+		typeName = string(mapTypeName(vs.TypeName))
 	}
 
 	val, errObj := evaluateDeclaredValue(vs, env, stdin, stdout, stderr, typeName)
@@ -821,7 +821,7 @@ func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdou
 		typeName = string(val.Type())
 	}
 
-	env.SetWithType(vs.Name.Value, val, typeName)
+	env.SetWithType(vs.Name, val, typeName)
 	return val
 }
 

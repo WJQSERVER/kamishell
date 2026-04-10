@@ -32,8 +32,8 @@ func TestParseAssignStatement(t *testing.T) {
 			t.Fatalf("test[%d] - stmt is not *AssignStatement. got=%T", i, stmt)
 		}
 
-		if assignStmt.Name.Value != tt.expectedIdentifier {
-			t.Errorf("test[%d] - assignStmt.Name.Value not %s. got=%s", i, tt.expectedIdentifier, assignStmt.Name.Value)
+		if assignStmt.Name != tt.expectedIdentifier {
+			t.Errorf("test[%d] - assignStmt.Name not %s. got=%s", i, tt.expectedIdentifier, assignStmt.Name)
 		}
 
 		if assignStmt.Value.String() != tt.expectedValue {
@@ -91,7 +91,7 @@ var ready = true`
 	if !ok {
 		t.Fatalf("stmt0 is not *VarStatement. got=%T", program.Statements[0])
 	}
-	if stmt0.Name.Value != "count" || stmt0.Type.Value != "int" || stmt0.Value.String() != "42" {
+	if stmt0.Name != "count" || stmt0.TypeName != "int" || stmt0.Value.String() != "42" {
 		t.Fatalf("unexpected first var statement: %#v", stmt0)
 	}
 
@@ -99,7 +99,7 @@ var ready = true`
 	if !ok {
 		t.Fatalf("stmt1 is not *VarStatement. got=%T", program.Statements[1])
 	}
-	if stmt1.Name.Value != "name" || stmt1.Type.Value != "string" || stmt1.Value != nil {
+	if stmt1.Name != "name" || stmt1.TypeName != "string" || stmt1.Value != nil {
 		t.Fatalf("unexpected second var statement: %#v", stmt1)
 	}
 
@@ -107,7 +107,7 @@ var ready = true`
 	if !ok {
 		t.Fatalf("stmt2 is not *VarStatement. got=%T", program.Statements[2])
 	}
-	if stmt2.Name.Value != "ready" || stmt2.Type != nil || stmt2.Value.String() != "true" {
+	if stmt2.Name != "ready" || stmt2.TypeName != "" || stmt2.Value.String() != "true" {
 		t.Fatalf("unexpected third var statement: %#v", stmt2)
 	}
 }
