@@ -133,7 +133,10 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 
 		result := catReader(r, stdout, stderr, opts, prefix)
 		if closer != nil {
-			closer.Close()
+			if err := closer.Close(); err != nil && result == 0 {
+				result = 1
+				fmt.Fprintf(stderr, "cat: %s: %v\n", target, err)
+			}
 		}
 		if result != 0 {
 			exitCode = result
@@ -144,17 +147,30 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 }
 
 func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions, prefix string) int {
-	scanner := bufio.NewScanner(r)
+	reader := bufio.NewReader(r)
 	lineNum := 0
 	lastLineWasEmpty := false
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		isEmpty := len(strings.TrimSpace(line)) == 0
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			fmt.Fprintf(stderr, "cat: %v\n", err)
+			return 1
+		}
+		if err == io.EOF && len(line) == 0 {
+			break
+		}
+
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimSuffix(line, "\r")
+		isEmpty := len(line) == 0
 
 		// 压缩空行
 		if opts.squeezeBlank && isEmpty {
 			if lastLineWasEmpty {
+				if err == io.EOF {
+					break
+				}
 				continue
 			}
 			lastLineWasEmpty = true
@@ -196,11 +212,10 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions, prefix s
 		}
 
 		fmt.Fprintln(stdout, output)
-	}
 
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(stderr, "cat: %v\n", err)
-		return 1
+		if err == io.EOF {
+			break
+		}
 	}
 
 	return 0

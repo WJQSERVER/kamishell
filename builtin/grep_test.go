@@ -153,6 +153,47 @@ func TestGrepLineRegexp(t *testing.T) {
 	}
 }
 
+func TestGrepWordRegexpPreservesRegex(t *testing.T) {
+	stdin := strings.NewReader("a1b\nxa1by\na[0-9]b\n")
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Grep([]string{"-w", "a[0-9]b"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "a1b") {
+		t.Fatalf("expected regex word match, got: %s", output)
+	}
+	if strings.Contains(output, "xa1by") {
+		t.Fatalf("expected whole-word filtering, got: %s", output)
+	}
+	if strings.Contains(output, "a[0-9]b") {
+		t.Fatalf("expected regex semantics instead of literal matching, got: %s", output)
+	}
+}
+
+func TestGrepLineRegexpPreservesRegex(t *testing.T) {
+	stdin := strings.NewReader("a1b\nxa1by\na[0-9]b\n")
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Grep([]string{"-x", "a[0-9]b"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "a1b") {
+		t.Fatalf("expected regex whole-line match, got: %s", output)
+	}
+	if strings.Contains(output, "xa1by") || strings.Contains(output, "a[0-9]b") {
+		t.Fatalf("expected regex whole-line semantics, got: %s", output)
+	}
+}
+
 func TestGrepCount(t *testing.T) {
 	stdin := strings.NewReader("hello world\nfoo bar\nhello test\nhello again\n")
 	stdout := &bytes.Buffer{}

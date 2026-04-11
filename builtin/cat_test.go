@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,53 @@ func TestCatSqueezeBlank(t *testing.T) {
 	if len(lines) != 5 {
 		t.Errorf("expected 5 lines after squeezing, got %d: %v", len(lines), lines)
 	}
+}
+
+func TestCatSqueezeBlankDoesNotTreatWhitespaceAsEmpty(t *testing.T) {
+	content := "line1\n \n\t\n\nline2\n"
+	tmpFile := "test_cat_s_whitespace.txt"
+	os.WriteFile(tmpFile, []byte(content), 0644)
+	defer os.Remove(tmpFile)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Cat([]string{"-s", tmpFile}, nil, nil, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, " \n") || !strings.Contains(output, "\t\n") {
+		t.Fatalf("expected whitespace-only lines to be preserved, got: %q", output)
+	}
+}
+
+func TestCatLongLine(t *testing.T) {
+	longLine := strings.Repeat("a", 70*1024)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := strings.NewReader(longLine + "\n")
+
+	code := Cat([]string{"-"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != len(longLine)+1 {
+		t.Fatalf("expected long line to be preserved, got len=%d", stdout.Len())
+	}
+}
+
+type closeErrorReadCloser struct {
+	reader io.Reader
+}
+
+func (c *closeErrorReadCloser) Read(p []byte) (int, error) {
+	return c.reader.Read(p)
+}
+
+func (c *closeErrorReadCloser) Close() error {
+	return io.ErrUnexpectedEOF
 }
 
 func TestCatShowEnds(t *testing.T) {

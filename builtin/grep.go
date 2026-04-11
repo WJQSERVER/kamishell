@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -132,11 +133,11 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 		if info.IsDir() {
 			if opts.recursive {
 				// 递归收集目录中的所有文件
-				err := filepath.Walk(filename, func(path string, info os.FileInfo, err error) error {
+				err := filepath.WalkDir(filename, func(path string, d iofs.DirEntry, err error) error {
 					if err != nil {
 						return err
 					}
-					if !info.IsDir() {
+					if !d.IsDir() {
 						filesToSearch = append(filesToSearch, path)
 					}
 					return nil
@@ -214,11 +215,9 @@ func buildPattern(patternStr string, opts *grepOptions) (*regexp.Regexp, error) 
 	adjustedPattern := patternStr
 
 	if opts.wordRegexp {
-		// 单词边界匹配
-		adjustedPattern = "\\b" + regexp.QuoteMeta(patternStr) + "\\b"
+		adjustedPattern = "\\b(" + patternStr + ")\\b"
 	} else if opts.lineRegexp {
-		// 整行匹配
-		adjustedPattern = "^" + regexp.QuoteMeta(patternStr) + "$"
+		adjustedPattern = "^(" + patternStr + ")$"
 	}
 
 	// 正则表达式选项

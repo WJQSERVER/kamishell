@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -81,7 +81,7 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 	}
 
 	// 解析目标时间戳
-	targetTime, err := parseTime(opts, stderr)
+	targetTime, err := parseTime(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "touch: %v\n", err)
 		return 1
@@ -92,28 +92,11 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 		targetTime = time.Now()
 	}
 
-	// 如果同时使用 -a 和 -m，两者都生效（都改变）
-	// 如果只使用其中一个，另一个保持不变（设置为0表示不改变）
-	// 在Unix系统中，我们不能单独改变atime或mtime，需要使用特定系统调用
-	// 这里简化处理：atime = mtime = targetTime，除非选项指定
-
-	atime := targetTime
-	mtime := targetTime
-
-	// 如果只指定了 -a，mtime 保持原值
-	if opts.atime && !opts.mtime {
-		mtime = time.Time{} // 使用零值表示不改变
-	}
-
-	// 如果只指定了 -m，atime 保持原值
-	if opts.mtime && !opts.atime {
-		atime = time.Time{} // 使用零值表示不改变
-	}
-
 	exitCode := 0
 	for _, file := range files {
 		// 检查文件是否存在
 		info, err := os.Stat(file)
+		created := false
 		if err != nil {
 			if os.IsNotExist(err) {
 				// 文件不存在
@@ -128,31 +111,46 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 					exitCode = 1
 					continue
 				}
-				f.Close()
-				// 新文件创建成功，不需要修改时间戳
-				continue
+				if closeErr := f.Close(); closeErr != nil {
+					fmt.Fprintf(stderr, "touch: cannot touch '%s': %v\n", file, closeErr)
+					exitCode = 1
+					continue
+				}
+				info, err = os.Stat(file)
+				if err != nil {
+					fmt.Fprintf(stderr, "touch: cannot access '%s': %v\n", file, err)
+					exitCode = 1
+					continue
+				}
+				created = true
 			}
 			// 其他错误（如权限问题）
-			fmt.Fprintf(stderr, "touch: cannot access '%s': %v\n", file, err)
-			exitCode = 1
-			continue
+			if err != nil && !created {
+				fmt.Fprintf(stderr, "touch: cannot access '%s': %v\n", file, err)
+				exitCode = 1
+				continue
+			}
 		}
 
-		// 文件存在，获取当前时间戳
-		currentAtime := info.ModTime() // 作为默认值
-		currentMtime := info.ModTime()
+		currentAtime, currentMtime := currentFileTimes(info)
+		desiredAtime := targetTime
+		desiredMtime := targetTime
 
-		// 设置atime
-		if atime.IsZero() {
-			atime = currentAtime
+		if opts.atime && !opts.mtime {
+			desiredMtime = currentMtime
 		}
-		// 设置mtime
-		if mtime.IsZero() {
-			mtime = currentMtime
+
+		if opts.mtime && !opts.atime {
+			desiredAtime = currentAtime
+		}
+
+		if !opts.atime && !opts.mtime {
+			desiredAtime = targetTime
+			desiredMtime = targetTime
 		}
 
 		// 修改文件时间戳
-		err = os.Chtimes(file, atime, mtime)
+		err = os.Chtimes(file, desiredAtime, desiredMtime)
 		if err != nil {
 			fmt.Fprintf(stderr, "touch: setting times of '%s': %v\n", file, err)
 			exitCode = 1
@@ -163,7 +161,7 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 }
 
 // parseTime 解析时间选项
-func parseTime(opts *touchOptions, stderr io.Writer) (time.Time, error) {
+func parseTime(opts *touchOptions) (time.Time, error) {
 	// 优先级：-r > -t > -d > 默认当前时间
 
 	// -r: 使用参考文件的时间戳
@@ -219,7 +217,7 @@ func parseTimestamp(ts string) (time.Time, error) {
 	}
 
 	for _, format := range formats {
-		t, err := time.Parse(format, input)
+		t, err := time.ParseInLocation(format, input, time.Local)
 		if err == nil {
 			return t, nil
 		}
@@ -250,7 +248,7 @@ func parseDateString(dateStr string) (time.Time, error) {
 
 	// 尝试每种格式
 	for _, format := range formats {
-		t, err := time.Parse(format, dateStr)
+		t, err := time.ParseInLocation(format, dateStr, time.Local)
 		if err == nil {
 			return t, nil
 		}
@@ -314,7 +312,106 @@ func parseRelativeTime(dateStr string) (time.Time, error) {
 	}
 }
 
-// abs 返回绝对路径（辅助函数）
-func abs(path string) (string, error) {
-	return filepath.Abs(path)
+func currentFileTimes(info os.FileInfo) (time.Time, time.Time) {
+	mtime := info.ModTime()
+	atime := mtime
+
+	sys := info.Sys()
+	if sys == nil {
+		return atime, mtime
+	}
+
+	if t, ok := extractFileTime(sys, "Atim", "Atimespec", "LastAccessTime"); ok {
+		atime = t
+	}
+	if t, ok := extractFileTime(sys, "Mtim", "Mtimespec", "LastWriteTime"); ok {
+		mtime = t
+	}
+
+	return atime, mtime
+}
+
+func extractFileTime(sys any, fieldNames ...string) (time.Time, bool) {
+	v := reflect.ValueOf(sys)
+	if !v.IsValid() {
+		return time.Time{}, false
+	}
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return time.Time{}, false
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return time.Time{}, false
+	}
+
+	for _, fieldName := range fieldNames {
+		field := v.FieldByName(fieldName)
+		if !field.IsValid() {
+			continue
+		}
+		if t, ok := reflectValueToTime(field); ok {
+			return t, true
+		}
+	}
+
+	return time.Time{}, false
+}
+
+func reflectValueToTime(v reflect.Value) (time.Time, bool) {
+	if !v.IsValid() {
+		return time.Time{}, false
+	}
+
+	if method := v.MethodByName("Nanoseconds"); method.IsValid() && method.Type().NumIn() == 0 && method.Type().NumOut() == 1 && method.Type().Out(0).Kind() == reflect.Int64 {
+		out := method.Call(nil)
+		return time.Unix(0, out[0].Int()), true
+	}
+
+	if v.Kind() != reflect.Struct {
+		return time.Time{}, false
+	}
+
+	if sec, ok := reflectIntField(v, "Sec", "Tv_sec"); ok {
+		nsec, _ := reflectIntField(v, "Nsec", "Tv_nsec")
+		return time.Unix(sec, nsec), true
+	}
+
+	low := v.FieldByName("LowDateTime")
+	high := v.FieldByName("HighDateTime")
+	if low.IsValid() && high.IsValid() && isUnsigned(low.Kind()) && isUnsigned(high.Kind()) {
+		ft := (high.Uint() << 32) | low.Uint()
+		const windowsToUnixEpoch = 116444736000000000
+		if ft >= windowsToUnixEpoch {
+			return time.Unix(0, int64((ft-windowsToUnixEpoch)*100)), true
+		}
+	}
+
+	return time.Time{}, false
+}
+
+func reflectIntField(v reflect.Value, names ...string) (int64, bool) {
+	for _, name := range names {
+		field := v.FieldByName(name)
+		if !field.IsValid() {
+			continue
+		}
+		switch field.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return field.Int(), true
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			return int64(field.Uint()), true
+		}
+	}
+	return 0, false
+}
+
+func isUnsigned(kind reflect.Kind) bool {
+	switch kind {
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return true
+	default:
+		return false
+	}
 }

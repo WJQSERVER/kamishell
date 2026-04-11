@@ -134,12 +134,31 @@ func TestTouchTimestamp(t *testing.T) {
 	if modTime.Day() != 1 {
 		t.Errorf("expected day 1, got %d", modTime.Day())
 	}
-	// 时区差异测试，只检查大致时间范围
-	if modTime.Year() != 2023 && modTime.Year() != 2022 {
-		t.Errorf("expected year around 2023, got %d", modTime.Year())
+	if modTime.Hour() != 12 {
+		t.Errorf("expected local hour 12, got %d", modTime.Hour())
 	}
 	if modTime.Minute() != 0 {
 		t.Errorf("expected minute 0, got %d", modTime.Minute())
+	}
+}
+
+func TestTouchDateParsesInLocalTime(t *testing.T) {
+	originalLocal := time.Local
+	time.Local = time.FixedZone("UTC+8", 8*60*60)
+	defer func() {
+		time.Local = originalLocal
+	}()
+
+	parsed, err := parseDateString("2023-01-15 12:00")
+	if err != nil {
+		t.Fatalf("expected parse success, got %v", err)
+	}
+
+	if parsed.Location() != time.Local {
+		t.Fatalf("expected local timezone parse, got %v", parsed.Location())
+	}
+	if parsed.Hour() != 12 {
+		t.Fatalf("expected local hour 12, got %d", parsed.Hour())
 	}
 }
 
