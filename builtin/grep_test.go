@@ -311,6 +311,33 @@ func TestGrepFilesWithMatches(t *testing.T) {
 	}
 }
 
+func TestGrepFilesWithMatchesListsAllMatchingFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "file1.txt")
+	file2 := filepath.Join(tmpDir, "file2.txt")
+	file3 := filepath.Join(tmpDir, "file3.txt")
+
+	os.WriteFile(file1, []byte("hello from file1\n"), 0644)
+	os.WriteFile(file2, []byte("hello from file2\n"), 0644)
+	os.WriteFile(file3, []byte("no match here\n"), 0644)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Grep([]string{"-l", "hello", file1, file2, file3}, nil, strings.NewReader(""), stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "file1.txt") || !strings.Contains(output, "file2.txt") {
+		t.Fatalf("expected all matching filenames, got: %q", output)
+	}
+	if strings.Contains(output, "file3.txt") {
+		t.Fatalf("expected non-matching file to be omitted, got: %q", output)
+	}
+}
+
 func TestGrepFilesWithoutMatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	file1 := filepath.Join(tmpDir, "file1.txt")
@@ -369,6 +396,36 @@ func TestGrepFilesWithoutMatchExitCodeUsesAnyMatch(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "file2.txt") {
 		t.Fatalf("expected -L to print non-matching file, got %q", stdout.String())
+	}
+}
+
+func TestGrepFilesWithoutMatchExitCodeWhenAnyFilePrinted(t *testing.T) {
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "file1.txt")
+	file2 := filepath.Join(tmpDir, "file2.txt")
+
+	os.WriteFile(file1, []byte("hello\n"), 0644)
+	os.WriteFile(file2, []byte("world\n"), 0644)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := Grep([]string{"-L", "hello", file1, file2}, nil, strings.NewReader(""), stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 when -L outputs at least one filename, got %d", code)
+	}
+}
+
+func TestGrepPreservesBareCarriageReturn(t *testing.T) {
+	stdin := strings.NewReader("hello\rworld")
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Grep([]string{"world"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if !strings.Contains(stdout.String(), "hello\rworld") {
+		t.Fatalf("expected bare carriage return to be preserved, got %q", stdout.String())
 	}
 }
 

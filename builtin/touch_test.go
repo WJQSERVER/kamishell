@@ -108,6 +108,50 @@ func TestTouchReference(t *testing.T) {
 	}
 }
 
+func TestTouchReferencePreservesAccessTime(t *testing.T) {
+	tmpDir := t.TempDir()
+	refFile := filepath.Join(tmpDir, "ref.txt")
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	if err := os.WriteFile(refFile, []byte("ref"), 0644); err != nil {
+		t.Fatalf("write ref failed: %v", err)
+	}
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("write test failed: %v", err)
+	}
+
+	refAtime := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
+	refMtime := time.Now().Add(-1 * time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(refFile, refAtime, refMtime); err != nil {
+		t.Fatalf("set ref times failed: %v", err)
+	}
+	refInfo, err := os.Stat(refFile)
+	if err != nil {
+		t.Fatalf("stat ref failed: %v", err)
+	}
+	expectedAtime, expectedMtime := currentFileTimes(refInfo)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := Touch([]string{"-r", refFile, testFile}, nil, nil, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	testInfo, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("stat test failed: %v", err)
+	}
+	actualAtime, actualMtime := currentFileTimes(testInfo)
+
+	if !actualAtime.Equal(expectedAtime) {
+		t.Fatalf("expected atime %v, got %v", expectedAtime, actualAtime)
+	}
+	if !actualMtime.Equal(expectedMtime) {
+		t.Fatalf("expected mtime %v, got %v", expectedMtime, actualMtime)
+	}
+}
+
 func TestTouchTimestamp(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")

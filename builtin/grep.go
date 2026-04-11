@@ -57,8 +57,9 @@ type grepOptions struct {
 }
 
 type grepResult struct {
-	matched bool
-	err     bool
+	matched      bool
+	selectedFile bool
+	err          bool
 }
 
 func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -128,6 +129,7 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 
 	hadError := false
 	foundMatch := false
+	selectedFileFound := false
 
 	// 收集所有要搜索的文件
 	var filesToSearch []string
@@ -199,15 +201,26 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 			continue
 		}
 
+		if result.selectedFile {
+			selectedFileFound = true
+		}
+
 		if result.matched {
 			foundMatch = true
-			if opts.quiet || opts.filesMatch {
+			if opts.quiet {
 				break
 			}
 		}
 	}
 
 	if hadError {
+		return 1
+	}
+
+	if opts.filesNoMatch {
+		if selectedFileFound {
+			return 0
+		}
 		return 1
 	}
 
@@ -256,8 +269,7 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 		}
 
 		lineNum++
-		line = strings.TrimSuffix(line, "\n")
-		line = strings.TrimSuffix(line, "\r")
+		line = trimTrailingLineEnding(line)
 		matches := pattern.MatchString(line)
 
 		// 处理反向匹配
@@ -316,7 +328,7 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 		if matchCount == 0 {
 			filename := strings.TrimSuffix(prefix, ":")
 			fmt.Fprintln(stdout, filename)
-			return grepResult{matched: false}
+			return grepResult{selectedFile: true}
 		}
 		return grepResult{matched: true}
 	}
@@ -331,4 +343,11 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 	}
 
 	return grepResult{matched: matchCount > 0}
+}
+
+func trimTrailingLineEnding(line string) string {
+	if strings.HasSuffix(line, "\r\n") {
+		return strings.TrimSuffix(line, "\r\n")
+	}
+	return strings.TrimSuffix(line, "\n")
 }

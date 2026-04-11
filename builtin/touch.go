@@ -49,6 +49,11 @@ type touchOptions struct {
 	timeSelector string
 }
 
+type touchTimeSource struct {
+	atime time.Time
+	mtime time.Time
+}
+
 func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	args = PreprocessArgs(args)
 
@@ -87,15 +92,16 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 	}
 
 	// 解析目标时间戳
-	targetTime, err := parseTime(opts)
+	targetTimes, err := parseTimeSource(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "touch: %v\n", err)
 		return 1
 	}
 
 	// 如果没有指定时间，使用当前时间
-	if targetTime.IsZero() {
-		targetTime = time.Now()
+	if targetTimes.atime.IsZero() && targetTimes.mtime.IsZero() {
+		now := time.Now()
+		targetTimes = touchTimeSource{atime: now, mtime: now}
 	}
 
 	exitCode := 0
@@ -139,8 +145,8 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 		}
 
 		currentAtime, currentMtime := currentFileTimes(info)
-		desiredAtime := targetTime
-		desiredMtime := targetTime
+		desiredAtime := targetTimes.atime
+		desiredMtime := targetTimes.mtime
 
 		if opts.atime && !opts.mtime {
 			desiredMtime = currentMtime
@@ -151,8 +157,8 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 		}
 
 		if !opts.atime && !opts.mtime {
-			desiredAtime = targetTime
-			desiredMtime = targetTime
+			desiredAtime = targetTimes.atime
+			desiredMtime = targetTimes.mtime
 		}
 
 		// 修改文件时间戳
@@ -166,8 +172,8 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 	return exitCode
 }
 
-// parseTime 解析时间选项
-func parseTime(opts *touchOptions) (time.Time, error) {
+// parseTimeSource 解析时间选项
+func parseTimeSource(opts *touchOptions) (touchTimeSource, error) {
 	// 优先级：-r > -t > -d > 默认当前时间
 
 	// -r: 使用参考文件的时间戳
@@ -175,25 +181,34 @@ func parseTime(opts *touchOptions) (time.Time, error) {
 		info, err := os.Stat(opts.reference)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return time.Time{}, fmt.Errorf("failed to get attributes of '%s': No such file or directory", opts.reference)
+				return touchTimeSource{}, fmt.Errorf("failed to get attributes of '%s': No such file or directory", opts.reference)
 			}
-			return time.Time{}, fmt.Errorf("failed to get attributes of '%s': %v", opts.reference, err)
+			return touchTimeSource{}, fmt.Errorf("failed to get attributes of '%s': %v", opts.reference, err)
 		}
-		return info.ModTime(), nil
+		atime, mtime := currentFileTimes(info)
+		return touchTimeSource{atime: atime, mtime: mtime}, nil
 	}
 
 	// -t: 使用指定时间戳格式 [[CC]YY]MMDDhhmm[.ss]
 	if opts.timestamp != "" {
-		return parseTimestamp(opts.timestamp)
+		t, err := parseTimestamp(opts.timestamp)
+		if err != nil {
+			return touchTimeSource{}, err
+		}
+		return touchTimeSource{atime: t, mtime: t}, nil
 	}
 
 	// -d: 使用日期字符串
 	if opts.date != "" {
-		return parseDateString(opts.date)
+		t, err := parseDateString(opts.date)
+		if err != nil {
+			return touchTimeSource{}, err
+		}
+		return touchTimeSource{atime: t, mtime: t}, nil
 	}
 
 	// 没有指定时间，返回零值表示使用当前时间
-	return time.Time{}, nil
+	return touchTimeSource{}, nil
 }
 
 func applyTouchTimeSelector(opts *touchOptions) error {
