@@ -295,10 +295,7 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 
 			// -L: 找到匹配，不输出
 			if opts.filesNoMatch {
-				if err == io.EOF {
-					break
-				}
-				continue
+				return grepResult{matched: true}
 			}
 
 			// -c: 只显示计数

@@ -2,11 +2,27 @@ package builtin
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+type panicAfterMatchReader struct {
+	data    string
+	read    bool
+	trigger string
+}
+
+func (r *panicAfterMatchReader) Read(p []byte) (int, error) {
+	if r.read {
+		return 0, errors.New("reader continued after first chunk")
+	}
+	r.read = true
+	return copy(p, r.data), nil
+}
 
 func TestGrepBasicPattern(t *testing.T) {
 	stdin := strings.NewReader("hello world\nfoo bar\nhello test\n")
@@ -426,6 +442,23 @@ func TestGrepPreservesBareCarriageReturn(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "hello\rworld") {
 		t.Fatalf("expected bare carriage return to be preserved, got %q", stdout.String())
+	}
+}
+
+func TestGrepFilesWithoutMatchReturnsEarlyAfterMatch(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	reader := &panicAfterMatchReader{data: "hello\nrest that should not be read"}
+
+	result := grepReader(reader, regexp.MustCompile("hello"), &grepOptions{filesNoMatch: true}, stdout, stderr, "sample:")
+	if result.err {
+		t.Fatalf("expected no error, got stderr=%q", stderr.String())
+	}
+	if !result.matched {
+		t.Fatal("expected file to be classified as matched for -L")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no output for matched file in -L mode, got %q", stdout.String())
 	}
 }
 
