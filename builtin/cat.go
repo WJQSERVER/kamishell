@@ -193,10 +193,12 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions, prefix s
 		}
 
 		// 添加行号
-		if (opts.numberNonblank && !isEmpty) || (opts.number && !opts.numberNonblank) {
-			output += fmt.Sprintf("%6d\t", lineNum)
+		if opts.numberNonblank {
+			if !isEmpty {
+				output += fmt.Sprintf("%6d\t", lineNum)
+			}
 		} else if opts.number {
-			output += "       \t" // 空行的行号占位
+			output += fmt.Sprintf("%6d\t", lineNum)
 		}
 
 		// 处理显示非打印字符

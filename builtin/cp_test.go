@@ -198,6 +198,50 @@ func TestCpVerbose(t *testing.T) {
 	}
 }
 
+func TestCpPreserveTimes(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcFile := filepath.Join(tmpDir, "src.txt")
+	dstFile := filepath.Join(tmpDir, "dst.txt")
+
+	if err := os.WriteFile(srcFile, []byte("content"), 0644); err != nil {
+		t.Fatalf("write src failed: %v", err)
+	}
+
+	pastAtime := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
+	pastMtime := time.Now().Add(-1 * time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(srcFile, pastAtime, pastMtime); err != nil {
+		t.Fatalf("set src times failed: %v", err)
+	}
+	srcInfoBeforeCopy, err := os.Stat(srcFile)
+	if err != nil {
+		t.Fatalf("stat src before copy failed: %v", err)
+	}
+	expectedAtime, expectedMtime := currentFileTimes(srcInfoBeforeCopy)
+
+	stdin := bytes.NewReader([]byte{})
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Cp([]string{"-p", srcFile, dstFile}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
+	}
+
+	dstInfo, err := os.Stat(dstFile)
+	if err != nil {
+		t.Fatalf("stat dst failed: %v", err)
+	}
+
+	dstAtime, dstMtime := currentFileTimes(dstInfo)
+
+	if !expectedMtime.Equal(dstMtime) {
+		t.Fatalf("expected preserved mtime, expected=%v dst=%v", expectedMtime, dstMtime)
+	}
+	if !expectedAtime.Equal(dstAtime) {
+		t.Fatalf("expected preserved atime, expected=%v dst=%v", expectedAtime, dstAtime)
+	}
+}
+
 func TestCpMissingOperand(t *testing.T) {
 	stdin := bytes.NewReader([]byte{})
 	stdout := &bytes.Buffer{}

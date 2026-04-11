@@ -191,9 +191,13 @@ func copyFileInternal(src, dst string, srcInfo os.FileInfo, preserve bool) error
 	}
 
 	if preserve {
-		os.Chmod(dst, srcInfo.Mode())
-		// 保留时间戳
-		os.Chtimes(dst, srcInfo.ModTime(), srcInfo.ModTime())
+		if err := os.Chmod(dst, srcInfo.Mode()); err != nil {
+			return err
+		}
+		atime, mtime := currentFileTimes(srcInfo)
+		if err := os.Chtimes(dst, atime, mtime); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -229,8 +233,13 @@ func copyDir(src, dst string, opts *cpOptions, reader *bufio.Reader, stdout, std
 	}
 
 	if opts.preserve {
-		os.Chmod(dst, srcInfo.Mode())
-		os.Chtimes(dst, srcInfo.ModTime(), srcInfo.ModTime())
+		if err := os.Chmod(dst, srcInfo.Mode()); err != nil {
+			return err
+		}
+		atime, mtime := currentFileTimes(srcInfo)
+		if err := os.Chtimes(dst, atime, mtime); err != nil {
+			return err
+		}
 	}
 	return nil
 }
