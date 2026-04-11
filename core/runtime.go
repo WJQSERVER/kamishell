@@ -137,7 +137,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return val
 		}
 
-		expectedType, ok := env.GetType(node.Name.Value)
+		scope, expectedType, ok := env.ResolveForAssign(node.Name)
 		if ok && expectedType != "" && string(val.Type()) != expectedType {
 			return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
 		}
@@ -147,9 +147,17 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			if shouldTrackType(string(val.Type())) {
 				typeName = string(val.Type())
 			}
-			env.SetWithType(node.Name.Value, val, typeName)
+			env.SetWithType(node.Name, val, typeName)
 		} else {
-			env.Assign(node.Name.Value, val)
+			if scope != nil {
+				scope.store[node.Name] = val
+				if _, hasType := scope.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
+					scope.ensureTypes()
+					scope.types[node.Name] = string(val.Type())
+				}
+			} else {
+				env.Set(node.Name, val)
+			}
 		}
 		return val
 	case *CommandStatement:
@@ -196,9 +204,9 @@ func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout
 	for _, statement := range stmts {
 		result = EvalWithIO(statement, env, stdin, stdout, stderr)
 		if errObj, ok := result.(*Error); ok {
-			env.Set("err", errObj)
+			env.SetObject("err", errObj)
 		} else {
-			env.Set("err", NULL)
+			env.SetObject("err", NULL)
 		}
 	}
 	return result
@@ -254,6 +262,12 @@ func evalInfixExpression(operator string, left, right Object) Object {
 	switch {
 	case left.Type() == INTEGER_OBJ && right.Type() == INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
+	case left.Type() == STRING_OBJ && right.Type() == STRING_OBJ:
+		return evalStringInfixExpression(operator, left.(*String).Value, right.(*String).Value)
+	case left.Type() == BOOLEAN_OBJ && right.Type() == BOOLEAN_OBJ:
+		return evalBooleanInfixExpression(operator, left.(*Boolean).Value, right.(*Boolean).Value)
+	case left.Type() == NULL_OBJ && right.Type() == NULL_OBJ:
+		return evalNullInfixExpression(operator)
 	case operator == "==":
 		return nativeBoolToBooleanObject(inspectObject(left) == inspectObject(right))
 	case operator == "!=":
@@ -282,6 +296,39 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 		return getIntegerObject(leftVal + rightVal)
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
+	}
+}
+
+func evalStringInfixExpression(operator string, left, right string) Object {
+	switch operator {
+	case "==":
+		return nativeBoolToBooleanObject(left == right)
+	case "!=":
+		return nativeBoolToBooleanObject(left != right)
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", STRING_OBJ, operator, STRING_OBJ)}
+	}
+}
+
+func evalBooleanInfixExpression(operator string, left, right bool) Object {
+	switch operator {
+	case "==":
+		return nativeBoolToBooleanObject(left == right)
+	case "!=":
+		return nativeBoolToBooleanObject(left != right)
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", BOOLEAN_OBJ, operator, BOOLEAN_OBJ)}
+	}
+}
+
+func evalNullInfixExpression(operator string) Object {
+	switch operator {
+	case "==":
+		return TRUE
+	case "!=":
+		return FALSE
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", NULL_OBJ, operator, NULL_OBJ)}
 	}
 }
 
@@ -318,7 +365,7 @@ func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, std
 	var errs []string
 	var errMu sync.Mutex
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		go func(idx int) {
 			defer wg.Done()
 
@@ -407,36 +454,39 @@ func isTruthy(obj Object) bool {
 }
 
 func executeCommand(name string, args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	// Eval arguments first
-	evaledArgs := make([]Object, 0, len(args))
-	for _, arg := range args {
-		val := EvalWithIO(arg, env, stdin, stdout, stderr)
-		if isError(val) {
-			return val
-		}
-		evaledArgs = append(evaledArgs, val)
-	}
-
 	// 1. Check for native functions (global)
 	if fn, ok := NativeFns[name]; ok {
+		evaledArgs, errObj := evalCommandArgsAsObjects(args, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return errObj
+		}
 		return fn.Fn(env, evaledArgs...)
 	}
 
 	// 2. Check for user-defined functions or native functions in env
 	if val, ok := env.GetObject(name); ok {
 		if fn, ok := val.(*Function); ok {
-			return applyFunction(fn, evaledArgs, env, stdin, stdout, stderr)
+			stringArgs, errObj := evalCommandArgsAsStringObjects(args, env, stdin, stdout, stderr)
+			if errObj != nil {
+				return errObj
+			}
+			return applyFunction(fn, stringArgs, env, stdin, stdout, stderr)
 		}
 		if fn, ok := val.(*NativeFunction); ok {
+			evaledArgs, errObj := evalCommandArgsAsObjects(args, env, stdin, stdout, stderr)
+			if errObj != nil {
+				return errObj
+			}
 			return fn.Fn(env, evaledArgs...)
 		}
 	}
 
-	// Convert []Object to []string for builtins and external commands
-	strArgs := inspectObjects(evaledArgs)
-
 	// 3. Check for builtins
 	if cmd, ok := builtin.Builtins[name]; ok {
+		strArgs, errObj := evalCommandArgsAsStrings(args, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return errObj
+		}
 		exitCode := cmd.Action(strArgs, env, stdin, stdout, stderr)
 		if exitCode != 0 {
 			return &Error{Message: fmt.Sprintf("builtin %s failed", name), Code: exitCode, Op: name}
@@ -445,6 +495,10 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	}
 
 	// 4. External command
+	strArgs, errObj := evalCommandArgsAsStrings(args, env, stdin, stdout, stderr)
+	if errObj != nil {
+		return errObj
+	}
 	cmd := exec.Command(name, strArgs...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -461,7 +515,7 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 
 func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 	if ident, ok := node.Object.(*Identifier); ok && ident.Value == "env" {
-		name := "env." + node.Property.Value
+		name := "env." + node.Property
 		if fn, ok := NativeFns[name]; ok {
 			return fn
 		}
@@ -476,7 +530,7 @@ func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 		return left
 	}
 
-	name := inspectObject(left) + "." + node.Property.Value
+	name := inspectObject(left) + "." + node.Property
 	if fn, ok := NativeFns[name]; ok {
 		return fn
 	}
@@ -586,6 +640,62 @@ func objectToScriptString(obj Object) (string, bool) {
 	}
 }
 
+func evalCommandArgsAsObjects(args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) ([]Object, *Error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	values := make([]Object, 0, len(args))
+	for _, arg := range args {
+		value := EvalWithIO(arg, env, stdin, stdout, stderr)
+		if isError(value) {
+			return nil, value.(*Error)
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func evalCommandArgsAsStrings(args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) ([]string, *Error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	values := make([]string, 0, len(args))
+	for _, arg := range args {
+		value, errObj := evalCommandArgString(arg, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return nil, errObj
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func evalCommandArgsAsStringObjects(args []Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) ([]Object, *Error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	values := make([]Object, 0, len(args))
+	for _, arg := range args {
+		value, errObj := evalCommandArgString(arg, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return nil, errObj
+		}
+		values = append(values, &String{Value: value})
+	}
+	return values, nil
+}
+
+func evalCommandArgString(arg Expression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) (string, *Error) {
+	if literal, ok := arg.(*StringLiteral); ok && strings.IndexByte(literal.Value, '$') < 0 {
+		return literal.Value, nil
+	}
+	value := EvalWithIO(arg, env, stdin, stdout, stderr)
+	if isError(value) {
+		return "", value.(*Error)
+	}
+	return inspectObject(value), nil
+}
+
 func inspectObjects(args []Object) []string {
 	if len(args) == 0 {
 		return nil
@@ -593,6 +703,17 @@ func inspectObjects(args []Object) []string {
 	values := make([]string, len(args))
 	for i, arg := range args {
 		values[i] = inspectObject(arg)
+	}
+	return values
+}
+
+func objectsToStringArgs(args []Object) []Object {
+	if len(args) == 0 {
+		return nil
+	}
+	values := make([]Object, len(args))
+	for i, arg := range args {
+		values[i] = &String{Value: inspectObject(arg)}
 	}
 	return values
 }
@@ -661,16 +782,16 @@ func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 		Body:       fs.Body,
 		Env:        env,
 	}
-	env.Set(fs.Name.Value, fn)
+	env.SetObject(fs.Name, fn)
 	return NULL
 }
 
 func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	extendEnv := NewEnclosedEnvironment(fn.Env)
+	extendEnv := NewFunctionCallEnvironment(fn.Env, len(fn.Parameters))
 
 	for i, param := range fn.Parameters {
 		if i < len(args) {
-			extendEnv.Set(param.Value, args[i])
+			extendEnv.SetObject(param, args[i])
 		}
 	}
 
@@ -679,8 +800,8 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	typeName := ""
-	if vs.Type != nil {
-		typeName = string(mapTypeName(vs.Type.Value))
+	if vs.TypeName != "" {
+		typeName = string(mapTypeName(vs.TypeName))
 	}
 
 	val, errObj := evaluateDeclaredValue(vs, env, stdin, stdout, stderr, typeName)
@@ -692,7 +813,7 @@ func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdou
 		typeName = string(val.Type())
 	}
 
-	env.SetWithType(vs.Name.Value, val, typeName)
+	env.SetWithType(vs.Name, val, typeName)
 	return val
 }
 

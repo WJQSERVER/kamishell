@@ -87,7 +87,7 @@ func (ps *PrintStatement) String() string {
 
 type AssignStatement struct {
 	Token Token // the := token
-	Name  *Identifier
+	Name  string
 	Value Expression
 }
 
@@ -95,7 +95,7 @@ func (as *AssignStatement) statementNode()       {}
 func (as *AssignStatement) TokenLiteral() string { return as.Token.Literal }
 func (as *AssignStatement) String() string {
 	var out strings.Builder
-	out.WriteString(as.Name.String())
+	out.WriteString(as.Name)
 	out.WriteString(" := ")
 	if as.Value != nil {
 		out.WriteString(as.Value.String())
@@ -257,13 +257,13 @@ func (ce *CallExpression) String() string {
 type MemberExpression struct {
 	Token    Token
 	Object   Expression
-	Property *Identifier
+	Property string
 }
 
 func (me *MemberExpression) expressionNode()      {}
 func (me *MemberExpression) TokenLiteral() string { return me.Token.Literal }
 func (me *MemberExpression) String() string {
-	return me.Object.String() + "." + me.Property.String()
+	return me.Object.String() + "." + me.Property
 }
 
 type PipeStatement struct {
@@ -344,9 +344,10 @@ func (ls *LogicalStatement) String() string {
 
 type FunctionStatement struct {
 	Token      Token // the func token
-	Name       *Identifier
-	Parameters []*Identifier
+	Name       string
+	Parameters []string
 	Body       *BlockStatement
+	Obj        *Function
 }
 
 func (fs *FunctionStatement) statementNode()       {}
@@ -354,13 +355,9 @@ func (fs *FunctionStatement) TokenLiteral() string { return fs.Token.Literal }
 func (fs *FunctionStatement) String() string {
 	var out strings.Builder
 	out.WriteString(fs.TokenLiteral() + " ")
-	out.WriteString(fs.Name.String())
+	out.WriteString(fs.Name)
 	out.WriteString("(")
-	params := []string{}
-	for _, p := range fs.Parameters {
-		params = append(params, p.String())
-	}
-	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(strings.Join(fs.Parameters, ", "))
 	out.WriteString(") ")
 	out.WriteString(fs.Body.String())
 	return out.String()
@@ -403,10 +400,10 @@ func (gs *GoStatement) String() string {
 }
 
 type VarStatement struct {
-	Token Token // the var token
-	Name  *Identifier
-	Type  *Identifier // optional type constraint
-	Value Expression  // optional initial value
+	Token    Token // the var token
+	Name     string
+	TypeName string
+	Value    Expression // optional initial value
 }
 
 func (vs *VarStatement) statementNode()       {}
@@ -414,10 +411,10 @@ func (vs *VarStatement) TokenLiteral() string { return vs.Token.Literal }
 func (vs *VarStatement) String() string {
 	var out strings.Builder
 	out.WriteString("var ")
-	out.WriteString(vs.Name.String())
-	if vs.Type != nil {
+	out.WriteString(vs.Name)
+	if vs.TypeName != "" {
 		out.WriteString(" ")
-		out.WriteString(vs.Type.String())
+		out.WriteString(vs.TypeName)
 	}
 	if vs.Value != nil {
 		out.WriteString(" = ")

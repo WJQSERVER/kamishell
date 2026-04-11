@@ -17,6 +17,41 @@ func TestRunBuiltinArgsPassesRawRelativeWindowsPath(t *testing.T) {
 	runBuiltinArgsCase(t, []string{"test_builtin_raw_args_rel", ".\\tmp_make_env_set.km"}, []string{".\\tmp_make_env_set.km"})
 }
 
+func TestRunBuiltinArgsPrintsBuiltinHelp(t *testing.T) {
+	name := "test_builtin_help_dispatch"
+	builtin.RegisterBuiltin(&builtin.BuiltinCommand{
+		Name:        name,
+		Description: "test command",
+		Usage:       name + " [args]",
+		Help:        "shows test help",
+		Action: func(args []string, env builtin.Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+			t.Fatal("builtin action should not be called when requesting --help")
+			return 1
+		},
+	})
+	defer delete(builtin.Builtins, name)
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	runBuiltinArgs([]string{name, "--help"}, core.NewEnvironment())
+	_ = w.Close()
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("copy output failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "用法: "+name+" [args]") {
+		t.Fatalf("unexpected help output: %q", buf.String())
+	}
+	_ = r.Close()
+}
+
 func TestRunBuiltinArgsPassesRawAbsoluteWindowsPath(t *testing.T) {
 	runBuiltinArgsCase(t, []string{"test_builtin_raw_args_abs", `D:\programs\alina\tmp_make_env_set.km`}, []string{`D:\programs\alina\tmp_make_env_set.km`})
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -340,11 +341,9 @@ func normalizeTargetInputs(inputs []string, stderr io.Writer) ([]string, string,
 		return nil, inputs[0], true
 	}
 
-	for _, input := range inputs {
-		if isPackageSource(input) {
-			fmt.Fprintln(stderr, "package source '.' cannot be mixed with explicit source files")
-			return nil, "", false
-		}
+	if slices.ContainsFunc(inputs, isPackageSource) {
+		fmt.Fprintln(stderr, "package source '.' cannot be mixed with explicit source files")
+		return nil, "", false
 	}
 
 	return inputs, "", true

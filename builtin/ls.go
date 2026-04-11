@@ -14,6 +14,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "ls",
 		Description: "列出目录内容",
+		Usage:       "ls [-a] [-l] [-h] [-F] [-R] [-r] [-t] [-S] [-d] [target...]",
+		Help:        "列出目录内容，支持长列表、人类可读大小、递归和多种排序模式。",
 		Action:      Ls,
 	})
 }
@@ -57,7 +59,7 @@ func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		}
 
 		if *dirOnly || !info.IsDir() {
-			printEntry(stdout, target, info, *long, *human, *classify)
+			printEntry(stdout, target, target, info, *long, *human, *classify)
 			if !*long {
 				fmt.Fprintln(stdout)
 			}
@@ -119,7 +121,7 @@ func listDir(dirPath string, stdout, stderr io.Writer, all, long, human, classif
 	})
 
 	for _, info := range infos {
-		printEntry(stdout, info.Name(), info, long, human, classify)
+		printEntry(stdout, filepath.Join(dirPath, info.Name()), info.Name(), info, long, human, classify)
 		if !long {
 			fmt.Fprint(stdout, "  ")
 		}
@@ -139,7 +141,7 @@ func listDir(dirPath string, stdout, stderr io.Writer, all, long, human, classif
 	return 0
 }
 
-func printEntry(stdout io.Writer, name string, info os.FileInfo, long, human, classify bool) {
+func printEntry(stdout io.Writer, fullPath, name string, info os.FileInfo, long, human, classify bool) {
 	if long {
 		mode := info.Mode().String()
 		size := formatSize(info.Size(), human)
@@ -150,7 +152,7 @@ func printEntry(stdout io.Writer, name string, info os.FileInfo, long, human, cl
 	}
 
 	if classify {
-		fmt.Fprint(stdout, getInfoClassifyIndicator(info))
+		fmt.Fprint(stdout, getInfoClassifyIndicator(fullPath, info))
 	}
 
 	if long {
@@ -174,7 +176,7 @@ func formatSize(size int64, human bool) string {
 	return fmt.Sprintf("%.1f%c", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
-func getInfoClassifyIndicator(info os.FileInfo) string {
+func getInfoClassifyIndicator(path string, info os.FileInfo) string {
 	if info.IsDir() {
 		return "/"
 	}
@@ -182,7 +184,8 @@ func getInfoClassifyIndicator(info os.FileInfo) string {
 	if mode&os.ModeSymlink != 0 {
 		return "@"
 	}
-	if mode&0111 != 0 {
+	// 使用平台特定的可执行文件检测
+	if isExecutable(path) {
 		return "*"
 	}
 	return ""

@@ -41,6 +41,27 @@ print env.Get("GOOS")`
 	benchmarkParseProgram(b, input)
 }
 
+func BenchmarkParseProgramCommandHeavy(b *testing.B) {
+	input := `target_env "app" GOOS=linux GOARCH=amd64 CGO_ENABLED=0
+http --method POST --header "Content-Type: application/json" --data '{"name":"kami"}' "https://api.example.com/items"
+grep -n main go.mod | cat && print "done" &`
+	benchmarkParseProgram(b, input)
+}
+
+func BenchmarkParseProgramScaling(b *testing.B) {
+	inputs := map[string]string{
+		"small":  repeatBenchmarkSnippet(`print "hello $name"; target_env "app" GOOS=linux GOARCH=amd64`, 1),
+		"medium": repeatBenchmarkSnippet(`print "hello $name"; target_env "app" GOOS=linux GOARCH=amd64`, 25),
+		"large":  repeatBenchmarkSnippet(`print "hello $name"; target_env "app" GOOS=linux GOARCH=amd64`, 100),
+	}
+
+	for name, input := range inputs {
+		b.Run(name, func(b *testing.B) {
+			benchmarkParseProgram(b, input)
+		})
+	}
+}
+
 func benchmarkParseProgram(b *testing.B, input string) {
 	b.Helper()
 	b.ReportAllocs()
@@ -51,4 +72,19 @@ func benchmarkParseProgram(b *testing.B, input string) {
 		p := NewParser(l)
 		p.ParseProgram()
 	}
+}
+
+func repeatBenchmarkSnippet(snippet string, times int) string {
+	if times <= 1 {
+		return snippet
+	}
+
+	result := ""
+	for i := 0; i < times; i++ {
+		if i > 0 {
+			result += "\n"
+		}
+		result += snippet
+	}
+	return result
 }

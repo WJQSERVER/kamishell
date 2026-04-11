@@ -35,6 +35,9 @@ go build -o kami ./cmd/kamishell
 - **`grep pattern [file...]`**: 在输入流或文件中搜索匹配项。
 - **`sed s/old/new/ [file...]`**: 简单的全局文本替换。
 
+### 网络请求
+- **`http [METHOD] URL [flags]`**: 发送内嵌 HTTP 请求，支持结构化请求体、认证、重试和多种响应输出模式。
+
 ### 系统信息与状态
 - **`pwd`**: 显示当前工作目录。
 - **`cd [dir]`**: 切换目录（默认为 HOME）。
@@ -44,6 +47,37 @@ go build -o kami ./cmd/kamishell
 - **`help`**: 显示内建命令的帮助信息。
 - **`print [arg...]`**: 向终端打印信息（支持插值和拼接）。
 - **`exit [code]`**: 退出 Shell，可选返回状态码（默认 0）。
+
+`http` 设计约定：
+
+```text
+- 默认方法为 GET
+- 使用 --data / --json / --form 时，默认方法自动切换为 POST
+- 仅允许一种请求体模式：raw、json、form
+- 输出模式互斥：默认 body；--include = 元数据+body；--headers = 仅元数据；--status = 仅状态行
+```
+
+`http` 示例：
+
+```bash
+# 简单 GET
+http https://example.com
+
+# 发送 JSON（自动 POST + application/json）
+http https://api.example.com/items --json '{"name":"kami"}'
+
+# 发送表单
+http https://api.example.com/items --form name=kami --form lang=zh
+
+# 添加认证与请求头
+http https://api.example.com/profile --auth kami:secret --header "Accept: application/json"
+
+# 从管道读取请求体
+print '{"name":"kami"}' | http --method POST --header "Content-Type: application/json" --data - https://api.example.com/items
+
+# 仅查看响应头
+http --headers https://example.com
+```
 
 ## 4. 脚本模式
 

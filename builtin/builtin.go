@@ -1,13 +1,17 @@
 package builtin
 
 import (
+	"fmt"
 	"io"
+	"slices"
+	"sort"
+	"strings"
 	"sync"
 )
 
 type Environment interface {
-	Set(name string, val interface{})
-	Get(name string) (interface{}, bool)
+	Set(name string, val any)
+	Get(name string) (any, bool)
 }
 
 type Inspector interface {
@@ -20,6 +24,8 @@ type BuiltinFunc func(args []string, env Environment, stdin io.Reader, stdout io
 type BuiltinCommand struct {
 	Name        string
 	Description string
+	Usage       string
+	Help        string
 	Action      BuiltinFunc
 }
 
@@ -28,6 +34,49 @@ var Builtins = map[string]*BuiltinCommand{}
 // RegisterBuiltin adds a new builtin command to the registry.
 func RegisterBuiltin(cmd *BuiltinCommand) {
 	Builtins[cmd.Name] = cmd
+}
+
+func BuiltinHelpRequested(args []string) bool {
+	return slices.Contains(args, "--help")
+}
+
+func HandleBuiltinHelp(cmd *BuiltinCommand, args []string, stdout io.Writer) bool {
+	if !BuiltinHelpRequested(args) {
+		return false
+	}
+	PrintBuiltinHelp(cmd, stdout)
+	return true
+}
+
+func PrintBuiltinHelp(cmd *BuiltinCommand, stdout io.Writer) {
+	if cmd == nil {
+		return
+	}
+
+	usage := strings.TrimSpace(cmd.Usage)
+	if usage == "" {
+		usage = cmd.Name
+	}
+
+	fmt.Fprintf(stdout, "用法: %s\n", usage)
+	if cmd.Description != "" {
+		fmt.Fprintf(stdout, "描述: %s\n", cmd.Description)
+	}
+
+	help := strings.TrimSpace(cmd.Help)
+	if help != "" {
+		fmt.Fprintln(stdout, "")
+		fmt.Fprintln(stdout, help)
+	}
+}
+
+func BuiltinNames() []string {
+	names := make([]string, 0, len(Builtins))
+	for name := range Builtins {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 type Job struct {

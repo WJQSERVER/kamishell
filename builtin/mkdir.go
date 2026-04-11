@@ -12,6 +12,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "mkdir",
 		Description: "创建目录",
+		Usage:       "mkdir [-p] [-m mode] directory...",
+		Help:        "创建目录；可按需创建父目录，并支持八进制权限模式。",
 		Action:      Mkdir,
 	})
 }

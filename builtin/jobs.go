@@ -10,11 +10,16 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "jobs",
 		Description: "列出后台作业",
+		Usage:       "jobs",
+		Help:        "列出当前 shell 中注册的后台任务及状态。",
 		Action:      JobsCmd,
 	})
 }
 
 func JobsCmd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	if HandleBuiltinHelp(Builtins["jobs"], args, stdout) {
+		return 0
+	}
 	JobsMu.Lock()
 	defer JobsMu.Unlock()
 

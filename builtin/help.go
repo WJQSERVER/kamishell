@@ -11,11 +11,20 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "help",
 		Description: "显示此帮助信息",
+		Usage:       "help [command] | help -k [keyword] | help --version",
+		Help:        "显示 shell 总帮助、指定内建命令帮助或关键字说明。",
 		Action:      Help,
 	})
 }
 
 func Help(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	if len(args) == 1 {
+		if cmd, ok := Builtins[args[0]]; ok {
+			PrintBuiltinHelp(cmd, stdout)
+			return 0
+		}
+	}
+
 	// Parse flags
 	keywordArg := ""
 	showKeywords := false
@@ -49,20 +58,14 @@ func Help(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 	fmt.Fprintln(stdout, "")
 	fmt.Fprintln(stdout, "内建命令列表:")
 
-	// Get all builtin names and sort them
-	names := make([]string, 0, len(Builtins))
-	for name := range Builtins {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
+	for _, name := range BuiltinNames() {
 		cmd := Builtins[name]
 		fmt.Fprintf(stdout, "  %-12s %s\n", name, cmd.Description)
 	}
 
 	fmt.Fprintln(stdout, "--------------------------------------------------")
 	fmt.Fprintln(stdout, "提示: 输入 'help --version' 查看详细构建信息。")
+	fmt.Fprintln(stdout, "      输入 'help <命令>' 查看特定内建命令帮助。")
 	fmt.Fprintln(stdout, "      输入 'help -k' 查看关键字列表。")
 	fmt.Fprintln(stdout, "      输入 'help -k <关键字>' 查看特定关键字详情。")
 	return 0

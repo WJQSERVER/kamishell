@@ -14,6 +14,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "rm",
 		Description: "删除文件或目录",
+		Usage:       "rm [-f] [-i] [-r|-R] [-v] [--no-preserve-root] target...",
+		Help:        "删除文件或目录；递归删除目录时默认保护根目录。",
 		Action:      Rm,
 	})
 }

@@ -12,6 +12,8 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "pwd",
 		Description: "显示当前工作目录",
+		Usage:       "pwd [-L|-P]",
+		Help:        "输出当前工作目录；-L 优先使用 PWD，-P 解析物理路径。",
 		Action:      Pwd,
 	})
 }

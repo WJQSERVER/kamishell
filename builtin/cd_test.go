@@ -10,7 +10,7 @@ import (
 func TestCd(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	env := &rmMockEnv{store: map[string]interface{}{}}
+	env := &rmMockEnv{store: map[string]any{}}
 
 	origWD, _ := os.Getwd()
 	defer os.Chdir(origWD)

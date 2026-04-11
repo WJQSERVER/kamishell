@@ -11,11 +11,16 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "type",
 		Description: "显示命令类型",
+		Usage:       "type name...",
+		Help:        "显示名称是函数、变量、内建命令还是外部可执行文件。",
 		Action:      Type,
 	})
 }
 
 func Type(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	if HandleBuiltinHelp(Builtins["type"], args, stdout) {
+		return 0
+	}
 	if len(args) == 0 {
 		return 0
 	}

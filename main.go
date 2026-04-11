@@ -67,6 +67,10 @@ func runBuiltinArgs(args []string, env *core.Environment) {
 		runInput(strings.Join(args, " "), env, false)
 		return
 	}
+	if builtin.BuiltinHelpRequested(args[1:]) {
+		builtin.PrintBuiltinHelp(cmd, os.Stdout)
+		return
+	}
 
 	exitCode := cmd.Action(args[1:], env, os.Stdin, os.Stdout, os.Stderr)
 	if exitCode != 0 {
@@ -200,7 +204,7 @@ func NewFileHistory(path string) *FileHistory {
 		filepath: path,
 	}
 	if data, err := os.ReadFile(path); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
+		for line := range strings.SplitSeq(string(data), "\n") {
 			if line != "" {
 				h.History.Append(line)
 			}
