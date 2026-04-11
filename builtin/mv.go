@@ -67,7 +67,7 @@ func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	dest := targets[len(targets)-1]
 	sources := targets[:len(targets)-1]
 
-	destInfo, destErr := os.Stat(dest)
+	destInfo, destErr := os.Lstat(dest)
 	isDestDir := destErr == nil && destInfo.IsDir()
 
 	if len(sources) > 1 && !isDestDir {
@@ -85,7 +85,7 @@ func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		}
 
 		// 检查目标文件是否存在
-		if _, err := os.Stat(actualDest); err == nil {
+		if _, err := os.Lstat(actualDest); err == nil {
 			// 目标文件存在
 			if opts.noClobber {
 				// -n: 不覆盖

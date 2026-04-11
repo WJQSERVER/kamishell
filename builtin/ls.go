@@ -184,7 +184,8 @@ func getInfoClassifyIndicator(info os.FileInfo) string {
 	if mode&os.ModeSymlink != 0 {
 		return "@"
 	}
-	if mode&0111 != 0 {
+	// 使用平台特定的可执行文件检测
+	if isExecutable(info.Name()) {
 		return "*"
 	}
 	return ""

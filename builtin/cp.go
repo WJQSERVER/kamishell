@@ -85,7 +85,7 @@ func Cp(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	dest := targets[len(targets)-1]
 	sources := targets[:len(targets)-1]
 
-	destInfo, destErr := os.Stat(dest)
+	destInfo, destErr := os.Lstat(dest)
 	isDestDir := destErr == nil && destInfo.IsDir()
 
 	if len(sources) > 1 && !isDestDir {
@@ -126,7 +126,7 @@ func doCopy(src, dst string, opts *cpOptions, reader *bufio.Reader, stdout, stde
 	}
 
 	// File copy - check destination
-	dstInfo, err := os.Stat(dst)
+	dstInfo, err := os.Lstat(dst)
 	if err == nil {
 		// 目标文件存在
 		if opts.noClobber {
