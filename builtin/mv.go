@@ -14,10 +14,29 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "mv",
 		Description: "移动或重命名文件或目录",
-		Usage:       "mv [-f] [-i] source... destination",
-		Help:        "移动或重命名文件/目录；跨文件系统失败时回退到复制再删除。",
-		Action:      Mv,
+		Usage:       "mv [-f] [-i] [-n] [-v] source... destination",
+		Help: `移动或重命名文件/目录；跨文件系统失败时回退到复制再删除。
+
+选项:
+  -f, --force           覆盖前不提示
+  -i, --interactive     覆盖前提示确认
+  -n, --no-clobber      不覆盖已存在的文件
+  -v, --verbose         显示移动过程
+
+示例:
+  mv file.txt dest/
+  mv old.txt new.txt
+  mv -n file.txt dest/    # 不覆盖
+  mv -v file.txt dest/    # 显示移动过程`,
+		Action: Mv,
 	})
+}
+
+type mvOptions struct {
+	force       bool
+	interactive bool
+	noClobber   bool
+	verbose     bool
 }
 
 func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -25,8 +44,15 @@ func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	fs := flag.NewFlagSet("mv", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	force := fs.Bool("f", false, "do not prompt before overwriting")
-	interactive := fs.Bool("i", false, "prompt before overwrite")
+	opts := &mvOptions{}
+	fs.BoolVar(&opts.force, "f", false, "do not prompt before overwriting")
+	fs.BoolVar(&opts.force, "force", false, "do not prompt before overwriting")
+	fs.BoolVar(&opts.interactive, "i", false, "prompt before overwrite")
+	fs.BoolVar(&opts.interactive, "interactive", false, "prompt before overwrite")
+	fs.BoolVar(&opts.noClobber, "n", false, "do not overwrite an existing file")
+	fs.BoolVar(&opts.noClobber, "no-clobber", false, "do not overwrite an existing file")
+	fs.BoolVar(&opts.verbose, "v", false, "explain what is being done")
+	fs.BoolVar(&opts.verbose, "verbose", false, "explain what is being done")
 
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -58,8 +84,18 @@ func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 			actualDest = filepath.Join(dest, filepath.Base(src))
 		}
 
-		if _, err := os.Stat(actualDest); err == nil && !*force {
-			if *interactive {
+		// 检查目标文件是否存在
+		if _, err := os.Stat(actualDest); err == nil {
+			// 目标文件存在
+			if opts.noClobber {
+				// -n: 不覆盖
+				if opts.verbose {
+					fmt.Fprintf(stdout, "mv: not moving '%s' to '%s' (no-clobber)\n", src, actualDest)
+				}
+				continue
+			}
+
+			if opts.interactive && !opts.force {
 				fmt.Fprintf(stdout, "mv: overwrite '%s'? ", actualDest)
 				resp, readErr := reader.ReadString('\n')
 				if readErr != nil {
@@ -74,9 +110,14 @@ func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 			}
 		}
 
+		// 执行移动
+		if opts.verbose {
+			fmt.Fprintf(stdout, "mv: moving '%s' -> '%s'\n", src, actualDest)
+		}
+
 		err := os.Rename(src, actualDest)
 		if err != nil {
-			// Try copy and delete if Rename fails (e.g. across filesystems)
+			// 跨文件系统失败时回退到复制再删除
 			err = moveByCopy(src, actualDest)
 			if err != nil {
 				fmt.Fprintf(stderr, "mv: %v\n", err)
@@ -95,7 +136,6 @@ func moveByCopy(src, dst string) error {
 	}
 
 	if srcInfo.IsDir() {
-		// Use Cp implementation logic if possible, but here we just do a simplified version
 		err = copyDirInternal(src, dst)
 		if err != nil {
 			return err
