@@ -216,6 +216,7 @@ func applyTouchTimeSelector(opts *touchOptions) error {
 // parseTimestamp 解析 -t 格式的时间戳 [[CC]YY]MMDDhhmm[.ss]
 func parseTimestamp(ts string) (time.Time, error) {
 	// 尝试解析不同格式
+	now := time.Now().In(time.Local)
 	formats := []string{
 		"200601021504.05", // CCYYMMDDhhmm.ss
 		"200601021504",    // CCYYMMDDhhmm
@@ -242,6 +243,9 @@ func parseTimestamp(ts string) (time.Time, error) {
 	for _, format := range formats {
 		t, err := time.ParseInLocation(format, input, time.Local)
 		if err == nil {
+			if strings.HasPrefix(format, "0102") {
+				t = time.Date(now.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.Local)
+			}
 			return t, nil
 		}
 	}

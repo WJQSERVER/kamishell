@@ -189,6 +189,21 @@ func TestTouchTimeSelectorInvalid(t *testing.T) {
 	}
 }
 
+func TestParseTimestampWithoutYearUsesCurrentYear(t *testing.T) {
+	parsed, err := parseTimestamp("01011200")
+	if err != nil {
+		t.Fatalf("expected parse success, got %v", err)
+	}
+
+	currentYear := time.Now().In(time.Local).Year()
+	if parsed.Year() != currentYear {
+		t.Fatalf("expected current year %d, got %d", currentYear, parsed.Year())
+	}
+	if parsed.Month() != time.January || parsed.Day() != 1 || parsed.Hour() != 12 || parsed.Minute() != 0 {
+		t.Fatalf("unexpected parsed timestamp: %v", parsed)
+	}
+}
+
 func TestTouchReferenceNotExist(t *testing.T) {
 	tmpDir := t.TempDir()
 	refFile := filepath.Join(tmpDir, "nonexistent.txt")

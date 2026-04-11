@@ -777,18 +777,10 @@ func evalLogicalStatement(ls *LogicalStatement, env *Environment, stdin io.Reade
 }
 
 func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
-	fn := fs.Obj
-	if fn == nil {
-		fn = &Function{
-			Parameters: fs.Parameters,
-			Body:       fs.Body,
-		}
-		fs.Obj = fn
-	}
-	if fn.Env != env {
-		cloned := *fn
-		cloned.Env = env
-		fn = &cloned
+	fn := &Function{
+		Parameters: fs.Parameters,
+		Body:       fs.Body,
+		Env:        env,
 	}
 	env.SetObject(fs.Name, fn)
 	return NULL

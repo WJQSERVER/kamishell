@@ -3,6 +3,7 @@ package core
 import (
 	"io"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -168,5 +169,40 @@ func TestRepeatedEvalReusesParsedFunctionStatementWithCurrentEnv(t *testing.T) {
 	}
 	if strings.TrimSpace(stdout2.String()) != "second" {
 		t.Fatalf("expected second eval to print second, got %q", stdout2.String())
+	}
+}
+
+func TestConcurrentEvalOfSharedProgramMutatesFunctionStatementCache(t *testing.T) {
+	program := func() *Program {
+		l := NewLexer("func greet() { 1 }; greet()")
+		p := NewParser(l)
+		return p.ParseProgram()
+	}()
+
+	const workers = 16
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan string, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+
+			env := NewEmptyEnvironment()
+			result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+			if isError(result) {
+				errCh <- result.Inspect()
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for errMsg := range errCh {
+		t.Fatalf("unexpected eval error: %s", errMsg)
 	}
 }
