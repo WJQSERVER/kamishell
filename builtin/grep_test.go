@@ -337,6 +337,56 @@ func TestGrepFilesWithoutMatch(t *testing.T) {
 	}
 }
 
+func TestGrepMultipleFilesExitCodeUsesAnyMatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "file1.txt")
+	file2 := filepath.Join(tmpDir, "file2.txt")
+
+	os.WriteFile(file1, []byte("hello\n"), 0644)
+	os.WriteFile(file2, []byte("nope\n"), 0644)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := Grep([]string{"hello", file1, file2}, nil, strings.NewReader(""), stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 when any file matches, got %d", code)
+	}
+}
+
+func TestGrepFilesWithoutMatchExitCodeUsesAnyMatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "file1.txt")
+	file2 := filepath.Join(tmpDir, "file2.txt")
+
+	os.WriteFile(file1, []byte("hello\n"), 0644)
+	os.WriteFile(file2, []byte("nope\n"), 0644)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := Grep([]string{"-L", "hello", file1, file2}, nil, strings.NewReader(""), stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 when any file matches pattern, got %d", code)
+	}
+	if !strings.Contains(stdout.String(), "file2.txt") {
+		t.Fatalf("expected -L to print non-matching file, got %q", stdout.String())
+	}
+}
+
+func TestGrepLongLine(t *testing.T) {
+	longLine := strings.Repeat("a", 70*1024)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := strings.NewReader(longLine + "\n")
+
+	code := Grep([]string{"a+"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected long line to be processed, got code=%d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() == 0 {
+		t.Fatal("expected output for long matching line")
+	}
+}
+
 func TestGrepNoPattern(t *testing.T) {
 	stdin := strings.NewReader("hello world\n")
 	stdout := &bytes.Buffer{}

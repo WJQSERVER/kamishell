@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -105,7 +106,7 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 
 	targets := fs.Args()
 	if len(targets) == 0 {
-		return catReader(stdin, stdout, stderr, opts, "")
+		return catReader(stdin, stdout, stderr, opts)
 	}
 
 	exitCode := 0
@@ -126,12 +127,7 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 			closer = f
 		}
 
-		prefix := ""
-		if len(targets) > 1 {
-			prefix = target + ":"
-		}
-
-		result := catReader(r, stdout, stderr, opts, prefix)
+		result := catReader(r, stdout, stderr, opts)
 		if closer != nil {
 			if err := closer.Close(); err != nil && result == 0 {
 				result = 1
@@ -146,7 +142,15 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 	return exitCode
 }
 
-func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions, prefix string) int {
+func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions) int {
+	if !requiresFormattedCatOutput(opts) {
+		if _, err := io.Copy(stdout, r); err != nil {
+			fmt.Fprintf(stderr, "cat: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
 	reader := bufio.NewReader(r)
 	lineNum := 0
 	lastLineWasEmpty := false
@@ -161,9 +165,9 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions, prefix s
 			break
 		}
 
-		line = strings.TrimSuffix(line, "\n")
-		line = strings.TrimSuffix(line, "\r")
-		isEmpty := len(line) == 0
+		hadNewline := strings.HasSuffix(line, "\n")
+		content := strings.TrimSuffix(line, "\n")
+		isEmpty := len(content) == 0
 
 		// 压缩空行
 		if opts.squeezeBlank && isEmpty {
@@ -187,33 +191,36 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions, prefix s
 		}
 
 		// 构建输出行
-		output := ""
-		if prefix != "" {
-			output += prefix
-		}
+		var output bytes.Buffer
 
 		// 添加行号
 		if opts.numberNonblank {
 			if !isEmpty {
-				output += fmt.Sprintf("%6d\t", lineNum)
+				fmt.Fprintf(&output, "%6d\t", lineNum)
 			}
 		} else if opts.number {
-			output += fmt.Sprintf("%6d\t", lineNum)
+			fmt.Fprintf(&output, "%6d\t", lineNum)
 		}
 
 		// 处理显示非打印字符
 		if opts.showNonprinting || opts.showTabs {
-			output += processNonprinting(line, opts.showTabs, opts.showNonprinting)
+			output.Write(processNonprinting([]byte(content), opts.showTabs, opts.showNonprinting))
 		} else {
-			output += line
+			output.WriteString(content)
 		}
 
 		// 显示行尾
 		if opts.showEnds {
-			output += "$"
+			output.WriteByte('$')
 		}
 
-		fmt.Fprintln(stdout, output)
+		if hadNewline || opts.showEnds {
+			output.WriteByte('\n')
+		}
+		if _, writeErr := stdout.Write(output.Bytes()); writeErr != nil {
+			fmt.Fprintf(stderr, "cat: %v\n", writeErr)
+			return 1
+		}
 
 		if err == io.EOF {
 			break
@@ -223,38 +230,42 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions, prefix s
 	return 0
 }
 
+func requiresFormattedCatOutput(opts *catOptions) bool {
+	return opts.number || opts.numberNonblank || opts.squeezeBlank || opts.showEnds || opts.showTabs || opts.showNonprinting
+}
+
 // processNonprinting 处理非打印字符显示
-func processNonprinting(s string, showTabs, showNonprinting bool) string {
-	var result strings.Builder
-	for _, r := range s {
-		if r == '\t' && showTabs {
-			result.WriteString("^I")
-		} else if showNonprinting {
-			if r < 32 && r != '\t' {
-				// 控制字符显示为 ^X
-				result.WriteRune('^')
-				result.WriteRune(rune('A' - 1 + int(r)))
-			} else if r == 127 {
-				// DEL 字符
-				result.WriteString("^?")
-			} else if r >= 128 && r < 256 {
-				// 高位置字符显示为 M- 后跟低7位字符
-				lowChar := rune(r & 0x7f)
-				result.WriteString("M-")
-				if lowChar < 32 {
-					result.WriteRune('^')
-					result.WriteRune(rune('A' - 1 + int(lowChar)))
-				} else if lowChar == 127 {
-					result.WriteString("^?")
-				} else {
-					result.WriteRune(lowChar)
-				}
-			} else {
-				result.WriteRune(r)
+func processNonprinting(data []byte, showTabs, showNonprinting bool) []byte {
+	result := make([]byte, 0, len(data))
+	for _, b := range data {
+		if b == '\t' && showTabs {
+			result = append(result, '^', 'I')
+			continue
+		}
+		if !showNonprinting {
+			result = append(result, b)
+			continue
+		}
+
+		switch {
+		case b < 32 && b != '\t':
+			result = append(result, '^', 'A'-1+b)
+		case b == 127:
+			result = append(result, '^', '?')
+		case b >= 128:
+			result = append(result, 'M', '-')
+			low := b & 0x7f
+			switch {
+			case low < 32:
+				result = append(result, '^', 'A'-1+low)
+			case low == 127:
+				result = append(result, '^', '?')
+			default:
+				result = append(result, low)
 			}
-		} else {
-			result.WriteRune(r)
+		default:
+			result = append(result, b)
 		}
 	}
-	return result.String()
+	return result
 }

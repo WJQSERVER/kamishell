@@ -14,19 +14,20 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "touch",
 		Description: "更新文件访问和修改时间戳",
-		Usage:       "touch [-a] [-c] [-d TIME] [-m] [-r FILE] [-t TIME] file...",
+		Usage:       "touch [-a] [-c] [-d TIME] [-m] [-r FILE] [-t TIME] [--time=WORD] file...",
 		Help: `更新文件访问和修改时间戳。
 如果不存在文件，则创建（除非指定了 -c）。
 
 选项:
-  -a, --time=atime          仅更改访问时间戳
-  -c, --no-create           不创建不存在的文件
-  -d, --date=TIME           使用指定时间而非当前时间
-                            TIME 可以是：YYYY-MM-DD, YYYY-MM-DD HH:MM:SS,
-                            @UNIX_TIMESTAMP, 或 "2 days ago" 等
-  -m, --time=mtime          仅更改修改时间戳
-  -r, --reference=FILE      使用参考文件的时间戳
-  -t [[CC]YY]MMDDhhmm[.ss]  使用指定时间戳（与 date -t 格式相同）
+	  -a                        仅更改访问时间戳
+	  -c, --no-create           不创建不存在的文件
+	  -d, --date=TIME           使用指定时间而非当前时间
+	                            TIME 可以是：YYYY-MM-DD, YYYY-MM-DD HH:MM:SS,
+	                            @UNIX_TIMESTAMP, 或 "2 days ago" 等
+	  -m                        仅更改修改时间戳
+	  -r, --reference=FILE      使用参考文件的时间戳
+	  -t [[CC]YY]MMDDhhmm[.ss]  使用指定时间戳（与 date -t 格式相同）
+	  --time=WORD               更改指定时间: access, atime, use, modify, mtime
 
 示例:
   touch file.txt
@@ -39,12 +40,13 @@ func init() {
 }
 
 type touchOptions struct {
-	atime     bool
-	noCreate  bool
-	date      string
-	mtime     bool
-	reference string
-	time      string
+	atime        bool
+	noCreate     bool
+	date         string
+	mtime        bool
+	reference    string
+	timestamp    string
+	timeSelector string
 }
 
 func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -59,7 +61,6 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 
 	opts := &touchOptions{}
 	fs.BoolVar(&opts.atime, "a", false, "change only the access time")
-	fs.BoolVar(&opts.atime, "time", false, "change only the access time")
 	fs.BoolVar(&opts.noCreate, "c", false, "do not create the file if it does not exist")
 	fs.BoolVar(&opts.noCreate, "no-create", false, "do not create the file if it does not exist")
 	fs.StringVar(&opts.date, "d", "", "use DATE instead of current time")
@@ -67,9 +68,15 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 	fs.BoolVar(&opts.mtime, "m", false, "change only the modification time")
 	fs.StringVar(&opts.reference, "r", "", "use this file's times instead of current time")
 	fs.StringVar(&opts.reference, "reference", "", "use this file's times instead of current time")
-	fs.StringVar(&opts.time, "t", "", "use [[CC]YY]MMDDhhmm[.ss] instead of current time")
+	fs.StringVar(&opts.timestamp, "t", "", "use [[CC]YY]MMDDhhmm[.ss] instead of current time")
+	fs.StringVar(&opts.timeSelector, "time", "", "change the specified time: access, atime, use, modify, mtime")
 
 	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+
+	if err := applyTouchTimeSelector(opts); err != nil {
+		fmt.Fprintf(stderr, "touch: %v\n", err)
 		return 1
 	}
 
@@ -176,8 +183,8 @@ func parseTime(opts *touchOptions) (time.Time, error) {
 	}
 
 	// -t: 使用指定时间戳格式 [[CC]YY]MMDDhhmm[.ss]
-	if opts.time != "" {
-		return parseTimestamp(opts.time)
+	if opts.timestamp != "" {
+		return parseTimestamp(opts.timestamp)
 	}
 
 	// -d: 使用日期字符串
@@ -187,6 +194,23 @@ func parseTime(opts *touchOptions) (time.Time, error) {
 
 	// 没有指定时间，返回零值表示使用当前时间
 	return time.Time{}, nil
+}
+
+func applyTouchTimeSelector(opts *touchOptions) error {
+	if opts.timeSelector == "" {
+		return nil
+	}
+
+	switch strings.ToLower(opts.timeSelector) {
+	case "access", "atime", "use":
+		opts.atime = true
+	case "modify", "mtime":
+		opts.mtime = true
+	default:
+		return fmt.Errorf("invalid argument %q for --time", opts.timeSelector)
+	}
+
+	return nil
 }
 
 // parseTimestamp 解析 -t 格式的时间戳 [[CC]YY]MMDDhhmm[.ss]

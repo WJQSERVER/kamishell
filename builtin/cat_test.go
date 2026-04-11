@@ -37,8 +37,7 @@ func TestCatStdin(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d", code)
 	}
-	// cat 会添加换行符
-	expected := "stdin content\n"
+	expected := "stdin content"
 	if stdout.String() != expected {
 		t.Errorf("expected %q, got %q", expected, stdout.String())
 	}
@@ -250,6 +249,9 @@ func TestCatMultipleFiles(t *testing.T) {
 	}
 
 	output := stdout.String()
+	if strings.Contains(output, "file1.txt:") || strings.Contains(output, "file2.txt:") {
+		t.Fatalf("expected raw concatenated output without filename prefixes, got: %s", output)
+	}
 	if !strings.Contains(output, "content1") {
 		t.Errorf("expected content1, got: %s", output)
 	}
@@ -293,5 +295,33 @@ func TestCatCombinedOptions(t *testing.T) {
 	}
 	if !strings.Contains(output, "$") {
 		t.Errorf("expected $ at end, got: %s", output)
+	}
+}
+
+func TestCatPreservesCRLFWithoutFormattingFlags(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := bytes.NewBufferString("line1\r\nline2\r\n")
+
+	code := Cat([]string{"-"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if stdout.String() != "line1\r\nline2\r\n" {
+		t.Fatalf("expected CRLF to be preserved, got %q", stdout.String())
+	}
+}
+
+func TestCatShowNonprintingBinaryBytes(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := bytes.NewBuffer([]byte{0xff, '\n'})
+
+	code := Cat([]string{"-v", "-"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if stdout.String() != "M-^?\n" {
+		t.Fatalf("expected byte-wise nonprinting rendering, got %q", stdout.String())
 	}
 }

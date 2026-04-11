@@ -162,6 +162,33 @@ func TestTouchDateParsesInLocalTime(t *testing.T) {
 	}
 }
 
+func TestTouchTimeSelectorAtime(t *testing.T) {
+	opts := &touchOptions{timeSelector: "atime"}
+	if err := applyTouchTimeSelector(opts); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !opts.atime || opts.mtime {
+		t.Fatalf("expected atime selector only, got atime=%v mtime=%v", opts.atime, opts.mtime)
+	}
+}
+
+func TestTouchTimeSelectorMtime(t *testing.T) {
+	opts := &touchOptions{timeSelector: "mtime"}
+	if err := applyTouchTimeSelector(opts); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !opts.mtime || opts.atime {
+		t.Fatalf("expected mtime selector only, got atime=%v mtime=%v", opts.atime, opts.mtime)
+	}
+}
+
+func TestTouchTimeSelectorInvalid(t *testing.T) {
+	opts := &touchOptions{timeSelector: "bad"}
+	if err := applyTouchTimeSelector(opts); err == nil {
+		t.Fatal("expected invalid --time selector error")
+	}
+}
+
 func TestTouchReferenceNotExist(t *testing.T) {
 	tmpDir := t.TempDir()
 	refFile := filepath.Join(tmpDir, "nonexistent.txt")

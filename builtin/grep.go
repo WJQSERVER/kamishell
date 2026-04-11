@@ -56,6 +56,11 @@ type grepOptions struct {
 	recursive    bool
 }
 
+type grepResult struct {
+	matched bool
+	err     bool
+}
+
 func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	args = PreprocessArgs(args)
 
@@ -111,12 +116,18 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 	}
 
 	if len(files) == 0 {
-		return grepReader(stdin, pattern, opts, stdout, stderr, "")
+		result := grepReader(stdin, pattern, opts, stdout, stderr, "")
+		if result.err {
+			return 1
+		}
+		if result.matched {
+			return 0
+		}
+		return 1
 	}
 
-	exitCode := 0
+	hadError := false
 	foundMatch := false
-	foundNoMatch := false
 
 	// 收集所有要搜索的文件
 	var filesToSearch []string
@@ -126,7 +137,7 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 			if !opts.quiet {
 				fmt.Fprintf(stderr, "grep: %s: %v\n", filename, err)
 			}
-			exitCode = 1
+			hadError = true
 			continue
 		}
 
@@ -146,13 +157,13 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 					if !opts.quiet {
 						fmt.Fprintf(stderr, "grep: %s: %v\n", filename, err)
 					}
-					exitCode = 1
+					hadError = true
 				}
 			} else {
 				if !opts.quiet {
 					fmt.Fprintf(stderr, "grep: %s: Is a directory\n", filename)
 				}
-				exitCode = 1
+				hadError = true
 			}
 		} else {
 			filesToSearch = append(filesToSearch, filename)
@@ -166,7 +177,7 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 			if !opts.quiet {
 				fmt.Fprintf(stderr, "grep: %s: %v\n", filename, err)
 			}
-			exitCode = 1
+			hadError = true
 			continue
 		}
 
@@ -176,38 +187,35 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 		}
 
 		result := grepReader(f, pattern, opts, stdout, stderr, prefix)
-		f.Close()
+		if closeErr := f.Close(); closeErr != nil {
+			if !opts.quiet {
+				fmt.Fprintf(stderr, "grep: %s: %v\n", filename, closeErr)
+			}
+			hadError = true
+		}
 
-		// -l 选项: 只要有匹配就记录
-		if opts.filesMatch {
-			if result == 0 {
-				foundMatch = true
+		if result.err {
+			hadError = true
+			continue
+		}
+
+		if result.matched {
+			foundMatch = true
+			if opts.quiet || opts.filesMatch {
+				break
 			}
-		} else if opts.filesNoMatch {
-			// -L 选项: 只要有没有匹配的文件就记录
-			if result == 0 {
-				foundNoMatch = true
-			}
-		} else if result != 0 {
-			exitCode = 1
 		}
 	}
 
-	if opts.filesMatch {
-		if foundMatch {
-			return 0
-		}
+	if hadError {
 		return 1
 	}
 
-	if opts.filesNoMatch {
-		if foundNoMatch {
-			return 0
-		}
-		return 1
+	if foundMatch {
+		return 0
 	}
 
-	return exitCode
+	return 1
 }
 
 func buildPattern(patternStr string, opts *grepOptions) (*regexp.Regexp, error) {
@@ -230,14 +238,26 @@ func buildPattern(patternStr string, opts *grepOptions) (*regexp.Regexp, error) 
 	return regexp.Compile(finalPattern)
 }
 
-func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, stderr io.Writer, prefix string) int {
-	scanner := bufio.NewScanner(r)
+func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, stderr io.Writer, prefix string) grepResult {
+	reader := bufio.NewReader(r)
 	lineNum := 0
 	matchCount := 0
 
-	for scanner.Scan() {
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			if !opts.quiet {
+				fmt.Fprintf(stderr, "grep: error: %v\n", err)
+			}
+			return grepResult{matched: matchCount > 0, err: true}
+		}
+		if err == io.EOF && len(line) == 0 {
+			break
+		}
+
 		lineNum++
-		line := scanner.Text()
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimSuffix(line, "\r")
 		matches := pattern.MatchString(line)
 
 		// 处理反向匹配
@@ -253,17 +273,20 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 				// 提取文件名（去掉末尾的冒号）
 				filename := strings.TrimSuffix(prefix, ":")
 				fmt.Fprintln(stdout, filename)
-				return 0 // 找到一个匹配就返回
+				return grepResult{matched: true}
 			}
 
 			// -q: 静默模式
 			if opts.quiet {
-				return 0 // 找到匹配就返回
+				return grepResult{matched: true}
 			}
 
-			// -L: 找到匹配，不输出，返回1表示这个文件不匹配-L条件
+			// -L: 找到匹配，不输出
 			if opts.filesNoMatch {
-				return 1
+				if err == io.EOF {
+					break
+				}
+				continue
 			}
 
 			// -c: 只显示计数
@@ -282,6 +305,10 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 			output += line
 			fmt.Fprintln(stdout, output)
 		}
+
+		if err == io.EOF {
+			break
+		}
 	}
 
 	// -L: 显示不包含匹配的文件名
@@ -289,22 +316,9 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 		if matchCount == 0 {
 			filename := strings.TrimSuffix(prefix, ":")
 			fmt.Fprintln(stdout, filename)
-			return 0
+			return grepResult{matched: false}
 		}
-		return 1
-	}
-
-	// 如果没有匹配且使用了 -l，返回非零
-	if opts.filesMatch && matchCount == 0 {
-		return 1
-	}
-
-	// -q: 静默模式，根据是否有匹配返回不同的退出码
-	if opts.quiet {
-		if matchCount > 0 {
-			return 0
-		}
-		return 1
+		return grepResult{matched: true}
 	}
 
 	// -c: 输出匹配计数
@@ -316,17 +330,5 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		if !opts.quiet {
-			fmt.Fprintf(stderr, "grep: error: %v\n", err)
-		}
-		return 1
-	}
-
-	// 如果没有匹配且使用了 -l 或 -q，返回非零
-	if opts.filesMatch && matchCount == 0 {
-		return 1
-	}
-
-	return 0
+	return grepResult{matched: matchCount > 0}
 }
