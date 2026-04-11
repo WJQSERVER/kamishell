@@ -188,6 +188,20 @@ func TestCatShowEnds(t *testing.T) {
 	}
 }
 
+func TestCatShowEndsWithoutTrailingNewline(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := bytes.NewBufferString("hello world")
+
+	code := Cat([]string{"-E", "-"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if stdout.String() != "hello world$" {
+		t.Fatalf("expected no extra newline, got %q", stdout.String())
+	}
+}
+
 func TestCatShowTabs(t *testing.T) {
 	content := "hello\tworld"
 	tmpFile := "test_cat_T.txt"

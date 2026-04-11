@@ -214,7 +214,7 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions) int {
 			output.WriteByte('$')
 		}
 
-		if hadNewline || opts.showEnds {
+		if hadNewline {
 			output.WriteByte('\n')
 		}
 		if _, writeErr := stdout.Write(output.Bytes()); writeErr != nil {
