@@ -370,3 +370,66 @@ func TestGrepAnchors(t *testing.T) {
 		t.Errorf("expected output NOT to contain 'end test', got: %s", output)
 	}
 }
+
+func TestGrepRecursive(t *testing.T) {
+	tmpDir := t.TempDir()
+	// 创建目录结构
+	subDir := filepath.Join(tmpDir, "subdir")
+	os.MkdirAll(subDir, 0755)
+
+	// 在根目录创建文件
+	file1 := filepath.Join(tmpDir, "file1.txt")
+	os.WriteFile(file1, []byte("hello from root\n"), 0644)
+
+	// 在子目录创建文件
+	file2 := filepath.Join(subDir, "file2.txt")
+	os.WriteFile(file2, []byte("hello from subdir\n"), 0644)
+
+	// 在子目录创建另一个文件
+	file3 := filepath.Join(subDir, "file3.txt")
+	os.WriteFile(file3, []byte("no match here\n"), 0644)
+
+	stdin := strings.NewReader("")
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Grep([]string{"-r", "hello", tmpDir}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "hello from root") {
+		t.Errorf("expected output to contain 'hello from root', got: %s", output)
+	}
+	if !strings.Contains(output, "hello from subdir") {
+		t.Errorf("expected output to contain 'hello from subdir', got: %s", output)
+	}
+	// 递归搜索应该显示完整路径
+	if !strings.Contains(output, "file1.txt") {
+		t.Errorf("expected output to contain file paths, got: %s", output)
+	}
+	if !strings.Contains(output, "file2.txt") {
+		t.Errorf("expected output to contain 'file2.txt', got: %s", output)
+	}
+}
+
+func TestGrepDirectoryWithoutRecursive(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	os.WriteFile(testFile, []byte("hello world\n"), 0644)
+
+	stdin := strings.NewReader("")
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Grep([]string{"hello", tmpDir}, nil, stdin, stdout, stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+
+	errOutput := stderr.String()
+	if !strings.Contains(errOutput, "Is a directory") {
+		t.Errorf("expected error about directory, got: %s", errOutput)
+	}
+}

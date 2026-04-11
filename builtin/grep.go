@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -14,19 +15,20 @@ func init() {
 	RegisterBuiltin(&BuiltinCommand{
 		Name:        "grep",
 		Description: "在文件中搜索模式（支持正则表达式）",
-		Usage:       "grep [-i] [-n] [-v] [-w] [-x] [-c] [-l] [-L] [-q] pattern [file...]",
+		Usage:       "grep [-i] [-n] [-v] [-w] [-x] [-c] [-l] [-L] [-q] [-r] pattern [file...]",
 		Help: `在输入流或文件中按正则表达式模式搜索内容。
 
 选项:
-  -i, --ignore-case    忽略大小写
-  -n, --line-number    显示行号
-  -v, --invert-match   反向匹配，显示不匹配的行
-  -w, --word-regexp    仅匹配完整单词
-  -x, --line-regexp    仅匹配整行
-  -c, --count          只显示匹配行计数
-  -l, --files-with-matches    只显示包含匹配的文件名
-  -L, --files-without-match   只显示不包含匹配的文件名
-  -q, --quiet          静默模式，不输出，用于脚本条件判断
+  -i, --ignore-case         忽略大小写
+  -n, --line-number         显示行号
+  -v, --invert-match        反向匹配，显示不匹配的行
+  -w, --word-regexp         仅匹配完整单词
+  -x, --line-regexp         仅匹配整行
+  -c, --count               只显示匹配行计数
+  -l, --files-with-matches  只显示包含匹配的文件名
+  -L, --files-without-match 只显示不包含匹配的文件名
+  -q, --quiet               静默模式
+  -r, --recursive           递归搜索目录
 
 示例:
   grep "func.*main" *.go
@@ -34,7 +36,8 @@ func init() {
   grep -n "TODO" *.go
   cat file.txt | grep -v "^#"
   grep -w "test" file.txt
-  grep -c "pattern" file.txt`,
+  grep -c "pattern" file.txt
+  grep -r "pattern" src/`,
 		Action: Grep,
 	})
 }
@@ -49,6 +52,7 @@ type grepOptions struct {
 	filesMatch   bool
 	filesNoMatch bool
 	quiet        bool
+	recursive    bool
 }
 
 func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -81,6 +85,9 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 	fs.BoolVar(&opts.quiet, "q", false, "quiet mode")
 	fs.BoolVar(&opts.quiet, "quiet", false, "quiet mode")
 	fs.BoolVar(&opts.quiet, "silent", false, "silent mode")
+	fs.BoolVar(&opts.recursive, "r", false, "recursive search")
+	fs.BoolVar(&opts.recursive, "R", false, "recursive search")
+	fs.BoolVar(&opts.recursive, "recursive", false, "recursive search")
 
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -109,7 +116,50 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 	exitCode := 0
 	foundMatch := false
 	foundNoMatch := false
+
+	// 收集所有要搜索的文件
+	var filesToSearch []string
 	for _, filename := range files {
+		info, err := os.Stat(filename)
+		if err != nil {
+			if !opts.quiet {
+				fmt.Fprintf(stderr, "grep: %s: %v\n", filename, err)
+			}
+			exitCode = 1
+			continue
+		}
+
+		if info.IsDir() {
+			if opts.recursive {
+				// 递归收集目录中的所有文件
+				err := filepath.Walk(filename, func(path string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+					if !info.IsDir() {
+						filesToSearch = append(filesToSearch, path)
+					}
+					return nil
+				})
+				if err != nil {
+					if !opts.quiet {
+						fmt.Fprintf(stderr, "grep: %s: %v\n", filename, err)
+					}
+					exitCode = 1
+				}
+			} else {
+				if !opts.quiet {
+					fmt.Fprintf(stderr, "grep: %s: Is a directory\n", filename)
+				}
+				exitCode = 1
+			}
+		} else {
+			filesToSearch = append(filesToSearch, filename)
+		}
+	}
+
+	// 搜索所有收集到的文件
+	for _, filename := range filesToSearch {
 		f, err := os.Open(filename)
 		if err != nil {
 			if !opts.quiet {
@@ -120,9 +170,7 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 		}
 
 		prefix := ""
-		if opts.filesMatch || opts.filesNoMatch {
-			prefix = filename + ":"
-		} else if len(files) > 1 {
+		if opts.filesMatch || opts.filesNoMatch || opts.recursive || len(filesToSearch) > 1 {
 			prefix = filename + ":"
 		}
 

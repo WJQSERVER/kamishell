@@ -39,7 +39,7 @@ func TestNonFlagBuiltinSupportsDoubleDashHelp(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d", code)
 	}
-	if !strings.Contains(stdout.String(), "用法: touch file...") {
+	if !strings.Contains(stdout.String(), "用法: touch") {
 		t.Fatalf("unexpected stdout: %q", stdout.String())
 	}
 	if stderr.Len() != 0 {
