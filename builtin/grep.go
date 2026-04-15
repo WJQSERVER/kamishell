@@ -257,20 +257,26 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 	matchCount := 0
 
 	for {
-		line, err := reader.ReadString('\n')
+		line, err := readStreamedLine(reader)
 		if err != nil && err != io.EOF {
 			if !opts.quiet {
 				fmt.Fprintf(stderr, "grep: error: %v\n", err)
 			}
 			return grepResult{matched: matchCount > 0, err: true}
 		}
-		if err == io.EOF && len(line) == 0 {
+		if err == io.EOF {
 			break
 		}
 
 		lineNum++
-		line = trimTrailingLineEnding(line)
-		matches := pattern.MatchString(line)
+		matches, matchErr := line.MatchRegexp(pattern)
+		if matchErr != nil {
+			line.Close()
+			if !opts.quiet {
+				fmt.Fprintf(stderr, "grep: error: %v\n", matchErr)
+			}
+			return grepResult{matched: matchCount > 0, err: true}
+		}
 
 		// 处理反向匹配
 		if opts.invertMatch {
@@ -285,21 +291,30 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 				// 提取文件名（去掉末尾的冒号）
 				filename := strings.TrimSuffix(prefix, ":")
 				fmt.Fprintln(stdout, filename)
+				line.Close()
 				return grepResult{matched: true}
 			}
 
 			// -q: 静默模式
 			if opts.quiet {
+				line.Close()
 				return grepResult{matched: true}
 			}
 
 			// -L: 找到匹配，不输出
 			if opts.filesNoMatch {
+				line.Close()
 				return grepResult{matched: true}
 			}
 
 			// -c: 只显示计数
 			if opts.count {
+				if closeErr := line.Close(); closeErr != nil {
+					if !opts.quiet {
+						fmt.Fprintf(stderr, "grep: error: %v\n", closeErr)
+					}
+					return grepResult{matched: matchCount > 0, err: true}
+				}
 				continue // 继续计数，不输出
 			}
 
@@ -311,12 +326,27 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 			if opts.lineNumber {
 				output += fmt.Sprintf("%d:", lineNum)
 			}
-			output += line
-			fmt.Fprintln(stdout, output)
+			if _, writeErr := io.WriteString(stdout, output); writeErr != nil {
+				line.Close()
+				return grepResult{matched: matchCount > 0, err: true}
+			}
+			if err := line.WriteForGrep(stdout); err != nil {
+				line.Close()
+				return grepResult{matched: matchCount > 0, err: true}
+			}
+			if line.hadNewline {
+				if _, writeErr := io.WriteString(stdout, "\n"); writeErr != nil {
+					line.Close()
+					return grepResult{matched: matchCount > 0, err: true}
+				}
+			}
 		}
 
-		if err == io.EOF {
-			break
+		if closeErr := line.Close(); closeErr != nil {
+			if !opts.quiet {
+				fmt.Fprintf(stderr, "grep: error: %v\n", closeErr)
+			}
+			return grepResult{matched: matchCount > 0, err: true}
 		}
 	}
 
@@ -340,11 +370,4 @@ func grepReader(r io.Reader, pattern *regexp.Regexp, opts *grepOptions, stdout, 
 	}
 
 	return grepResult{matched: matchCount > 0}
-}
-
-func trimTrailingLineEnding(line string) string {
-	if strings.HasSuffix(line, "\r\n") {
-		return strings.TrimSuffix(line, "\r\n")
-	}
-	return strings.TrimSuffix(line, "\n")
 }

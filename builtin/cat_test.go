@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"os"
@@ -153,6 +154,80 @@ func TestCatLongLine(t *testing.T) {
 	}
 	if stdout.Len() != len(longLine)+1 {
 		t.Fatalf("expected long line to be preserved, got len=%d", stdout.Len())
+	}
+}
+
+func TestCatLongInputWithoutTrailingNewline(t *testing.T) {
+	longLine := strings.Repeat("a", 2*1024*1024)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := strings.NewReader(longLine)
+
+	code := Cat([]string{"-E", "-"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != len(longLine)+1 {
+		t.Fatalf("expected output length %d, got %d", len(longLine)+1, stdout.Len())
+	}
+	if !strings.HasSuffix(stdout.String(), "$") {
+		t.Fatalf("expected trailing $, got %q", stdout.String()[max(0, stdout.Len()-8):])
+	}
+	if strings.HasSuffix(stdout.String(), "$\n") {
+		t.Fatalf("expected no extra newline for unterminated input")
+	}
+}
+
+func TestReadStreamedLineLongInputWithoutTrailingNewline(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader(strings.Repeat("a", 2*1024*1024)))
+	line, err := readStreamedLine(reader)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer line.Close()
+	if line.hadNewline {
+		t.Fatal("expected no trailing newline")
+	}
+	if line.Empty() {
+		t.Fatal("expected non-empty streamed line")
+	}
+}
+
+func TestReadStreamedLineTrimsCRLFAcrossBufferBoundary(t *testing.T) {
+	input := strings.Repeat("a", streamedLineMemoryLimit-1) + "\r\n"
+	reader := bufio.NewReader(strings.NewReader(input))
+	line, err := readStreamedLine(reader)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer line.Close()
+	if !line.hadNewline {
+		t.Fatal("expected newline to be detected")
+	}
+	buf := &bytes.Buffer{}
+	if err := line.WriteForGrep(buf); err != nil {
+		t.Fatalf("expected grep writer to succeed: %v", err)
+	}
+	if bytes.HasSuffix(buf.Bytes(), []byte{'\r'}) {
+		t.Fatal("expected grep view to trim trailing CR across boundary")
+	}
+	if line.Empty() {
+		t.Fatal("expected non-empty content")
+	}
+}
+
+func TestCatSqueezeBlankWithLongCRLFBlankLine(t *testing.T) {
+	input := strings.Repeat("a", streamedLineMemoryLimit-1) + "\r\n\r\n\r\nend\r\n"
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := strings.NewReader(input)
+
+	code := Cat([]string{"-s", "-E", "-"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
+	}
+	if strings.Count(stdout.String(), "$\n$\n") > 1 {
+		t.Fatalf("expected repeated blank CRLF lines to be squeezed, got %q", stdout.String())
 	}
 }
 

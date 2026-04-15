@@ -43,6 +43,11 @@ const (
 	KeyCtrlRight
 	KeyCtrlDelete
 	KeyCtrlBackspace
+	KeyCtrlY
+	KeyCtrlG
+	KeyCtrlT
+	KeyCtrlS
+	KeyShiftTab
 )
 
 type InputEvent struct {
@@ -212,6 +217,14 @@ func (p *Parser) parseRune(r rune) (InputEvent, error) {
 		return InputEvent{Key: KeyCtrlU}, nil
 	case 23:
 		return InputEvent{Key: KeyCtrlW}, nil
+	case 19:
+		return InputEvent{Key: KeyCtrlS}, nil
+	case 20:
+		return InputEvent{Key: KeyCtrlT}, nil
+	case 25:
+		return InputEvent{Key: KeyCtrlY}, nil
+	case 7:
+		return InputEvent{Key: KeyCtrlG}, nil
 	case 27: // Escape
 		return p.parseEscape()
 	case 0, 224: // Windows extended key prefix (if not in VT mode)
@@ -334,6 +347,8 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 			if ok && r == '~' {
 				return InputEvent{Key: KeyEnd}, nil
 			}
+		case 'Z': // Shift+Tab
+			return InputEvent{Key: KeyShiftTab}, nil
 		}
 	} else if r == 'O' {
 		r, ok = p.readNext(100 * time.Millisecond)
