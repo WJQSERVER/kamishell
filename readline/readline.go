@@ -32,10 +32,11 @@ type Instance struct {
 	closeOnce  sync.Once
 	closed     bool
 
-	searchMode      bool
-	searchQuery     *buffer.Buffer
-	searchResult    string
-	searchResultIdx int
+	searchMode           bool
+	searchQuery          *buffer.Buffer
+	searchResult         string
+	searchResultIdx      int
+	searchOriginalBuffer string
 
 	completionMode       bool
 	completionCandidates [][]rune
@@ -237,12 +238,14 @@ func (i *Instance) handleCompletionMode(ev input.InputEvent) (bool, string, erro
 		i.cancelCompletion()
 	default:
 		i.cancelCompletion()
+		return i.handleNormalMode(ev)
 	}
 
 	return stop, result, resultErr
 }
 
 func (i *Instance) startSearch() {
+	i.searchOriginalBuffer = i.buffer.String()
 	i.searchMode = true
 	i.searchQuery.Clear()
 	i.searchResult = ""
@@ -266,13 +269,16 @@ func (i *Instance) handleSearchMode(ev input.InputEvent) (bool, string, error) {
 		result = i.buffer.String()
 	case input.KeyCtrlC, input.KeyCtrlG:
 		i.searchMode = false
+		i.buffer.SetContent(i.searchOriginalBuffer)
 		i.searchQuery.Clear()
 		i.searchResult = ""
 		i.renderer.Refresh(i.buffer)
 	case input.KeyEsc:
+		if i.searchResult != "" {
+			i.buffer.SetContent(i.searchResult)
+		}
 		i.searchMode = false
-		i.searchQuery.Clear()
-		i.searchResult = ""
+		return i.handleNormalMode(ev)
 	case input.KeyBackspace:
 		i.searchQuery.Backspace()
 		i.updateSearchResult()
@@ -288,6 +294,7 @@ func (i *Instance) handleSearchMode(ev input.InputEvent) (bool, string, error) {
 			i.buffer.SetContent(i.searchResult)
 		}
 		i.searchMode = false
+		return i.handleNormalMode(ev)
 	}
 
 	return stop, result, resultErr

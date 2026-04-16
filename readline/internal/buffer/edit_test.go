@@ -8,8 +8,11 @@ func TestTransposeChars(t *testing.T) {
 	b.MoveLeft()
 	b.TransposeChars()
 
-	if b.String() != "bac" {
-		t.Fatalf("expected 'bac', got %q", b.String())
+	if b.String() != "acb" {
+		t.Fatalf("expected 'acb', got %q", b.String())
+	}
+	if b.Cursor() != 3 {
+		t.Fatalf("expected cursor at 3, got %d", b.Cursor())
 	}
 }
 

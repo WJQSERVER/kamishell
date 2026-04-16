@@ -6,9 +6,17 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sync"
 )
 
 const streamedLineMemoryLimit = 64 * 1024
+
+var bufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
 
 type streamedLine struct {
 	storage    *spillBuffer
@@ -116,7 +124,10 @@ func (l *streamedLine) WriteProcessedTo(w io.Writer, showTabs, showNonprinting b
 		return err
 	}
 
-	buf := make([]byte, 32*1024)
+	bufPtr := bufPool.Get().(*[]byte)
+	defer bufPool.Put(bufPtr)
+	buf := *bufPtr
+
 	for {
 		n, readErr := reader.Read(buf)
 		if n > 0 {
@@ -142,55 +153,23 @@ func (l *streamedLine) grepBytes() []byte {
 }
 
 func (l *streamedLine) grepReader() (io.Reader, error) {
-	base, err := l.storage.Reader(l.storage.Len())
-	if err != nil {
-		return nil, err
-	}
-	return newTrailingCRTrimmer(base), nil
-}
-
-type trailingCRTrimmer struct {
-	reader io.Reader
-	last   []byte
-	eof    bool
-}
-
-func newTrailingCRTrimmer(r io.Reader) io.Reader {
-	return &trailingCRTrimmer{reader: r}
-}
-
-func (t *trailingCRTrimmer) Read(p []byte) (int, error) {
-	for {
-		if len(t.last) > 0 {
-			n := copy(p, t.last)
-			t.last = t.last[n:]
-			if n > 0 {
-				return n, nil
+	limit := l.storage.Len()
+	if limit > 0 {
+		var last byte
+		if l.storage.file != nil {
+			var buf [1]byte
+			if _, err := l.storage.file.ReadAt(buf[:], limit-1); err == nil {
+				last = buf[0]
 			}
+		} else {
+			data := l.storage.memory.Bytes()
+			last = data[len(data)-1]
 		}
-
-		if t.eof {
-			return 0, io.EOF
-		}
-
-		buf := make([]byte, len(p))
-		n, err := t.reader.Read(buf)
-		if n > 0 {
-			buf = buf[:n]
-			if err == io.EOF {
-				t.eof = true
-				if buf[len(buf)-1] == '\r' {
-					buf = buf[:len(buf)-1]
-				}
-			}
-			t.last = append(t.last, buf...)
-			continue
-		}
-		if err != nil {
-			t.eof = err == io.EOF
-			return 0, err
+		if last == '\r' {
+			limit--
 		}
 	}
+	return l.storage.Reader(limit)
 }
 
 func (b *spillBuffer) Write(p []byte) error {
