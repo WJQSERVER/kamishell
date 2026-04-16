@@ -68,7 +68,7 @@ func (tc *TreeCompleter) Do(line []rune, pos int) ([][]rune, int) {
 		return tc.getCandidates(tc.root, ""), 0
 	}
 
-	endsWithSpace := len(line) > 0 && unicode.IsSpace(line[len(line)-1])
+	endsWithSpace := pos > 0 && unicode.IsSpace(line[pos-1])
 	if endsWithSpace {
 		prefix := ""
 		replaceLen := 0

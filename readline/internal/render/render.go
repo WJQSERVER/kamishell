@@ -119,14 +119,16 @@ func (r *Renderer) RefreshSearch(query *buffer.Buffer, result string) {
 	fmt.Fprintf(&out, "\x1b[1G(reverse-i-search)`%s': %s", query.String(), result)
 	out.WriteString("\x1b[K")
 
-	promptLen := runewidth.StringWidth("(reverse-i-search)`': ") + query.FullWidth()
-	fmt.Fprintf(&out, "\x1b[%dG", promptLen+1)
+	termWidth := r.getTerminalWidth()
+	searchWidth := runewidth.StringWidth("(reverse-i-search)`': ") + query.FullWidth() + runewidth.StringWidth(result)
+	cursorCol := runewidth.StringWidth("(reverse-i-search)`") + query.FullWidth()
+	fmt.Fprintf(&out, "\x1b[%dG", cursorCol+1)
 
 	out.WriteString("\x1b[?25h")
 
 	r.out.Write(out.Bytes())
 	r.lastWidth = query.FullWidth() + runewidth.StringWidth(result)
-	r.lastRows = 1
+	r.lastRows = max(1, rowsForWidth(searchWidth, termWidth))
 }
 
 func (r *Renderer) RefreshWithCompletion(b *buffer.Buffer, candidates [][]rune, selected int) error {
@@ -136,6 +138,8 @@ func (r *Renderer) RefreshWithCompletion(b *buffer.Buffer, candidates [][]rune, 
 	visualPrompt := stripANSI(r.prompt)
 	promptWidth := runewidth.StringWidth(visualPrompt)
 	termWidth := r.getTerminalWidth()
+	currentRows := rowsForWidth(promptWidth+currentWidth, termWidth)
+	cursorRow, cursorCol := cursorPosition(promptWidth+cursorPos, termWidth)
 
 	var out bytes.Buffer
 
@@ -155,20 +159,32 @@ func (r *Renderer) RefreshWithCompletion(b *buffer.Buffer, candidates [][]rune, 
 	}
 
 	fmt.Fprintf(&out, "\x1b[1G%s%s", r.prompt, b.String())
+	if currentRows > 1 {
+		segments := wrapVisualSegments(r.prompt, promptWidth, b.String(), termWidth)
+		if len(segments) > 0 {
+			out.WriteString("\r")
+			out.WriteString(strings.Join(segments, "\r\n"))
+		}
+	}
 	out.WriteString("\x1b[K")
 
 	completionRows := r.formatCompletionList(&out, candidates, selected, termWidth)
 	out.WriteString("\r\n")
 
-	cursorCol := promptWidth + cursorPos
-	fmt.Fprintf(&out, "\x1b[%dA", completionRows+1)
+	if currentRows > 1 {
+		rowsUp := cursorRow
+		if rowsUp > 0 {
+			fmt.Fprintf(&out, "\x1b[%dB", rowsUp)
+		}
+	}
+	fmt.Fprintf(&out, "\x1b[%dA", completionRows+currentRows)
 	fmt.Fprintf(&out, "\x1b[%dG", cursorCol+1)
 
 	out.WriteString("\x1b[?25h")
 
 	_, err := r.out.Write(out.Bytes())
 	r.lastWidth = currentWidth
-	r.lastRows = 1 + completionRows
+	r.lastRows = currentRows + 1 + completionRows
 	return err
 }
 

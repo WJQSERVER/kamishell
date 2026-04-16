@@ -165,7 +165,7 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions) int {
 		}
 
 		hadNewline := line.hadNewline
-		isEmpty := line.Empty() || (hadNewline && line.storage.Len() == 1 && bytes.Equal(line.storage.memory.Bytes(), []byte{'\r'}))
+		isEmpty := line.Empty() || (hadNewline && line.IsCRLFEmpty())
 
 		// 压缩空行
 		if opts.squeezeBlank && isEmpty {

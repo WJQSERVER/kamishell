@@ -83,6 +83,26 @@ func (l *streamedLine) Empty() bool {
 	return l.storage.Len() == 0
 }
 
+func (l *streamedLine) IsCRLFEmpty() bool {
+	if l == nil || l.storage == nil {
+		return true
+	}
+	if l.storage.Len() == 0 {
+		return true
+	}
+	if l.hadNewline && l.storage.Len() == 1 {
+		if l.storage.file == nil {
+			data := l.storage.memory.Bytes()
+			return len(data) == 1 && data[0] == '\r'
+		}
+		var buf [1]byte
+		if _, err := l.storage.file.ReadAt(buf[:], 0); err == nil {
+			return buf[0] == '\r'
+		}
+	}
+	return false
+}
+
 func (l *streamedLine) MatchRegexp(pattern *regexp.Regexp) (bool, error) {
 	if l.storage.file == nil {
 		return pattern.Match(l.grepBytes()), nil
@@ -213,10 +233,7 @@ func (b *spillBuffer) Reader(limit int64) (io.Reader, error) {
 		return bytes.NewReader(data), nil
 	}
 
-	if _, err := b.file.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-	return io.LimitReader(b.file, limit), nil
+	return io.NewSectionReader(b.file, 0, limit), nil
 }
 
 func (b *spillBuffer) WriteTo(w io.Writer, limit int64) error {
