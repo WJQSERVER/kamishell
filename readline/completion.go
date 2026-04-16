@@ -133,7 +133,8 @@ func splitWords(line []rune) []string {
 	for _, r := range line {
 		if escape {
 			if inDoubleQuote {
-				if r == '$' || r == '`' || r == '"' || r == '\\' || r == '\n' {
+				if r == '\n' {
+				} else if r == '$' || r == '`' || r == '"' || r == '\\' {
 					current.WriteRune(r)
 				} else {
 					current.WriteRune('\\')

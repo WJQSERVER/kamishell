@@ -643,6 +643,8 @@ func TestSplitWordsPOSIXDoubleQuoteEscape(t *testing.T) {
 		{`"a\$b"`, []string{`a$b`}},
 		{`"a\` + "`" + `b"`, []string{"a`b"}},
 		{`"\n"`, []string{`\n`}},
+		{`"a\` + "\n" + `b"`, []string{`ab`}},
+		{`"test\` + "\n" + `value"`, []string{`testvalue`}},
 	}
 
 	for _, tt := range tests {
