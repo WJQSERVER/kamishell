@@ -431,3 +431,151 @@ func TestCompletionModeEscCancels(t *testing.T) {
 		t.Fatal("expected completionMode to be false after Esc")
 	}
 }
+
+func TestSplitWordsBasic(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{"hello world", []string{"hello", "world"}},
+		{"  hello   world  ", []string{"hello", "world"}},
+		{"single", []string{"single"}},
+		{"", []string(nil)},
+	}
+
+	for _, tt := range tests {
+		result := splitWords([]rune(tt.input))
+		if len(result) != len(tt.expected) {
+			t.Errorf("splitWords(%q) = %v, want %v", tt.input, result, tt.expected)
+			continue
+		}
+		for i, w := range result {
+			if w != tt.expected[i] {
+				t.Errorf("splitWords(%q)[%d] = %q, want %q", tt.input, i, w, tt.expected[i])
+			}
+		}
+	}
+}
+
+func TestSplitWordsDoubleQuotes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`"hello world"`, []string{"hello world"}},
+		{`echo "hello world"`, []string{"echo", "hello world"}},
+		{`cmd "arg with spaces" more`, []string{"cmd", "arg with spaces", "more"}},
+		{`"nested" "quotes"`, []string{"nested", "quotes"}},
+	}
+
+	for _, tt := range tests {
+		result := splitWords([]rune(tt.input))
+		if len(result) != len(tt.expected) {
+			t.Errorf("splitWords(%q) = %v, want %v", tt.input, result, tt.expected)
+			continue
+		}
+		for i, w := range result {
+			if w != tt.expected[i] {
+				t.Errorf("splitWords(%q)[%d] = %q, want %q", tt.input, i, w, tt.expected[i])
+			}
+		}
+	}
+}
+
+func TestSplitWordsEscapedQuotes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`"arg with \" quote"`, []string{`arg with " quote`}},
+		{`cmd "arg with \" quote"`, []string{"cmd", `arg with " quote`}},
+		{`"escaped \" and \" quotes"`, []string{`escaped " and " quotes`}},
+	}
+
+	for _, tt := range tests {
+		result := splitWords([]rune(tt.input))
+		if len(result) != len(tt.expected) {
+			t.Errorf("splitWords(%q) = %v, want %v", tt.input, result, tt.expected)
+			continue
+		}
+		for i, w := range result {
+			if w != tt.expected[i] {
+				t.Errorf("splitWords(%q)[%d] = %q, want %q", tt.input, i, w, tt.expected[i])
+			}
+		}
+	}
+}
+
+func TestSplitWordsSingleQuotes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`'hello world'`, []string{"hello world"}},
+		{`echo 'hello world'`, []string{"echo", "hello world"}},
+		{`cmd 'arg with spaces' more`, []string{"cmd", "arg with spaces", "more"}},
+		{`'no escape \n here'`, []string{`no escape \n here`}},
+	}
+
+	for _, tt := range tests {
+		result := splitWords([]rune(tt.input))
+		if len(result) != len(tt.expected) {
+			t.Errorf("splitWords(%q) = %v, want %v", tt.input, result, tt.expected)
+			continue
+		}
+		for i, w := range result {
+			if w != tt.expected[i] {
+				t.Errorf("splitWords(%q)[%d] = %q, want %q", tt.input, i, w, tt.expected[i])
+			}
+		}
+	}
+}
+
+func TestSplitWordsBackslashEscape(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`hello\ world`, []string{"hello world"}},
+		{`echo hello\ world`, []string{"echo", "hello world"}},
+		{`path\ with\ spaces`, []string{"path with spaces"}},
+	}
+
+	for _, tt := range tests {
+		result := splitWords([]rune(tt.input))
+		if len(result) != len(tt.expected) {
+			t.Errorf("splitWords(%q) = %v, want %v", tt.input, result, tt.expected)
+			continue
+		}
+		for i, w := range result {
+			if w != tt.expected[i] {
+				t.Errorf("splitWords(%q)[%d] = %q, want %q", tt.input, i, w, tt.expected[i])
+			}
+		}
+	}
+}
+
+func TestSplitWordsMixed(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`cmd "double" 'single' plain`, []string{"cmd", "double", "single", "plain"}},
+		{`cmd "arg 'with' quotes"`, []string{"cmd", "arg 'with' quotes"}},
+		{`cmd 'arg "with" quotes'`, []string{"cmd", `arg "with" quotes`}},
+		{`cmd "escaped \" inside" 'literal \n'`, []string{"cmd", `escaped " inside`, `literal \n`}},
+	}
+
+	for _, tt := range tests {
+		result := splitWords([]rune(tt.input))
+		if len(result) != len(tt.expected) {
+			t.Errorf("splitWords(%q) = %v, want %v", tt.input, result, tt.expected)
+			continue
+		}
+		for i, w := range result {
+			if w != tt.expected[i] {
+				t.Errorf("splitWords(%q)[%d] = %q, want %q", tt.input, i, w, tt.expected[i])
+			}
+		}
+	}
+}

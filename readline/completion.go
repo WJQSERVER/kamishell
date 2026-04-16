@@ -125,20 +125,40 @@ func (tc *TreeCompleter) getCandidates(node *TreeNode, prefix string) [][]rune {
 func splitWords(line []rune) []string {
 	var words []string
 	var current strings.Builder
-	inQuote := false
+	inDoubleQuote := false
+	inSingleQuote := false
+	escape := false
 
 	for _, r := range line {
-		if r == '"' {
-			inQuote = !inQuote
+		if escape {
+			current.WriteRune(r)
+			escape = false
 			continue
 		}
-		if !inQuote && unicode.IsSpace(r) {
+
+		if r == '\\' && !inSingleQuote {
+			escape = true
+			continue
+		}
+
+		if r == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+			continue
+		}
+
+		if r == '\'' && !inDoubleQuote {
+			inSingleQuote = !inSingleQuote
+			continue
+		}
+
+		if !inDoubleQuote && !inSingleQuote && unicode.IsSpace(r) {
 			if current.Len() > 0 {
 				words = append(words, current.String())
 				current.Reset()
 			}
 			continue
 		}
+
 		current.WriteRune(r)
 	}
 
