@@ -129,6 +129,15 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		tok = newToken(COMMA, l.ch, l.position)
 	case '.':
+		if isDigit(l.peekChar()) {
+			start := l.position
+			tok.Type = FLOAT
+			tok.Literal = "0" + l.readFloat()
+			tok.Start = start
+			tok.End = l.position
+			l.prevToken = tok.Type
+			return tok
+		}
 		tok = newToken(DOT, l.ch, l.position)
 	case '(':
 		tok = newToken(LPAREN, l.ch, l.position)
@@ -167,8 +176,9 @@ func (l *Lexer) NextToken() Token {
 			return tok
 		} else if isDigit(l.ch) {
 			start := l.position
-			tok.Type = NUMBER
-			tok.Literal = l.readNumber()
+			literal, tokenType := l.readNumberOrFloat()
+			tok.Type = tokenType
+			tok.Literal = literal
 			tok.Start = start
 			tok.End = l.position
 			l.prevToken = tok.Type
@@ -185,7 +195,7 @@ func (l *Lexer) NextToken() Token {
 
 func (l *Lexer) isCompletable() bool {
 	switch l.prevToken {
-	case IDENT, NUMBER, STRING, TRUE_TOK, FALSE_TOK, NIL, RETURN, RPAREN, RBRACE:
+	case IDENT, NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, NIL, RETURN, RPAREN, RBRACE:
 		return true
 	}
 	return false
@@ -231,6 +241,32 @@ func (l *Lexer) readNumber() string {
 		l.readChar()
 	}
 	return l.input[position:l.position]
+}
+
+func (l *Lexer) readFloat() string {
+	position := l.position
+	if l.ch == '.' {
+		l.readChar()
+	}
+	for isDigit(l.ch) {
+		l.readChar()
+	}
+	return l.input[position:l.position]
+}
+
+func (l *Lexer) readNumberOrFloat() (string, TokenType) {
+	start := l.position
+	for isDigit(l.ch) {
+		l.readChar()
+	}
+	if l.ch == '.' && isDigit(l.peekChar()) {
+		l.readChar()
+		for isDigit(l.ch) {
+			l.readChar()
+		}
+		return l.input[start:l.position], FLOAT
+	}
+	return l.input[start:l.position], NUMBER
 }
 
 func (l *Lexer) readString() string {

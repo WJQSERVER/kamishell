@@ -6,6 +6,7 @@ type ObjectType string
 
 const (
 	INTEGER_OBJ  ObjectType = "INTEGER"
+	FLOAT_OBJ    ObjectType = "FLOAT"
 	BOOLEAN_OBJ  ObjectType = "BOOLEAN"
 	STRING_OBJ   ObjectType = "STRING"
 	NULL_OBJ     ObjectType = "NULL"
@@ -48,6 +49,13 @@ func getIntegerObject(value int64) *Integer {
 	}
 	return &Integer{Value: value}
 }
+
+type Float struct {
+	Value float64
+}
+
+func (f *Float) Inspect() string  { return strconv.FormatFloat(f.Value, 'f', -1, 64) }
+func (f *Float) Type() ObjectType { return FLOAT_OBJ }
 
 type Boolean struct {
 	Value bool

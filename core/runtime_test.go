@@ -206,3 +206,96 @@ func TestConcurrentEvalOfSharedProgramMutatesFunctionStatementCache(t *testing.T
 		t.Fatalf("unexpected eval error: %s", errMsg)
 	}
 }
+
+func TestEvalFloatExpression(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected float64
+	}{
+		{"3.14", 3.14},
+		{"0.5", 0.5},
+		{".5", 0.5},
+		{"123.456", 123.456},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		testFloatObject(t, evaluated, tt.expected)
+	}
+}
+
+func testFloatObject(t *testing.T, obj Object, expected float64) bool {
+	result, ok := obj.(*Float)
+	if !ok {
+		t.Errorf("object is not Float. got=%T (%+v)", obj, obj)
+		return false
+	}
+	delta := result.Value - expected
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > 0.0001 {
+		t.Errorf("object has wrong value. expect=%f, got=%f", expected, result.Value)
+		return false
+	}
+	return true
+}
+
+func TestFloatArithmetic(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected float64
+	}{
+		{"3.14 + 1.0", 4.14},
+		{"2.5 + 2.5", 5.0},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		testFloatObject(t, evaluated, tt.expected)
+	}
+}
+
+func TestFloatIntegerMixedArithmetic(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected float64
+	}{
+		{"3.14 + 1", 4.14},
+		{"10 + 0.5", 10.5},
+		{"2.5 + 2", 4.5},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		testFloatObject(t, evaluated, tt.expected)
+	}
+}
+
+func TestFloatComparison(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"3.14 == 3.14", true},
+		{"3.14 != 2.71", true},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		testBooleanObject(t, evaluated, tt.expected)
+	}
+}
+
+func testBooleanObject(t *testing.T, obj Object, expected bool) bool {
+	result, ok := obj.(*Boolean)
+	if !ok {
+		t.Errorf("object is not Boolean. got=%T (%+v)", obj, obj)
+		return false
+	}
+	if result.Value != expected {
+		t.Errorf("object has wrong value. expect=%t, got=%t", expected, result.Value)
+		return false
+	}
+	return true
+}

@@ -10,6 +10,7 @@ const (
 	IDENT  TokenType = "IDENT"
 	STRING TokenType = "STRING"
 	NUMBER TokenType = "NUMBER"
+	FLOAT  TokenType = "FLOAT"
 
 	// Operators
 	ASSIGN       TokenType = "="
