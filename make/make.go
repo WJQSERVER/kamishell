@@ -29,11 +29,6 @@ type Project struct {
 }
 
 var currentProject *Project
-var buildParams map[string]core.Object
-
-func init() {
-	buildParams = make(map[string]core.Object)
-}
 
 func parseMakeArgs(args []string) (filename string, params map[string]core.Object) {
 	params = make(map[string]core.Object)
@@ -89,7 +84,6 @@ func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Wri
 
 	// 2. Parse arguments: filename and --key=value params
 	filename, params := parseMakeArgs(args)
-	buildParams = params
 
 	// 3. Initialize project state
 	currentProject = &Project{
@@ -159,7 +153,9 @@ func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Wri
 	}
 
 	buildEnv := core.NewScriptEnvironment(coreEnv)
-	registerParamFunctions()
+	for k, v := range params {
+		buildEnv.SetObject("param."+k, v)
+	}
 	restoreBuiltins := registerBuildFunctions()
 	defer restoreBuiltins()
 
@@ -185,27 +181,6 @@ func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Wri
 	}
 
 	return 0
-}
-
-func registerParamFunctions() {
-	saved := core.ParamGetFn
-	core.ParamGetFn = func(env *core.Environment, args ...core.Object) core.Object {
-		if len(args) == 0 {
-			return core.NULL
-		}
-		key, ok := args[0].(*core.String)
-		if !ok {
-			return core.NULL
-		}
-		if buildParams == nil {
-			return core.NULL
-		}
-		if val, exists := buildParams[key.Value]; exists {
-			return val
-		}
-		return core.NULL
-	}
-	_ = saved
 }
 
 func printMakeHelp(w io.Writer) {
