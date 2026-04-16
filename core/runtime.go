@@ -191,6 +191,14 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return node.Obj
 		}
 		return getIntegerObject(node.Value)
+	case *FloatLiteral:
+		if node.Err != "" {
+			return &Error{Message: node.Err}
+		}
+		if node.Obj != nil {
+			return node.Obj
+		}
+		return &Float{Value: node.Value}
 	case *NilLiteral:
 		return NULL
 	case *BooleanLiteral:
@@ -262,6 +270,12 @@ func evalInfixExpression(operator string, left, right Object) Object {
 	switch {
 	case left.Type() == INTEGER_OBJ && right.Type() == INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
+	case left.Type() == FLOAT_OBJ && right.Type() == FLOAT_OBJ:
+		return evalFloatInfixExpression(operator, left, right)
+	case left.Type() == FLOAT_OBJ && right.Type() == INTEGER_OBJ:
+		return evalFloatInfixExpression(operator, left, &Float{Value: float64(right.(*Integer).Value)})
+	case left.Type() == INTEGER_OBJ && right.Type() == FLOAT_OBJ:
+		return evalFloatInfixExpression(operator, &Float{Value: float64(left.(*Integer).Value)}, right)
 	case left.Type() == STRING_OBJ && right.Type() == STRING_OBJ:
 		return evalStringInfixExpression(operator, left.(*String).Value, right.(*String).Value)
 	case left.Type() == BOOLEAN_OBJ && right.Type() == BOOLEAN_OBJ:
@@ -294,6 +308,26 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case "+":
 		return getIntegerObject(leftVal + rightVal)
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
+	}
+}
+
+func evalFloatInfixExpression(operator string, left, right Object) Object {
+	leftVal := left.(*Float).Value
+	rightVal := right.(*Float).Value
+
+	switch operator {
+	case "==":
+		return nativeBoolToBooleanObject(leftVal == rightVal)
+	case "!=":
+		return nativeBoolToBooleanObject(leftVal != rightVal)
+	case ">":
+		return nativeBoolToBooleanObject(leftVal > rightVal)
+	case "<":
+		return nativeBoolToBooleanObject(leftVal < rightVal)
+	case "+":
+		return &Float{Value: leftVal + rightVal}
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}

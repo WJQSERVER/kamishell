@@ -108,7 +108,7 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		}
 	case LBRACE:
 		stmt = p.parseBlockStatement()
-	case NUMBER, STRING, TRUE_TOK, FALSE_TOK, DOLLAR:
+	case NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, DOLLAR:
 		stmt = p.parseExpressionStatement()
 	default:
 		stmt = p.parseCommandStatement()
@@ -352,6 +352,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseIdentifier()
 	case NUMBER:
 		leftExp = p.parseIntegerLiteral()
+	case FLOAT:
+		leftExp = p.parseFloatLiteral()
 	case STRING:
 		leftExp = p.parseStringLiteral()
 	case TRUE_TOK, FALSE_TOK:
@@ -401,6 +403,18 @@ func (p *Parser) parseIntegerLiteral() Expression {
 	}
 	lit.Value = val
 	lit.Obj = getIntegerObject(val)
+	return lit
+}
+
+func (p *Parser) parseFloatLiteral() Expression {
+	lit := &FloatLiteral{Token: p.curToken}
+	val, err := strconv.ParseFloat(p.curToken.Literal, 64)
+	if err != nil {
+		lit.Err = "invalid float literal: " + p.curToken.Literal
+		return lit
+	}
+	lit.Value = val
+	lit.Obj = &Float{Value: val}
 	return lit
 }
 

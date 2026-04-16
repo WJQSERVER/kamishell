@@ -133,3 +133,52 @@ func TestASCIIIdentifierTokenizationWithPathCharacters(t *testing.T) {
 		t.Fatalf("expected := after identifier, got %v", tok)
 	}
 }
+
+func TestFloatLiterals(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"3.14", "3.14"},
+		{"0.5", "0.5"},
+		{".5", "0.5"},
+		{"123.456", "123.456"},
+	}
+
+	for _, tt := range tests {
+		l := NewLexer(tt.input)
+		tok := l.NextToken()
+
+		if tok.Type != FLOAT {
+			t.Errorf("input %q: expected FLOAT, got %q", tt.input, tok.Type)
+		}
+		if tok.Literal != tt.expected {
+			t.Errorf("input %q: expected literal %q, got %q", tt.input, tt.expected, tok.Literal)
+		}
+	}
+}
+
+func TestFloatVsInteger(t *testing.T) {
+	tests := []struct {
+		input       string
+		expectType  TokenType
+		expectValue string
+	}{
+		{"123", NUMBER, "123"},
+		{"123.0", FLOAT, "123.0"},
+		{"123.456", FLOAT, "123.456"},
+		{".5", FLOAT, "0.5"},
+	}
+
+	for _, tt := range tests {
+		l := NewLexer(tt.input)
+		tok := l.NextToken()
+
+		if tok.Type != tt.expectType {
+			t.Errorf("input %q: expected %q, got %q", tt.input, tt.expectType, tok.Type)
+		}
+		if tok.Literal != tt.expectValue {
+			t.Errorf("input %q: expected %q, got %q", tt.input, tt.expectValue, tok.Literal)
+		}
+	}
+}
