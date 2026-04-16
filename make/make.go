@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -29,6 +30,50 @@ type Project struct {
 
 var currentProject *Project
 
+func parseMakeArgs(args []string) (filename string, params map[string]core.Object) {
+	params = make(map[string]core.Object)
+
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--") {
+			kv := strings.TrimPrefix(arg, "--")
+			if idx := strings.Index(kv, "="); idx > 0 {
+				key := kv[:idx]
+				value := kv[idx+1:]
+				params[key] = inferType(value)
+			}
+		} else if filename == "" && !strings.HasPrefix(arg, "-") {
+			filename = arg
+		}
+	}
+
+	return filename, params
+}
+
+func inferType(value string) core.Object {
+	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+		return &core.String{Value: value[1 : len(value)-1]}
+	}
+
+	if value == "true" {
+		return core.TRUE
+	}
+	if value == "false" {
+		return core.FALSE
+	}
+
+	if strings.Contains(value, ".") {
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			return &core.Float{Value: f}
+		}
+	}
+
+	if i, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return core.GetInteger(i)
+	}
+
+	return &core.String{Value: value}
+}
+
 // Make implements the 'make' command.
 func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	// 1. Check for help
@@ -37,16 +82,16 @@ func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Wri
 		return 0
 	}
 
-	// 2. Initialize project state
+	// 2. Parse arguments: filename and --key=value params
+	filename, params := parseMakeArgs(args)
+
+	// 3. Initialize project state
 	currentProject = &Project{
 		Targets: make(map[string]*Target),
 	}
 
-	// 3. Look for project files (.km)
-	filename := ""
-	if len(args) > 0 {
-		filename = args[0]
-	} else {
+	// 4. Look for project files (.km)
+	if filename == "" {
 		// Default to search for files with .km suffix
 		files, err := os.ReadDir(".")
 		if err != nil {
@@ -108,6 +153,9 @@ func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Wri
 	}
 
 	buildEnv := core.NewScriptEnvironment(coreEnv)
+	for k, v := range params {
+		buildEnv.SetObject("param."+k, v)
+	}
 	restoreBuiltins := registerBuildFunctions()
 	defer restoreBuiltins()
 
@@ -142,6 +190,15 @@ func printMakeHelp(w io.Writer) {
 	fmt.Fprintln(w, "  make            - 自动寻找并运行 .km 脚本")
 	fmt.Fprintln(w, "  make <file.km>  - 运行指定的构建脚本")
 	fmt.Fprintln(w, "  make help       - 显示此帮助信息")
+	fmt.Fprintln(w, "  make --key=value  - 传递参数给脚本")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "\033[1;33m参数传递:\033[0m")
+	fmt.Fprintln(w, "  --name=\"value\"  字符串参数")
+	fmt.Fprintln(w, "  --count=123     整数参数")
+	fmt.Fprintln(w, "  --flag=true     布尔参数")
+	fmt.Fprintln(w, "  --ratio=3.14    浮点参数")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "  脚本中使用: param.Get(\"name\")")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "\033[1;33m搜寻规则:\033[0m")
 	fmt.Fprintln(w, "  如果不指定文件名，make 会在当前目录下寻找所有 .km 文件。")

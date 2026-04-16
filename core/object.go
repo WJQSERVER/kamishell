@@ -50,6 +50,10 @@ func getIntegerObject(value int64) *Integer {
 	return &Integer{Value: value}
 }
 
+func GetInteger(value int64) *Integer {
+	return getIntegerObject(value)
+}
+
 type Float struct {
 	Value float64
 }

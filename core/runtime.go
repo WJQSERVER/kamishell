@@ -69,6 +69,22 @@ func init() {
 			return nativeBoolToBooleanObject(env.DeletePackageValue("env", name.Value))
 		},
 	}
+
+	NativeFns["param.Get"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 1 {
+				return &Error{Message: "param.Get() expects exactly one argument"}
+			}
+			key, ok := args[0].(*String)
+			if !ok {
+				return &Error{Message: "param.Get() argument must be a string"}
+			}
+			if val, ok := env.GetObject("param." + key.Value); ok {
+				return val
+			}
+			return NULL
+		},
+	}
 }
 
 func Eval(node Node, env *Environment) Object {
@@ -548,15 +564,21 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 }
 
 func evalMemberExpression(node *MemberExpression, env *Environment) Object {
-	if ident, ok := node.Object.(*Identifier); ok && ident.Value == "env" {
-		name := "env." + node.Property
-		if fn, ok := NativeFns[name]; ok {
-			return fn
+	if ident, ok := node.Object.(*Identifier); ok {
+		if ident.Value == "env" {
+			name := "env." + node.Property
+			if fn, ok := NativeFns[name]; ok {
+				return fn
+			}
+			return &Error{Message: "unsupported member access: " + name + ", use env.Get() instead"}
 		}
-		if val, ok := env.GetObject(name); ok {
-			return val
+		if ident.Value == "param" {
+			name := "param." + node.Property
+			if fn, ok := NativeFns[name]; ok {
+				return fn
+			}
+			return &Error{Message: "unsupported member access: " + name + ", use param.Get() instead"}
 		}
-		return &Error{Message: "member not found: " + name}
 	}
 
 	left := EvalWithIO(node.Object, env, os.Stdin, os.Stdout, os.Stderr)
