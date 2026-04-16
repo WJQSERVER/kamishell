@@ -42,11 +42,7 @@ func (e *osEnv) Set(name string, val any) {
 func (e *osEnv) Get(name string) (any, bool) {
 	v, ok := e.data[name]
 	if !ok {
-		v = os.Getenv(name)
-		if v != "" {
-			return v, true
-		}
-		return nil, false
+		return os.LookupEnv(name)
 	}
 	return v, ok
 }
