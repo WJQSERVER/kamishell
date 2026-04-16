@@ -570,20 +570,14 @@ func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 			if fn, ok := NativeFns[name]; ok {
 				return fn
 			}
-			if val, ok := env.GetObject(name); ok {
-				return val
-			}
-			return &Error{Message: "member not found: " + name}
+			return &Error{Message: "unsupported member access: " + name + ", use env.Get() instead"}
 		}
 		if ident.Value == "param" {
 			name := "param." + node.Property
 			if fn, ok := NativeFns[name]; ok {
 				return fn
 			}
-			if val, ok := env.GetObject(name); ok {
-				return val
-			}
-			return &Error{Message: "member not found: " + name}
+			return &Error{Message: "unsupported member access: " + name + ", use param.Get() instead"}
 		}
 	}
 
