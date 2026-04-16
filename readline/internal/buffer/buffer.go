@@ -233,7 +233,7 @@ func (b *Buffer) TransposeWords() {
 	newData = append(newData, b.data[word2End:]...)
 
 	b.data = newData
-	b.cursor = word1Start + len(word2) + (word2Start - word1End)
+	b.cursor = word2End
 }
 
 func (b *Buffer) CapitalizeWord() {

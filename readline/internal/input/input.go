@@ -48,6 +48,10 @@ const (
 	KeyCtrlT
 	KeyCtrlS
 	KeyShiftTab
+	KeyAltT
+	KeyAltC
+	KeyAltU
+	KeyAltL
 )
 
 type InputEvent struct {
@@ -377,6 +381,14 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 		return InputEvent{Key: KeyCtrlDelete}, nil
 	} else if r == 127 || r == '\b' {
 		return InputEvent{Key: KeyCtrlBackspace}, nil
+	} else if r == 't' || r == 'T' {
+		return InputEvent{Key: KeyAltT}, nil
+	} else if r == 'c' || r == 'C' {
+		return InputEvent{Key: KeyAltC}, nil
+	} else if r == 'u' || r == 'U' {
+		return InputEvent{Key: KeyAltU}, nil
+	} else if r == 'l' || r == 'L' {
+		return InputEvent{Key: KeyAltL}, nil
 	}
 
 	return InputEvent{Key: KeyUnknown}, nil

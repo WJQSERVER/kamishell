@@ -188,6 +188,14 @@ func (i *Instance) handleNormalMode(ev input.InputEvent) (bool, string, error) {
 		i.yank()
 	case input.KeyCtrlT:
 		i.buffer.TransposeChars()
+	case input.KeyAltT:
+		i.buffer.TransposeWords()
+	case input.KeyAltC:
+		i.buffer.CapitalizeWord()
+	case input.KeyAltU:
+		i.buffer.UppercaseWord()
+	case input.KeyAltL:
+		i.buffer.LowercaseWord()
 	case input.KeyCtrlC:
 		i.renderer.NewLine()
 		resultErr = ErrInterrupt
