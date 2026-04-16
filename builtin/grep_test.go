@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"os"
@@ -474,6 +475,54 @@ func TestGrepLongLine(t *testing.T) {
 	}
 	if stdout.Len() == 0 {
 		t.Fatal("expected output for long matching line")
+	}
+}
+
+func TestGrepLongInputWithoutTrailingNewline(t *testing.T) {
+	longLine := strings.Repeat("a", 2*1024*1024)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := strings.NewReader(longLine)
+
+	code := Grep([]string{"a+"}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected long unterminated line to be processed, got code=%d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != len(longLine) {
+		t.Fatalf("expected output length %d, got %d", len(longLine), stdout.Len())
+	}
+}
+
+func TestGrepLineRegexpWithLongCRLFLine(t *testing.T) {
+	line := strings.Repeat("a", streamedLineMemoryLimit-1)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	stdin := strings.NewReader(line + "\r\n")
+
+	code := Grep([]string{"-x", line}, nil, stdin, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected CRLF-terminated long line to match, got code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), line) {
+		t.Fatalf("expected matched long line in output")
+	}
+}
+
+func TestStreamedLineMatchRegexpTrimsCRLFAcrossBoundary(t *testing.T) {
+	line := strings.Repeat("a", streamedLineMemoryLimit-1)
+	reader := bufio.NewReader(strings.NewReader(line + "\r\n"))
+	streamed, err := readStreamedLine(reader)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer streamed.Close()
+
+	matched, err := streamed.MatchRegexp(regexp.MustCompile("^(" + line + ")$"))
+	if err != nil {
+		t.Fatalf("unexpected match error: %v", err)
+	}
+	if !matched {
+		t.Fatal("expected CRLF-normalized streamed line to match regexp")
 	}
 }
 

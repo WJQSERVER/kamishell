@@ -43,6 +43,15 @@ const (
 	KeyCtrlRight
 	KeyCtrlDelete
 	KeyCtrlBackspace
+	KeyCtrlY
+	KeyCtrlG
+	KeyCtrlT
+	KeyCtrlS
+	KeyShiftTab
+	KeyAltT
+	KeyAltC
+	KeyAltU
+	KeyAltL
 )
 
 type InputEvent struct {
@@ -212,6 +221,14 @@ func (p *Parser) parseRune(r rune) (InputEvent, error) {
 		return InputEvent{Key: KeyCtrlU}, nil
 	case 23:
 		return InputEvent{Key: KeyCtrlW}, nil
+	case 19:
+		return InputEvent{Key: KeyCtrlS}, nil
+	case 20:
+		return InputEvent{Key: KeyCtrlT}, nil
+	case 25:
+		return InputEvent{Key: KeyCtrlY}, nil
+	case 7:
+		return InputEvent{Key: KeyCtrlG}, nil
 	case 27: // Escape
 		return p.parseEscape()
 	case 0, 224: // Windows extended key prefix (if not in VT mode)
@@ -334,6 +351,8 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 			if ok && r == '~' {
 				return InputEvent{Key: KeyEnd}, nil
 			}
+		case 'Z': // Shift+Tab
+			return InputEvent{Key: KeyShiftTab}, nil
 		}
 	} else if r == 'O' {
 		r, ok = p.readNext(100 * time.Millisecond)
@@ -362,6 +381,14 @@ func (p *Parser) parseEscape() (InputEvent, error) {
 		return InputEvent{Key: KeyCtrlDelete}, nil
 	} else if r == 127 || r == '\b' {
 		return InputEvent{Key: KeyCtrlBackspace}, nil
+	} else if r == 't' || r == 'T' {
+		return InputEvent{Key: KeyAltT}, nil
+	} else if r == 'c' || r == 'C' {
+		return InputEvent{Key: KeyAltC}, nil
+	} else if r == 'u' || r == 'U' {
+		return InputEvent{Key: KeyAltU}, nil
+	} else if r == 'l' || r == 'L' {
+		return InputEvent{Key: KeyAltL}, nil
 	}
 
 	return InputEvent{Key: KeyUnknown}, nil

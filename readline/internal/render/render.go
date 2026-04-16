@@ -98,6 +98,138 @@ func (r *Renderer) NewLine() {
 	r.lastRows = 0
 }
 
+func (r *Renderer) RefreshSearch(query *buffer.Buffer, result string) {
+	var out bytes.Buffer
+
+	out.WriteString("\x1b[?25l")
+
+	if r.lastRows > 1 {
+		fmt.Fprintf(&out, "\x1b[%dA", r.lastRows-1)
+	}
+	for i := 0; i < max(1, r.lastRows); i++ {
+		out.WriteString("\r\x1b[2K")
+		if i < max(1, r.lastRows)-1 {
+			out.WriteString("\x1b[1B")
+		}
+	}
+	if r.lastRows > 1 {
+		fmt.Fprintf(&out, "\x1b[%dA", r.lastRows-1)
+	}
+
+	fmt.Fprintf(&out, "\x1b[1G(reverse-i-search)`%s': %s", query.String(), result)
+	out.WriteString("\x1b[K")
+
+	termWidth := r.getTerminalWidth()
+	searchWidth := runewidth.StringWidth("(reverse-i-search)`': ") + query.FullWidth() + runewidth.StringWidth(result)
+	cursorCol := runewidth.StringWidth("(reverse-i-search)`") + query.FullWidth()
+	fmt.Fprintf(&out, "\x1b[%dG", cursorCol+1)
+
+	out.WriteString("\x1b[?25h")
+
+	r.out.Write(out.Bytes())
+	r.lastWidth = query.FullWidth() + runewidth.StringWidth(result)
+	r.lastRows = max(1, rowsForWidth(searchWidth, termWidth))
+}
+
+func (r *Renderer) RefreshWithCompletion(b *buffer.Buffer, candidates [][]rune, selected int) error {
+	currentWidth := b.FullWidth()
+	cursorPos := b.DisplayWidth(b.Cursor())
+
+	visualPrompt := stripANSI(r.prompt)
+	promptWidth := runewidth.StringWidth(visualPrompt)
+	termWidth := r.getTerminalWidth()
+	currentRows := rowsForWidth(promptWidth+currentWidth, termWidth)
+	cursorRow, cursorCol := cursorPosition(promptWidth+cursorPos, termWidth)
+
+	var out bytes.Buffer
+
+	out.WriteString("\x1b[?25l")
+
+	if r.lastRows > 1 {
+		fmt.Fprintf(&out, "\x1b[%dA", r.lastRows-1)
+	}
+	for i := 0; i < max(1, r.lastRows); i++ {
+		out.WriteString("\r\x1b[2K")
+		if i < max(1, r.lastRows)-1 {
+			out.WriteString("\x1b[1B")
+		}
+	}
+	if r.lastRows > 1 {
+		fmt.Fprintf(&out, "\x1b[%dA", r.lastRows-1)
+	}
+
+	fmt.Fprintf(&out, "\x1b[1G%s%s", r.prompt, b.String())
+	if currentRows > 1 {
+		segments := wrapVisualSegments(r.prompt, promptWidth, b.String(), termWidth)
+		if len(segments) > 0 {
+			out.WriteString("\r")
+			out.WriteString(strings.Join(segments, "\r\n"))
+		}
+	}
+	out.WriteString("\x1b[K")
+
+	completionRows := r.formatCompletionList(&out, candidates, selected, termWidth)
+	out.WriteString("\r\n")
+
+	if currentRows > 1 {
+		rowsUp := cursorRow
+		if rowsUp > 0 {
+			fmt.Fprintf(&out, "\x1b[%dB", rowsUp)
+		}
+	}
+	fmt.Fprintf(&out, "\x1b[%dA", completionRows+currentRows)
+	fmt.Fprintf(&out, "\x1b[%dG", cursorCol+1)
+
+	out.WriteString("\x1b[?25h")
+
+	_, err := r.out.Write(out.Bytes())
+	r.lastWidth = currentWidth
+	r.lastRows = currentRows + 1 + completionRows
+	return err
+}
+
+func (r *Renderer) formatCompletionList(out *bytes.Buffer, candidates [][]rune, selected int, termWidth int) int {
+	if len(candidates) == 0 {
+		return 0
+	}
+
+	maxWidth := 0
+	for _, c := range candidates {
+		w := runewidth.StringWidth(string(c))
+		if w > maxWidth {
+			maxWidth = w
+		}
+	}
+	maxWidth += 2
+
+	cols := termWidth / maxWidth
+	if cols < 1 {
+		cols = 1
+	}
+
+	rows := (len(candidates) + cols - 1) / cols
+
+	for row := 0; row < rows; row++ {
+		if row > 0 {
+			out.WriteString("\r\n")
+		}
+		for col := 0; col < cols; col++ {
+			idx := row + col*rows
+			if idx >= len(candidates) {
+				break
+			}
+			candidate := string(candidates[idx])
+			if idx == selected {
+				fmt.Fprintf(out, "\x1b[7m%-*s\x1b[0m", maxWidth-1, candidate)
+			} else {
+				fmt.Fprintf(out, "%-*s", maxWidth-1, candidate)
+			}
+		}
+	}
+
+	return rows
+}
+
 func (r *Renderer) getTerminalWidth() int {
 	if s, ok := r.out.(sizedWriter); ok {
 		width, _, err := s.GetSize()

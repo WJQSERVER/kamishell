@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 )
 
 func init() {
@@ -156,25 +155,22 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions) int {
 	lastLineWasEmpty := false
 
 	for {
-		line, err := reader.ReadString('\n')
+		line, err := readStreamedLine(reader)
 		if err != nil && err != io.EOF {
 			fmt.Fprintf(stderr, "cat: %v\n", err)
 			return 1
 		}
-		if err == io.EOF && len(line) == 0 {
+		if err == io.EOF {
 			break
 		}
 
-		hadNewline := strings.HasSuffix(line, "\n")
-		content := strings.TrimSuffix(line, "\n")
-		isEmpty := len(content) == 0
+		hadNewline := line.hadNewline
+		isEmpty := line.Empty() || (hadNewline && line.IsCRLFEmpty())
 
 		// 压缩空行
 		if opts.squeezeBlank && isEmpty {
 			if lastLineWasEmpty {
-				if err == io.EOF {
-					break
-				}
+				line.Close()
 				continue
 			}
 			lastLineWasEmpty = true
@@ -204,9 +200,17 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions) int {
 
 		// 处理显示非打印字符
 		if opts.showNonprinting || opts.showTabs {
-			output.Write(processNonprinting([]byte(content), opts.showTabs, opts.showNonprinting))
+			if err := line.WriteProcessedTo(&output, opts.showTabs, opts.showNonprinting); err != nil {
+				line.Close()
+				fmt.Fprintf(stderr, "cat: %v\n", err)
+				return 1
+			}
 		} else {
-			output.WriteString(content)
+			if err := line.WriteTo(&output); err != nil {
+				line.Close()
+				fmt.Fprintf(stderr, "cat: %v\n", err)
+				return 1
+			}
 		}
 
 		// 显示行尾
@@ -218,12 +222,14 @@ func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions) int {
 			output.WriteByte('\n')
 		}
 		if _, writeErr := stdout.Write(output.Bytes()); writeErr != nil {
+			line.Close()
 			fmt.Fprintf(stderr, "cat: %v\n", writeErr)
 			return 1
 		}
 
-		if err == io.EOF {
-			break
+		if closeErr := line.Close(); closeErr != nil {
+			fmt.Fprintf(stderr, "cat: %v\n", closeErr)
+			return 1
 		}
 	}
 
