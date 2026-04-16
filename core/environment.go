@@ -67,24 +67,30 @@ func (e *Environment) Clone() *Environment {
 }
 
 func (e *Environment) GetObject(name string) (Object, bool) {
-	obj, ok := e.store[name]
-	if !ok && e.outer != nil {
-		return e.outer.GetObject(name)
+	for scope := e; scope != nil; scope = scope.outer {
+		if obj, ok := scope.store[name]; ok {
+			return obj, true
+		}
 	}
-	return obj, ok
+	return nil, false
 }
 
 func (e *Environment) Get(name string) (any, bool) {
-	obj, ok := e.GetObject(name)
-	return obj, ok
+	for scope := e; scope != nil; scope = scope.outer {
+		if obj, ok := scope.store[name]; ok {
+			return obj, true
+		}
+	}
+	return nil, false
 }
 
 func (e *Environment) GetType(name string) (string, bool) {
-	t, ok := e.types[name]
-	if !ok && e.outer != nil {
-		return e.outer.GetType(name)
+	for scope := e; scope != nil; scope = scope.outer {
+		if typeName, ok := scope.types[name]; ok {
+			return typeName, true
+		}
 	}
-	return t, ok
+	return "", false
 }
 
 func (e *Environment) Set(name string, val any) {
@@ -155,11 +161,10 @@ func (e *Environment) Keys() []string {
 }
 
 func (e *Environment) scopeWithValue(name string) *Environment {
-	if _, ok := e.store[name]; ok {
-		return e
-	}
-	if e.outer != nil {
-		return e.outer.scopeWithValue(name)
+	for scope := e; scope != nil; scope = scope.outer {
+		if _, ok := scope.store[name]; ok {
+			return scope
+		}
 	}
 	return nil
 }
