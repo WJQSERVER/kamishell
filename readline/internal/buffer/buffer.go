@@ -175,11 +175,15 @@ func (b *Buffer) BackspaceWord() string {
 }
 
 func (b *Buffer) TransposeChars() {
-	if b.cursor < 2 {
+	if len(b.data) < 2 || b.cursor == 0 {
 		return
 	}
-
-	b.data[b.cursor-2], b.data[b.cursor-1] = b.data[b.cursor-1], b.data[b.cursor-2]
+	if b.cursor == len(b.data) {
+		b.data[b.cursor-2], b.data[b.cursor-1] = b.data[b.cursor-1], b.data[b.cursor-2]
+	} else {
+		b.data[b.cursor-1], b.data[b.cursor] = b.data[b.cursor], b.data[b.cursor-1]
+		b.cursor++
+	}
 }
 
 func (b *Buffer) TransposeWords() {
