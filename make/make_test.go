@@ -212,3 +212,149 @@ func TestRegisterBuildFunctionsRestoresGlobalBuiltins(t *testing.T) {
 		t.Fatal("expected target_env builtin to be restored")
 	}
 }
+
+func TestParseMakeArgs(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		expectFile   string
+		expectParams map[string]core.Object
+	}{
+		{
+			name:         "no args",
+			args:         []string{},
+			expectFile:   "",
+			expectParams: map[string]core.Object{},
+		},
+		{
+			name:         "filename only",
+			args:         []string{"build.km"},
+			expectFile:   "build.km",
+			expectParams: map[string]core.Object{},
+		},
+		{
+			name:         "string param",
+			args:         []string{`--name="test"`},
+			expectFile:   "",
+			expectParams: map[string]core.Object{"name": &core.String{Value: "test"}},
+		},
+		{
+			name:         "integer param",
+			args:         []string{"--count=123"},
+			expectFile:   "",
+			expectParams: map[string]core.Object{"count": core.GetInteger(123)},
+		},
+		{
+			name:         "float param",
+			args:         []string{"--ratio=3.14"},
+			expectFile:   "",
+			expectParams: map[string]core.Object{"ratio": &core.Float{Value: 3.14}},
+		},
+		{
+			name:         "boolean true",
+			args:         []string{"--verbose=true"},
+			expectFile:   "",
+			expectParams: map[string]core.Object{"verbose": core.TRUE},
+		},
+		{
+			name:         "boolean false",
+			args:         []string{"--debug=false"},
+			expectFile:   "",
+			expectParams: map[string]core.Object{"debug": core.FALSE},
+		},
+		{
+			name:       "mixed",
+			args:       []string{"build.km", `--target="amd64"`, "--count=5", "--verbose=true"},
+			expectFile: "build.km",
+			expectParams: map[string]core.Object{
+				"target":  &core.String{Value: "amd64"},
+				"count":   core.GetInteger(5),
+				"verbose": core.TRUE,
+			},
+		},
+		{
+			name:         "version string",
+			args:         []string{"--version=1.2.3"},
+			expectFile:   "",
+			expectParams: map[string]core.Object{"version": &core.String{Value: "1.2.3"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filename, params := parseMakeArgs(tt.args)
+
+			if filename != tt.expectFile {
+				t.Errorf("expected filename %q, got %q", tt.expectFile, filename)
+			}
+
+			if len(params) != len(tt.expectParams) {
+				t.Errorf("expected %d params, got %d", len(tt.expectParams), len(params))
+				return
+			}
+
+			for key, expected := range tt.expectParams {
+				got, ok := params[key]
+				if !ok {
+					t.Errorf("missing param %q", key)
+					continue
+				}
+
+				if got.Type() != expected.Type() {
+					t.Errorf("param %q: expected type %s, got %s", key, expected.Type(), got.Type())
+					continue
+				}
+
+				switch exp := expected.(type) {
+				case *core.String:
+					if got.(*core.String).Value != exp.Value {
+						t.Errorf("param %q: expected %q, got %q", key, exp.Value, got.(*core.String).Value)
+					}
+				case *core.Integer:
+					if got.(*core.Integer).Value != exp.Value {
+						t.Errorf("param %q: expected %d, got %d", key, exp.Value, got.(*core.Integer).Value)
+					}
+				case *core.Float:
+					if got.(*core.Float).Value != exp.Value {
+						t.Errorf("param %q: expected %f, got %f", key, exp.Value, got.(*core.Float).Value)
+					}
+				case *core.Boolean:
+					if got.(*core.Boolean).Value != exp.Value {
+						t.Errorf("param %q: expected %t, got %t", key, exp.Value, got.(*core.Boolean).Value)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestParamGetInScript(t *testing.T) {
+	tempDir := t.TempDir()
+	buildFile := filepath.Join(tempDir, "test.km")
+	script := `x := param.Get("target"); print x`
+	if err := os.WriteFile(buildFile, []byte(script), 0o644); err != nil {
+		t.Fatalf("write build file failed: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	args := []string{buildFile, `--target=amd64`}
+	code := Make(args, core.NewEnvironment(), bytes.NewReader(nil), stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected make to succeed, code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "amd64") {
+		t.Fatalf("expected output to contain 'amd64', got stdout=%q", stdout.String())
+	}
+}
