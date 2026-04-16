@@ -19,8 +19,6 @@ var (
 
 var NativeFns = make(map[string]*NativeFunction)
 
-var ParamGetFn func(env *Environment, args ...Object) Object
-
 func init() {
 	NativeFns["env.Get"] = &NativeFunction{
 		Fn: func(env *Environment, args ...Object) Object {
@@ -77,12 +75,12 @@ func init() {
 			if len(args) != 1 {
 				return &Error{Message: "param.Get() expects exactly one argument"}
 			}
-			_, ok := args[0].(*String)
+			key, ok := args[0].(*String)
 			if !ok {
 				return &Error{Message: "param.Get() argument must be a string"}
 			}
-			if ParamGetFn != nil {
-				return ParamGetFn(env, args...)
+			if val, ok := env.GetObject("param." + key.Value); ok {
+				return val
 			}
 			return NULL
 		},
@@ -581,6 +579,9 @@ func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 			name := "param." + node.Property
 			if fn, ok := NativeFns[name]; ok {
 				return fn
+			}
+			if val, ok := env.GetObject(name); ok {
+				return val
 			}
 			return &Error{Message: "member not found: " + name}
 		}

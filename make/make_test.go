@@ -358,3 +358,65 @@ func TestParamGetInScript(t *testing.T) {
 		t.Fatalf("expected output to contain 'amd64', got stdout=%q", stdout.String())
 	}
 }
+
+func TestParamPropertyAccess(t *testing.T) {
+	tempDir := t.TempDir()
+	buildFile := filepath.Join(tempDir, "test.km")
+	script := `print param.target`
+	if err := os.WriteFile(buildFile, []byte(script), 0o644); err != nil {
+		t.Fatalf("write build file failed: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	args := []string{buildFile, `--target=arm64`}
+	code := Make(args, core.NewEnvironment(), bytes.NewReader(nil), stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected make to succeed, code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "arm64") {
+		t.Fatalf("expected output to contain 'arm64', got stdout=%q", stdout.String())
+	}
+}
+
+func TestParamNullWhenNotSet(t *testing.T) {
+	tempDir := t.TempDir()
+	buildFile := filepath.Join(tempDir, "test.km")
+	script := `x := param.Get("missing"); if x == nil { print "nil" }`
+	if err := os.WriteFile(buildFile, []byte(script), 0o644); err != nil {
+		t.Fatalf("write build file failed: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	args := []string{buildFile}
+	code := Make(args, core.NewEnvironment(), bytes.NewReader(nil), stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected make to succeed, code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "nil") {
+		t.Fatalf("expected output to contain 'nil', got stdout=%q", stdout.String())
+	}
+}
