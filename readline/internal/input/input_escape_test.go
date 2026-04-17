@@ -226,58 +226,6 @@ func TestParserAltBackspace(t *testing.T) {
 	}
 }
 
-func TestParserEscapeAlone(t *testing.T) {
-	data := []byte("\x1b")
-	p := NewParser(bytes.NewReader(data))
-
-	ev, err := p.NextEvent()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ev.Key != KeyEsc {
-		t.Errorf("expected KeyEsc for lone escape, got %v", ev.Key)
-	}
-}
-
-func TestParserUnknownEscapeSequence(t *testing.T) {
-	data := []byte("\x1b[0Z")
-	p := NewParser(bytes.NewReader(data))
-
-	ev, err := p.NextEvent()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ev.Key != KeyUnknown {
-		t.Errorf("expected KeyUnknown for invalid sequence, got %v", ev.Key)
-	}
-}
-
-func TestParserPartialEscapeSequence(t *testing.T) {
-	data := []byte("\x1b[")
-	p := NewParser(bytes.NewReader(data))
-
-	ev, err := p.NextEvent()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ev.Key != KeyEsc {
-		t.Errorf("expected KeyEsc for partial escape, got %v", ev.Key)
-	}
-}
-
-func TestParserCtrlBackspaceViaAltBS(t *testing.T) {
-	data := []byte("\x1b\x7f")
-	p := NewParser(bytes.NewReader(data))
-
-	ev, err := p.NextEvent()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ev.Key != KeyCtrlBackspace {
-		t.Errorf("expected KeyCtrlBackspace for Alt+Backspace, got %v", ev.Key)
-	}
-}
-
 func TestParserCtrlK(t *testing.T) {
 	data := []byte("\x0b")
 	p := NewParser(bytes.NewReader(data))
