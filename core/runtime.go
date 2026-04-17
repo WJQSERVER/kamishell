@@ -70,6 +70,24 @@ func init() {
 		},
 	}
 
+	NativeFns["env.GetOS"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 0 {
+				return &Error{Message: "env.GetOS() expects no arguments"}
+			}
+			return &String{Value: builtin.GetOS()}
+		},
+	}
+
+	NativeFns["env.GetArch"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 0 {
+				return &Error{Message: "env.GetArch() expects no arguments"}
+			}
+			return &String{Value: builtin.GetArch()}
+		},
+	}
+
 	NativeFns["param.Get"] = &NativeFunction{
 		Fn: func(env *Environment, args ...Object) Object {
 			if len(args) != 1 {

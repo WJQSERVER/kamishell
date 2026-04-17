@@ -413,3 +413,41 @@ func TestIntegerLiteralOverflowReportsError(t *testing.T) {
 		t.Errorf("expected invalid integer literal error, got %q", stderr)
 	}
 }
+
+func TestEnvGetOS(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("os := env.GetOS(); print os", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) == "" {
+		t.Errorf("expected non-empty OS string, got empty")
+	}
+}
+
+func TestEnvGetArch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("arch := env.GetArch(); print arch", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) == "" {
+		t.Errorf("expected non-empty architecture string, got empty")
+	}
+}
+
+func TestEnvGetOSNoArgs(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami("env.GetOS(\"invalid\")", env)
+	if !strings.Contains(stderr, "expects no arguments") {
+		t.Errorf("expected 'expects no arguments' error, got %q", stderr)
+	}
+}
+
+func TestEnvGetArchNoArgs(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami("env.GetArch(\"invalid\")", env)
+	if !strings.Contains(stderr, "expects no arguments") {
+		t.Errorf("expected 'expects no arguments' error, got %q", stderr)
+	}
+}
