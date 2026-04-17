@@ -117,9 +117,9 @@ func TestParserCtrlDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ev.Key != KeyDown {
-		t.Errorf("expected KeyDown for Ctrl+Down, got %v", ev.Key)
-	}
+if ev.Key != KeyCtrlDown {
+	t.Errorf("expected KeyCtrlDown, got %v", ev.Key)
+}
 }
 
 func TestParserHome(t *testing.T) {
