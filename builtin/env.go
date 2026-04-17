@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 )
 
 func init() {
@@ -24,4 +25,12 @@ func Env(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 		fmt.Fprintln(stdout, e)
 	}
 	return 0
+}
+
+func GetOS() string {
+	return runtime.GOOS
+}
+
+func GetArch() string {
+	return runtime.GOARCH
 }
