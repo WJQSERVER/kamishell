@@ -237,12 +237,22 @@ func (l *Lexer) skipMultiLineComment() {
 
 func (l *Lexer) readIdentifier() string {
 	position := l.position
-	for isIdentifierPart(l.input[l.position:]) {
-		_, size := utf8.DecodeRuneInString(l.input[l.position:])
-		if size <= 0 {
+	for {
+		if l.ch == 0 {
 			break
 		}
-		l.advanceBytes(size)
+		if l.ch < utf8.RuneSelf {
+			if !isASCIIIdentifierPart(l.ch) {
+				break
+			}
+			l.advanceBytes(1)
+		} else {
+			_, size := utf8.DecodeRuneInString(l.input[l.position:])
+			if size <= 0 {
+				break
+			}
+			l.advanceBytes(size)
+		}
 	}
 	return l.input[position:l.position]
 }

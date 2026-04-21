@@ -177,11 +177,6 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return val
 		}
 
-		scope, expectedType, ok := env.ResolveForAssign(node.Name)
-		if ok && expectedType != "" && string(val.Type()) != expectedType {
-			return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
-		}
-
 		if node.Token.Literal == ":=" {
 			typeName := ""
 			if shouldTrackType(string(val.Type())) {
@@ -189,14 +184,30 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			}
 			env.SetWithType(node.Name, val, typeName)
 		} else {
-			if scope != nil {
-				scope.store[node.Name] = val
-				if _, hasType := scope.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
-					scope.ensureTypes()
-					scope.types[node.Name] = string(val.Type())
+			// Fast path: direct lookup in current scope
+			if _, hasIt := env.store[node.Name]; hasIt {
+				if typeName, hasType := env.types[node.Name]; hasType && typeName != "" && string(val.Type()) != typeName {
+					return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), typeName)}
+				}
+				env.store[node.Name] = val
+				if _, hasType := env.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
+					env.ensureTypes()
+					env.types[node.Name] = string(val.Type())
 				}
 			} else {
-				env.Set(node.Name, val)
+				scope, expectedType, ok := env.ResolveForAssign(node.Name)
+				if ok && expectedType != "" && string(val.Type()) != expectedType {
+					return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
+				}
+				if scope != nil {
+					scope.store[node.Name] = val
+					if _, hasType := scope.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
+						scope.ensureTypes()
+						scope.types[node.Name] = string(val.Type())
+					}
+				} else {
+					env.Set(node.Name, val)
+				}
 			}
 		}
 		return val
@@ -262,16 +273,16 @@ func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout
 	var result Object
 	for _, statement := range stmts {
 		result = EvalWithIO(statement, env, stdin, stdout, stderr)
-		if isError(result) {
-			env.SetObject("err", result)
+		if errObj, ok := result.(*Error); ok {
+			env.SetObject("err", errObj)
 			return result
 		}
-		if isReturn(result) {
+		if _, ok := result.(*ReturnValue); ok {
 			env.SetObject("err", NULL)
 			return result
 		}
-		env.SetObject("err", NULL)
 	}
+	env.SetObject("err", NULL)
 	return result
 }
 
@@ -307,7 +318,7 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 		if isError(result) {
 			return result
 		}
-		if isReturn(result) {
+		if _, ok := result.(*ReturnValue); ok {
 			return result
 		}
 
