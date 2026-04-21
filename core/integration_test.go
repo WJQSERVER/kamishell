@@ -85,7 +85,7 @@ func TestRedirection(t *testing.T) {
 	tempFile := "test_redir.txt"
 	defer os.Remove(tempFile)
 
-	input := "print \"hello world\" > \"" + tempFile + "\"; cat \"" + tempFile + "\""
+	input := "print \"hello world\" -> \"" + tempFile + "\"; cat \"" + tempFile + "\""
 	stdout, stderr, _ := runKami(input, env)
 
 	if stderr != "" {

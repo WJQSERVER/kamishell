@@ -10,8 +10,9 @@ const (
 	BOOLEAN_OBJ  ObjectType = "BOOLEAN"
 	STRING_OBJ   ObjectType = "STRING"
 	NULL_OBJ     ObjectType = "NULL"
-	ERROR_OBJ    ObjectType = "ERROR"
-	FUNCTION_OBJ ObjectType = "FUNCTION"
+	RETURN_VALUE_OBJ ObjectType = "RETURN_VALUE"
+	ERROR_OBJ       ObjectType = "ERROR"
+	FUNCTION_OBJ     ObjectType = "FUNCTION"
 	PACKAGE_OBJ  ObjectType = "PACKAGE"
 )
 
@@ -84,6 +85,13 @@ type Null struct{}
 
 func (n *Null) Inspect() string  { return "nil" }
 func (n *Null) Type() ObjectType { return NULL_OBJ }
+
+type ReturnValue struct {
+	Value Object
+}
+
+func (rv *ReturnValue) Inspect() string  { return rv.Value.Inspect() }
+func (rv *ReturnValue) Type() ObjectType { return RETURN_VALUE_OBJ }
 
 type Error struct {
 	Message string

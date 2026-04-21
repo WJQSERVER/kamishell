@@ -5,3 +5,4 @@ kamishell
 __debug_bin
 kami
 vendor/
+bench/

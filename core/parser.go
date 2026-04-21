@@ -92,6 +92,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseForStatement()
 	case FUNC:
 		stmt = p.parseFunctionStatement()
+	case RETURN:
+		stmt = p.parseReturnStatement()
 	case GO:
 		stmt = p.parseGoStatement()
 	case IDENT:
@@ -117,7 +119,7 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 	for {
 		if p.peekToken.Type == PIPE {
 			stmt = p.parsePipeStatement(stmt)
-		} else if p.peekToken.Type == GREATER || p.peekToken.Type == APPEND {
+		} else if p.peekToken.Type == REDIRECT || p.peekToken.Type == APPEND {
 			stmt = p.parseRedirectStatement(stmt)
 		} else {
 			break
@@ -142,7 +144,7 @@ func (p *Parser) parseRedirectStatement(left Statement) *RedirectStatement {
 	stmt := &RedirectStatement{Token: p.peekToken, Source: left}
 	stmt.Append = p.peekToken.Type == APPEND
 
-	p.nextToken() // move to > or >>
+	p.nextToken() // move to -> or >>
 	p.nextToken() // move to target
 
 	if p.curToken.Type == IDENT {
@@ -368,7 +370,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		return nil
 	}
 
-	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND && precedence < p.peekPrecedence() {
+	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND && precedence < p.peekPrecedence() {
 		p.nextToken()
 		switch p.curToken.Type {
 		case EQ, NEQ, GREATER, LESS, PLUS:
@@ -514,6 +516,22 @@ func (p *Parser) parseFunctionParameters() []string {
 	}
 
 	return identifiers
+}
+
+func (p *Parser) parseReturnStatement() *ReturnStatement {
+	stmt := &ReturnStatement{Token: p.curToken}
+
+	p.nextToken()
+
+	if p.curToken.Type != SEMICOLON && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+		stmt.ReturnValue = p.parseExpression(LOWEST)
+	}
+
+	if p.peekToken.Type == SEMICOLON {
+		p.nextToken()
+	}
+
+	return stmt
 }
 
 func (p *Parser) parseGoStatement() *GoStatement {

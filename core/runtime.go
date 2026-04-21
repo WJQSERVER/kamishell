@@ -112,7 +112,11 @@ func Eval(node Node, env *Environment) Object {
 func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	switch node := node.(type) {
 	case *Program:
-		return evalStatements(node.Statements, env, stdin, stdout, stderr)
+		result := evalStatements(node.Statements, env, stdin, stdout, stderr)
+		if returnValue, ok := result.(*ReturnValue); ok {
+			return returnValue.Value
+		}
+		return result
 	case *BlockStatement:
 		return evalStatements(node.Statements, env, stdin, stdout, stderr)
 	case *ExpressionStatement:
@@ -155,6 +159,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return NULL
 	case *FunctionStatement:
 		return evalFunctionStatement(node, env)
+	case *ReturnStatement:
+		return evalReturnStatement(node, env, stdin, stdout, stderr)
 	case *InfixExpression:
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
@@ -241,15 +247,30 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	return NULL
 }
 
+func evalReturnStatement(rs *ReturnStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var val Object = NULL
+	if rs.ReturnValue != nil {
+		val = EvalWithIO(rs.ReturnValue, env, stdin, stdout, stderr)
+	}
+	if isError(val) {
+		return val
+	}
+	return &ReturnValue{Value: val}
+}
+
 func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var result Object
 	for _, statement := range stmts {
 		result = EvalWithIO(statement, env, stdin, stdout, stderr)
-		if errObj, ok := result.(*Error); ok {
-			env.SetObject("err", errObj)
-		} else {
-			env.SetObject("err", NULL)
+		if isError(result) {
+			env.SetObject("err", result)
+			return result
 		}
+		if isReturn(result) {
+			env.SetObject("err", NULL)
+			return result
+		}
+		env.SetObject("err", NULL)
 	}
 	return result
 }
@@ -284,6 +305,9 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 
 		result = EvalWithIO(fs.Consequence, env, stdin, stdout, stderr)
 		if isError(result) {
+			return result
+		}
+		if isReturn(result) {
 			return result
 		}
 
@@ -705,6 +729,13 @@ func isError(obj Object) bool {
 	return false
 }
 
+func isReturn(obj Object) bool {
+	if obj != nil {
+		return obj.Type() == RETURN_VALUE_OBJ
+	}
+	return false
+}
+
 func objectToScriptString(obj Object) (string, bool) {
 	switch obj.Type() {
 	case STRING_OBJ, INTEGER_OBJ, BOOLEAN_OBJ, NULL_OBJ:
@@ -805,6 +836,8 @@ func inspectObject(obj Object) string {
 		return "false"
 	case *Null:
 		return "nil"
+	case *ReturnValue:
+		return inspectObject(v.Value)
 	default:
 		return obj.Inspect()
 	}
@@ -869,7 +902,11 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 		}
 	}
 
-	return EvalWithIO(fn.Body, extendEnv, stdin, stdout, stderr)
+	result := EvalWithIO(fn.Body, extendEnv, stdin, stdout, stderr)
+	if returnValue, ok := result.(*ReturnValue); ok {
+		return returnValue.Value
+	}
+	return result
 }
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {

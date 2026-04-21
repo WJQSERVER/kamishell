@@ -8,10 +8,10 @@ import (
 
 type Lexer struct {
 	input        string
-	position     int       // current position in input (points to current char)
-	readPosition int       // current reading position in input (after current char)
-	ch           byte      // current char under examination
-	prevToken    TokenType // type of the last token returned
+	position     int
+	readPosition int
+	ch           byte
+	prevToken    TokenType
 }
 
 func NewLexer(input string) *Lexer {
@@ -78,7 +78,7 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok = Token{Type: EQ, Literal: "==", Start: start, End: l.readPosition}
 		} else {
-			tok = newToken(ASSIGN, l.ch, l.position)
+			tok = Token{Type: ASSIGN, Literal: "=", Start: l.position, End: l.position + 1}
 		}
 	case ':':
 		if l.peekChar() == '=' {
@@ -86,7 +86,7 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok = Token{Type: COLON_ASSIGN, Literal: ":=", Start: start, End: l.readPosition}
 		} else {
-			tok = newToken(ILLEGAL, l.ch, l.position)
+			tok = Token{Type: ILLEGAL, Literal: string(l.ch), Start: l.position, End: l.position + 1}
 		}
 	case '|':
 		if l.peekChar() == '|' {
@@ -94,7 +94,7 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok = Token{Type: OR, Literal: "||", Start: start, End: l.readPosition}
 		} else {
-			tok = newToken(PIPE, l.ch, l.position)
+			tok = Token{Type: PIPE, Literal: "|", Start: l.position, End: l.position + 1}
 		}
 	case '&':
 		if l.peekChar() == '&' {
@@ -102,32 +102,44 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok = Token{Type: AND, Literal: "&&", Start: start, End: l.readPosition}
 		} else {
-			tok = newToken(AMPERSAND, l.ch, l.position)
+			tok = Token{Type: AMPERSAND, Literal: "&", Start: l.position, End: l.position + 1}
 		}
 	case '>':
 		if l.peekChar() == '>' {
 			start := l.position
 			l.readChar()
 			tok = Token{Type: APPEND, Literal: ">>", Start: start, End: l.readPosition}
+		} else if l.peekChar() == '-' {
+			start := l.position
+			l.readChar()
+			tok = Token{Type: REDIRECT, Literal: "->", Start: start, End: l.readPosition}
 		} else {
-			tok = newToken(GREATER, l.ch, l.position)
+			tok = Token{Type: GREATER, Literal: ">", Start: l.position, End: l.position + 1}
 		}
 	case '<':
-		tok = newToken(LESS, l.ch, l.position)
+		tok = Token{Type: LESS, Literal: "<", Start: l.position, End: l.position + 1}
 	case '!':
 		if l.peekChar() == '=' {
 			start := l.position
 			l.readChar()
 			tok = Token{Type: NEQ, Literal: "!=", Start: start, End: l.readPosition}
 		} else {
-			tok = newToken(NOT, l.ch, l.position)
+			tok = Token{Type: NOT, Literal: "!", Start: l.position, End: l.position + 1}
 		}
 	case '+':
-		tok = newToken(PLUS, l.ch, l.position)
+		tok = Token{Type: PLUS, Literal: "+", Start: l.position, End: l.position + 1}
+	case '-':
+		if l.peekChar() == '>' {
+			start := l.position
+			l.readChar()
+			tok = Token{Type: REDIRECT, Literal: "->", Start: start, End: l.readPosition}
+		} else {
+			tok = Token{Type: ILLEGAL, Literal: string(l.ch), Start: l.position, End: l.position + 1}
+		}
 	case ';':
-		tok = newToken(SEMICOLON, l.ch, l.position)
+		tok = Token{Type: SEMICOLON, Literal: ";", Start: l.position, End: l.position + 1}
 	case ',':
-		tok = newToken(COMMA, l.ch, l.position)
+		tok = Token{Type: COMMA, Literal: ",", Start: l.position, End: l.position + 1}
 	case '.':
 		if isDigit(l.peekChar()) {
 			start := l.position
@@ -138,17 +150,17 @@ func (l *Lexer) NextToken() Token {
 			l.prevToken = tok.Type
 			return tok
 		}
-		tok = newToken(DOT, l.ch, l.position)
+		tok = Token{Type: DOT, Literal: ".", Start: l.position, End: l.position + 1}
 	case '(':
-		tok = newToken(LPAREN, l.ch, l.position)
+		tok = Token{Type: LPAREN, Literal: "(", Start: l.position, End: l.position + 1}
 	case ')':
-		tok = newToken(RPAREN, l.ch, l.position)
+		tok = Token{Type: RPAREN, Literal: ")", Start: l.position, End: l.position + 1}
 	case '{':
-		tok = newToken(LBRACE, l.ch, l.position)
+		tok = Token{Type: LBRACE, Literal: "{", Start: l.position, End: l.position + 1}
 	case '}':
-		tok = newToken(RBRACE, l.ch, l.position)
+		tok = Token{Type: RBRACE, Literal: "}", Start: l.position, End: l.position + 1}
 	case '$':
-		tok = newToken(DOLLAR, l.ch, l.position)
+		tok = Token{Type: DOLLAR, Literal: "$", Start: l.position, End: l.position + 1}
 	case '"':
 		start := l.position
 		tok.Type = STRING
@@ -184,7 +196,7 @@ func (l *Lexer) NextToken() Token {
 			l.prevToken = tok.Type
 			return tok
 		} else {
-			tok = newToken(ILLEGAL, l.ch, l.position)
+			tok = Token{Type: ILLEGAL, Literal: string(l.ch), Start: l.position, End: l.position + 1}
 		}
 	}
 
@@ -317,10 +329,6 @@ func (l *Lexer) peekChar() byte {
 	return l.input[l.readPosition]
 }
 
-func newToken(tokenType TokenType, ch byte, start int) Token {
-	return Token{Type: tokenType, Literal: singleByteLiteral(ch), Start: start, End: start + 1}
-}
-
 func isLetter(ch byte) bool {
 	return isASCIIIdentifierStart(ch)
 }
@@ -340,7 +348,7 @@ func isIdentifierStart(input string) bool {
 	if r == utf8.RuneError && len(input) > 0 && input[0] < utf8.RuneSelf {
 		r = rune(input[0])
 	}
-	return unicode.IsLetter(r) || r == '_' || r == '-' || r == '/'
+	return unicode.IsLetter(r) || r == '_' || r == '/'
 }
 
 func isIdentifierPart(input string) bool {
@@ -354,11 +362,11 @@ func isIdentifierPart(input string) bool {
 	if r == utf8.RuneError && len(input) > 0 && input[0] < utf8.RuneSelf {
 		r = rune(input[0])
 	}
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '/'
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '/'
 }
 
 func isASCIIIdentifierStart(ch byte) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '-' || ch == '/'
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '/'
 }
 
 func isASCIIIdentifierPart(ch byte) bool {
@@ -378,47 +386,4 @@ func (l *Lexer) advanceBytes(size int) {
 	l.position = l.readPosition
 	l.ch = l.input[l.position]
 	l.readPosition++
-}
-
-func singleByteLiteral(ch byte) string {
-	switch ch {
-	case '=':
-		return "="
-	case '|':
-		return "|"
-	case '>':
-		return ">"
-	case '<':
-		return "<"
-	case '&':
-		return "&"
-	case '!':
-		return "!"
-	case '+':
-		return "+"
-	case ';':
-		return ";"
-	case ',':
-		return ","
-	case '.':
-		return "."
-	case '(':
-		return "("
-	case ')':
-		return ")"
-	case '{':
-		return "{"
-	case '}':
-		return "}"
-	case '$':
-		return "$"
-	case ':':
-		return ":"
-	case '/':
-		return "/"
-	case '"':
-		return "\""
-	default:
-		return string(ch)
-	}
 }
