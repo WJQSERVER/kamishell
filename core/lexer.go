@@ -134,7 +134,7 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok = Token{Type: REDIRECT, Literal: "->", Start: start, End: l.readPosition}
 		} else {
-			tok = Token{Type: ILLEGAL, Literal: string(l.ch), Start: l.position, End: l.position + 1}
+			tok = Token{Type: MINUS, Literal: "-", Start: l.position, End: l.position + 1}
 		}
 	case ';':
 		tok = Token{Type: SEMICOLON, Literal: ";", Start: l.position, End: l.position + 1}

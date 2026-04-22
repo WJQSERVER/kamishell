@@ -27,6 +27,7 @@ const (
 	EQ TokenType = "=="
 	NEQ TokenType = "!="
 	PLUS TokenType = "+"
+	MINUS TokenType = "-"
 	SEMICOLON TokenType = ";"
 	COMMA TokenType = ","
 	DOT TokenType = "."

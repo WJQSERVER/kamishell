@@ -377,6 +377,8 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case "+":
 		return getIntegerObject(leftVal + rightVal)
+	case "-":
+		return getIntegerObject(leftVal - rightVal)
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
@@ -397,6 +399,8 @@ func evalFloatInfixExpression(operator string, left, right Object) Object {
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case "+":
 		return &Float{Value: leftVal + rightVal}
+	case "-":
+		return &Float{Value: leftVal - rightVal}
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
