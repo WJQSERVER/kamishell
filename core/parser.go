@@ -541,6 +541,8 @@ func (p *Parser) parseGoStatement() *GoStatement {
 	p.nextToken()
 	if p.curToken.Type == LBRACE {
 		stmt.Node = p.parseBlockStatement()
+	} else if p.curToken.Type == IDENT && p.peekToken.Type == LPAREN {
+		stmt.Node = p.parseExpressionStatement()
 	} else {
 		stmt.Node = p.parseCommandStatement()
 	}
