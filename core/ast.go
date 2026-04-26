@@ -466,3 +466,22 @@ func (is *ImportStatement) String() string {
 	out.WriteString("\"")
 	return out.String()
 }
+
+type MethodCallBlockStatement struct {
+	Token  Token           // the object token (e.g., "wg")
+	Object Expression      // the object expression (e.g., Identifier{Value: "wg"})
+	Method string          // the method name (e.g., "Go")
+	Body   *BlockStatement // the block body
+}
+
+func (mcb *MethodCallBlockStatement) statementNode()       {}
+func (mcb *MethodCallBlockStatement) TokenLiteral() string { return mcb.Token.Literal }
+func (mcb *MethodCallBlockStatement) String() string {
+	var out strings.Builder
+	out.WriteString(mcb.Object.String())
+	out.WriteString(".")
+	out.WriteString(mcb.Method)
+	out.WriteString(" ")
+	out.WriteString(mcb.Body.String())
+	return out.String()
+}

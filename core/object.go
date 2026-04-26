@@ -14,6 +14,7 @@ const (
 	ERROR_OBJ       ObjectType = "ERROR"
 	FUNCTION_OBJ     ObjectType = "FUNCTION"
 	PACKAGE_OBJ  ObjectType = "PACKAGE"
+	WAITGROUP_OBJ ObjectType = "WAITGROUP"
 )
 
 type Object interface {
@@ -129,3 +130,10 @@ type Package struct {
 
 func (p *Package) Type() ObjectType { return PACKAGE_OBJ }
 func (p *Package) Inspect() string  { return p.Name }
+
+type WaitGroup struct {
+	Wg interface{} // *sync.WaitGroup - using interface{} to avoid import cycle
+}
+
+func (wg *WaitGroup) Type() ObjectType { return WAITGROUP_OBJ }
+func (wg *WaitGroup) Inspect() string  { return "WaitGroup" }

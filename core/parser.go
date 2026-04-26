@@ -105,7 +105,19 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 				break
 			}
 			stmt = p.parseAssignStatement()
-		} else if p.peekToken.Type == DOT || p.peekToken.Type == LPAREN {
+		} else if p.peekToken.Type == DOT {
+			// Check for IDENT.IDENT { pattern (method call with block)
+			if p.isMethodCallWithBlock() {
+				mcbStmt := p.parseMethodCallBlockStatement()
+				if mcbStmt != nil {
+					stmt = mcbStmt
+				} else {
+					stmt = p.parseExpressionStatement()
+				}
+			} else {
+				stmt = p.parseExpressionStatement()
+			}
+		} else if p.peekToken.Type == LPAREN {
 			stmt = p.parseExpressionStatement()
 		} else {
 			stmt = p.parseCommandStatement()
@@ -546,6 +558,47 @@ func (p *Parser) parseGoStatement() *GoStatement {
 	} else {
 		stmt.Node = p.parseCommandStatement()
 	}
+	return stmt
+}
+
+func (p *Parser) isMethodCallWithBlock() bool {
+	// Check for IDENT.IDENT { pattern without consuming tokens
+	// curToken = IDENT (object), peekToken = DOT
+	if p.curToken.Type != IDENT || p.peekToken.Type != DOT {
+		return false
+	}
+	// Save state
+	savedCur := p.curToken
+	savedPeek := p.peekToken
+	savedLexerPos := p.l.GetPosition()
+	// Look ahead: DOT IDENT LBRACE
+	p.nextToken() // move to DOT
+	p.nextToken() // move to method name
+	isBlock := p.curToken.Type == IDENT && p.peekToken.Type == LBRACE
+	// Restore state
+	p.curToken = savedCur
+	p.peekToken = savedPeek
+	p.l.SetPosition(savedLexerPos)
+	return isBlock
+}
+
+func (p *Parser) parseMethodCallBlockStatement() *MethodCallBlockStatement {
+	stmt := &MethodCallBlockStatement{Token: p.curToken}
+	stmt.Object = &Identifier{Token: p.curToken, Value: p.curToken.Literal} // object name
+
+	p.nextToken() // move to .
+	p.nextToken() // move to method name
+
+	// Verify it's actually IDENT.IDENT { pattern
+	if p.curToken.Type != IDENT || p.peekToken.Type != LBRACE {
+		// Not a method call with block, fallback to expression
+		// This shouldn't happen if isMethodCallWithBlock worked correctly
+		return nil
+	}
+
+	stmt.Method = p.curToken.Literal
+	p.nextToken() // move to {
+	stmt.Body = p.parseBlockStatement()
 	return stmt
 }
 

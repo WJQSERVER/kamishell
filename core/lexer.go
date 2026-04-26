@@ -6,6 +6,13 @@ import (
 	"unicode/utf8"
 )
 
+type LexerState struct {
+	Position     int
+	ReadPosition int
+	Ch           byte
+	PrevToken    TokenType
+}
+
 type Lexer struct {
 	input        string
 	position     int
@@ -40,6 +47,22 @@ func (l *Lexer) skipShebang() {
 			l.readChar()
 		}
 	}
+}
+
+func (l *Lexer) GetPosition() LexerState {
+	return LexerState{
+		Position:     l.position,
+		ReadPosition: l.readPosition,
+		Ch:           l.ch,
+		PrevToken:    l.prevToken,
+	}
+}
+
+func (l *Lexer) SetPosition(state LexerState) {
+	l.position = state.Position
+	l.readPosition = state.ReadPosition
+	l.ch = state.Ch
+	l.prevToken = state.PrevToken
 }
 
 func (l *Lexer) NextToken() Token {

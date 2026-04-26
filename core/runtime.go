@@ -412,6 +412,16 @@ var goStdlib = map[string]map[string]*NativeFunction{
 			},
 		},
 	},
+	"sync": {
+		"NewWaitGroup": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 0 {
+					return &Error{Message: "NewWaitGroup expects no arguments"}
+				}
+				return &WaitGroup{Wg: &sync.WaitGroup{}}
+			},
+		},
+	},
 }
 
 func Eval(node Node, env *Environment) Object {
@@ -470,6 +480,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalFunctionStatement(node, env)
 	case *ImportStatement:
 		return evalImportStatement(node, env)
+	case *MethodCallBlockStatement:
+		return evalMethodCallBlock(node, env, stdin, stdout, stderr)
 	case *ReturnStatement:
 		return evalReturnStatement(node, env, stdin, stdout, stderr)
 	case *InfixExpression:
@@ -954,6 +966,25 @@ func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 		return left
 	}
 
+	// Handle WaitGroup method access (e.g., wg.Wait)
+	if wg, ok := left.(*WaitGroup); ok {
+		switch node.Property {
+		case "Wait":
+			return &NativeFunction{
+				Fn: func(env *Environment, args ...Object) Object {
+					realWg, ok := wg.Wg.(*sync.WaitGroup)
+					if !ok {
+						return &Error{Message: "invalid WaitGroup"}
+					}
+					realWg.Wait()
+					return NULL
+				},
+			}
+		default:
+			return &Error{Message: "unknown method " + node.Property + " on WaitGroup"}
+		}
+	}
+
 	name := inspectObject(left) + "." + node.Property
 	if fn, ok := NativeFns[name]; ok {
 		return fn
@@ -1292,6 +1323,44 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 		return returnValue.Value
 	}
 	return result
+}
+
+func evalMethodCallBlock(mcb *MethodCallBlockStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	// Evaluate the object
+	obj := EvalWithIO(mcb.Object, env, stdin, stdout, stderr)
+	if isError(obj) {
+		return obj
+	}
+
+	switch o := obj.(type) {
+	case *WaitGroup:
+		switch mcb.Method {
+		case "Go":
+			// Get the actual sync.WaitGroup
+			wg, ok := o.Wg.(*sync.WaitGroup)
+			if !ok {
+				return &Error{Message: "invalid WaitGroup"}
+			}
+			wg.Add(1)
+			asyncEnv := env.Clone()
+			go func() {
+				defer wg.Done()
+				EvalWithIO(mcb.Body, asyncEnv, stdin, stdout, stderr)
+			}()
+			return NULL
+		case "Wait":
+			wg, ok := o.Wg.(*sync.WaitGroup)
+			if !ok {
+				return &Error{Message: "invalid WaitGroup"}
+			}
+			wg.Wait()
+			return NULL
+		default:
+			return &Error{Message: fmt.Sprintf("unknown method %s on WaitGroup", mcb.Method)}
+		}
+	default:
+		return &Error{Message: fmt.Sprintf("method call with block not supported on %s", obj.Type())}
+	}
 }
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
