@@ -15,6 +15,7 @@ var (
 	TRUE   = &Boolean{Value: true}
 	FALSE  = &Boolean{Value: false}
 	ENVPKG = &Package{Name: "env"}
+	SYNCPKG = &Package{Name: "sync"}
 )
 
 var NativeFns = make(map[string]*NativeFunction)
@@ -409,16 +410,6 @@ var goStdlib = map[string]map[string]*NativeFunction{
 					return &Error{Message: err.Error()}
 				}
 				return NULL
-			},
-		},
-	},
-	"sync": {
-		"NewWaitGroup": &NativeFunction{
-			Fn: func(env *Environment, args ...Object) Object {
-				if len(args) != 0 {
-					return &Error{Message: "NewWaitGroup expects no arguments"}
-				}
-				return &WaitGroup{Wg: &sync.WaitGroup{}}
 			},
 		},
 	},
@@ -966,6 +957,23 @@ func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 		return left
 	}
 
+	// Handle sync package methods (e.g., sync.NewWaitGroup)
+	if pkg, ok := left.(*Package); ok && pkg.Name == "sync" {
+		switch node.Property {
+		case "NewWaitGroup":
+			return &NativeFunction{
+				Fn: func(env *Environment, args ...Object) Object {
+					if len(args) != 0 {
+						return &Error{Message: "NewWaitGroup expects no arguments"}
+					}
+					return &WaitGroup{Wg: &sync.WaitGroup{}}
+				},
+			}
+		default:
+			return &Error{Message: "unknown sync method: " + node.Property}
+		}
+	}
+
 	// Handle WaitGroup method access (e.g., wg.Wait)
 	if wg, ok := left.(*WaitGroup); ok {
 		switch node.Property {
@@ -1061,6 +1069,9 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 func evalIdentifier(node *Identifier, env *Environment) Object {
 	if node.Value == "env" {
 		return ENVPKG
+	}
+	if node.Value == "sync" {
+		return SYNCPKG
 	}
 	if fn, ok := NativeFns[node.Value]; ok {
 		return fn
