@@ -481,6 +481,7 @@ import "Go/包名"
 - `strings` - 字符串处理
 - `strconv` - 字符串转换
 - `os` - 操作系统功能
+- `sync` - 并发同步（WaitGroup）
 
 ### 示例
 
@@ -544,7 +545,48 @@ func backgroundJob() {
 go backgroundJob()
 ```
 
-## 17. 当前关键字总览
+## 17. WaitGroup 同步
+
+Kami 支持使用 `wg.Go { ... }` 语法进行并发任务同步。
+
+### 语法
+
+```go
+import "Go/sync"
+
+wg := sync.NewWaitGroup()
+wg.Go { 任务1 }
+wg.Go { 任务2 }
+wg.Wait()
+```
+
+### 示例
+
+```go
+import "Go/fmt"
+import "Go/sync"
+
+func processTask(id) {
+    fmt.Printf("Task %d started\n", id)
+    // 模拟工作
+    fmt.Printf("Task %d completed\n", id)
+}
+
+wg := sync.NewWaitGroup()
+wg.Go { processTask(1) }
+wg.Go { processTask(2) }
+wg.Go { processTask(3) }
+wg.Wait()
+print "All tasks completed"
+```
+
+### 说明
+
+- `wg.Go { ... }` 自动处理 `wg.Add(1)` 和 `wg.Done()`
+- `wg.Wait()` 等待所有任务完成
+- 任务在独立的 goroutine 中执行
+
+## 18. 当前关键字总览
 
 ### 已实现关键字
 
