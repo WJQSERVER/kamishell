@@ -481,6 +481,10 @@ import "Go/包名"
 - `strings` - 字符串处理
 - `strconv` - 字符串转换
 - `os` - 操作系统功能
+
+### 内置包（无需 import）
+
+- `env` - 环境变量管理
 - `sync` - 并发同步（WaitGroup）
 
 ### 示例
@@ -552,8 +556,6 @@ Kami 支持使用 `wg.Go { ... }` 语法进行并发任务同步。
 ### 语法
 
 ```go
-import "Go/sync"
-
 wg := sync.NewWaitGroup()
 wg.Go { 任务1 }
 wg.Go { 任务2 }
@@ -564,7 +566,6 @@ wg.Wait()
 
 ```go
 import "Go/fmt"
-import "Go/sync"
 
 func processTask(id) {
     fmt.Printf("Task %d started\n", id)
