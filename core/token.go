@@ -51,6 +51,7 @@ const (
 	NIL       TokenType = "NIL"
 	TRUE_TOK  TokenType = "TRUE"
 	FALSE_TOK TokenType = "FALSE"
+	IMPORT    TokenType = "IMPORT"
 )
 
 type Token struct {
@@ -88,6 +89,8 @@ func LookupIdent(ident string) TokenType {
 		return TRUE_TOK
 	case "false":
 		return FALSE_TOK
+	case "import":
+		return IMPORT
 	default:
 		return IDENT
 	}

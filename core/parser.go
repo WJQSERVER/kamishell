@@ -96,6 +96,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseReturnStatement()
 	case GO:
 		stmt = p.parseGoStatement()
+	case IMPORT:
+		stmt = p.parseImportStatement()
 	case IDENT:
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			if p.peekToken.Type == ASSIGN && p.curToken.End == p.peekToken.Start {
@@ -542,6 +544,19 @@ func (p *Parser) parseGoStatement() *GoStatement {
 	} else {
 		stmt.Node = p.parseCommandStatement()
 	}
+	return stmt
+}
+
+func (p *Parser) parseImportStatement() *ImportStatement {
+	stmt := &ImportStatement{Token: p.curToken}
+	
+	// Expect a string literal for the import path
+	if p.peekToken.Type != STRING {
+		return nil
+	}
+	p.nextToken()
+	stmt.Path = p.curToken.Literal
+	
 	return stmt
 }
 

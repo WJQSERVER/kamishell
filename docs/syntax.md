@@ -464,7 +464,87 @@ target_env "app" "CGO_ENABLED=0"
 
 更详细的构建说明见 `docs/make.md`。
 
-## 15. 当前关键字总览
+## 15. Go 标准库导入
+
+Kami 支持通过 `import` 语法导入 Go 标准库函数。
+
+### 语法
+
+```go
+import "Go/包名"
+```
+
+### 已支持的包
+
+- `fmt` - 格式化输出
+- `math` - 数学函数
+- `strings` - 字符串处理
+- `strconv` - 字符串转换
+- `os` - 操作系统功能
+
+### 示例
+
+```go
+import "Go/fmt"
+import "Go/math"
+import "Go/strings"
+
+// 使用 fmt 包
+fmt.Println("Hello, Kami!")
+fmt.Printf("Name: %s, Age: %d\n", "Kami", 1)
+
+// 使用 math 包
+x := math.Sqrt(16)
+print "sqrt(16) = $x"
+
+// 使用 strings 包
+s := "Hello, World!"
+contains := strings.Contains(s, "World")
+print "contains 'World': $contains"
+```
+
+## 16. Go 协程支持
+
+Kami 支持使用 `go` 关键字启动协程。
+
+### 语法
+
+```go
+go {
+    // 协程代码块
+}
+
+go 函数名(参数)
+```
+
+### 示例
+
+```go
+import "Go/fmt"
+
+// 协程代码块
+go {
+    fmt.Println("Inside goroutine")
+    x := 10 + 20
+    fmt.Printf("Result: %d\n", x)
+}
+
+// 协程函数调用
+func backgroundJob() {
+    fmt.Println("Background job started")
+    // 模拟工作
+    i := 0
+    for i < 5 {
+        fmt.Printf("Working... %d\n", i)
+        i = i + 1
+    }
+    fmt.Println("Background job completed")
+}
+
+go backgroundJob()
+```
+
+## 17. 当前关键字总览
 
 ### 已实现关键字
 
@@ -476,6 +556,7 @@ target_env "app" "CGO_ENABLED=0"
 - `var`
 - `print`
 - `exec`
+- `import`
 - `nil`
 - `true`
 - `false`

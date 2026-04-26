@@ -451,3 +451,18 @@ func (vs *VarStatement) String() string {
 	out.WriteString(";")
 	return out.String()
 }
+
+type ImportStatement struct {
+	Token   Token // the import token
+	Path    string // import path like "Go" or "Go/fmt"
+}
+
+func (is *ImportStatement) statementNode()       {}
+func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
+func (is *ImportStatement) String() string {
+	var out strings.Builder
+	out.WriteString("import \"")
+	out.WriteString(is.Path)
+	out.WriteString("\"")
+	return out.String()
+}

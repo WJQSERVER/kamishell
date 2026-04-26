@@ -105,6 +105,315 @@ func init() {
 	}
 }
 
+// Go标准库映射表
+var goStdlib = map[string]map[string]*NativeFunction{
+	"fmt": {
+		"Println": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				// 转换参数并调用fmt.Println
+				goArgs := make([]interface{}, len(args))
+				for i, arg := range args {
+					switch v := arg.(type) {
+					case *Integer:
+						goArgs[i] = v.Value
+					case *String:
+						goArgs[i] = v.Value
+					case *Boolean:
+						goArgs[i] = v.Value
+					default:
+						goArgs[i] = arg.Inspect()
+					}
+				}
+				fmt.Println(goArgs...)
+				return NULL
+			},
+		},
+		"Printf": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) < 1 {
+					return &Error{Message: "Printf requires at least one argument"}
+				}
+				format, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Printf first argument must be a string"}
+				}
+				// 转换剩余参数
+				goArgs := make([]interface{}, len(args)-1)
+				for i := 1; i < len(args); i++ {
+					switch v := args[i].(type) {
+					case *Integer:
+						goArgs[i-1] = v.Value
+					case *String:
+						goArgs[i-1] = v.Value
+					case *Boolean:
+						goArgs[i-1] = v.Value
+					default:
+						goArgs[i-1] = args[i].Inspect()
+					}
+				}
+				fmt.Printf(format.Value, goArgs...)
+				return NULL
+			},
+		},
+		"Sprintf": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) < 1 {
+					return &Error{Message: "Sprintf requires at least one argument"}
+				}
+				format, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Sprintf first argument must be a string"}
+				}
+				// 转换剩余参数
+				goArgs := make([]interface{}, len(args)-1)
+				for i := 1; i < len(args); i++ {
+					switch v := args[i].(type) {
+					case *Integer:
+						goArgs[i-1] = v.Value
+					case *String:
+						goArgs[i-1] = v.Value
+					case *Boolean:
+						goArgs[i-1] = v.Value
+					default:
+						goArgs[i-1] = args[i].Inspect()
+					}
+				}
+				result := fmt.Sprintf(format.Value, goArgs...)
+				return &String{Value: result}
+			},
+		},
+	},
+	"math": {
+		"Sqrt": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Sqrt requires exactly one argument"}
+				}
+				var x float64
+				switch v := args[0].(type) {
+				case *Integer:
+					x = float64(v.Value)
+				case *Float:
+					x = v.Value
+				default:
+					return &Error{Message: "Sqrt argument must be a number"}
+				}
+				if x < 0 {
+					return &Error{Message: "Sqrt argument must be non-negative"}
+				}
+				// 使用牛顿法计算平方根
+				z := x
+				for i := 0; i < 10; i++ {
+					z = (z + x/z) / 2
+				}
+				return &Float{Value: z}
+			},
+		},
+		"Abs": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Abs requires exactly one argument"}
+				}
+				switch v := args[0].(type) {
+				case *Integer:
+					if v.Value < 0 {
+						return &Integer{Value: -v.Value}
+					}
+					return v
+				case *Float:
+					if v.Value < 0 {
+						return &Float{Value: -v.Value}
+					}
+					return v
+				default:
+					return &Error{Message: "Abs argument must be a number"}
+				}
+			},
+		},
+	},
+	"strings": {
+		"Contains": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Contains requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Contains first argument must be a string"}
+				}
+				substr, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Contains second argument must be a string"}
+				}
+				return nativeBoolToBooleanObject(strings.Contains(s.Value, substr.Value))
+			},
+		},
+		"HasPrefix": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "HasPrefix requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "HasPrefix first argument must be a string"}
+				}
+				prefix, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "HasPrefix second argument must be a string"}
+				}
+				return nativeBoolToBooleanObject(strings.HasPrefix(s.Value, prefix.Value))
+			},
+		},
+		"HasSuffix": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "HasSuffix requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "HasSuffix first argument must be a string"}
+				}
+				suffix, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "HasSuffix second argument must be a string"}
+				}
+				return nativeBoolToBooleanObject(strings.HasSuffix(s.Value, suffix.Value))
+			},
+		},
+		"Replace": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 3 {
+					return &Error{Message: "Replace requires exactly three arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Replace first argument must be a string"}
+				}
+				old, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Replace second argument must be a string"}
+				}
+				new, ok := args[2].(*String)
+				if !ok {
+					return &Error{Message: "Replace third argument must be a string"}
+				}
+				return &String{Value: strings.Replace(s.Value, old.Value, new.Value, -1)}
+			},
+		},
+		"Split": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Split requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Split first argument must be a string"}
+				}
+				sep, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Split second argument must be a string"}
+				}
+				parts := strings.Split(s.Value, sep.Value)
+				// 返回字符串数组（暂时用字符串表示）
+				result := "["
+				for i, part := range parts {
+					if i > 0 {
+						result += ", "
+					}
+					result += "\"" + part + "\""
+				}
+				result += "]"
+				return &String{Value: result}
+			},
+		},
+		"Join": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Join requires exactly two arguments"}
+				}
+				// 暂时只支持字符串参数
+				arr, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Join first argument must be a string"}
+				}
+				sep, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Join second argument must be a string"}
+				}
+				// 简单实现：假设数组是字符串形式
+				// 实际应该解析数组字符串
+				return &String{Value: strings.Join([]string{arr.Value}, sep.Value)}
+			},
+		},
+	},
+	"strconv": {
+		"Itoa": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Itoa requires exactly one argument"}
+				}
+				switch v := args[0].(type) {
+				case *Integer:
+					return &String{Value: fmt.Sprintf("%d", v.Value)}
+				default:
+					return &Error{Message: "Itoa argument must be an integer"}
+				}
+			},
+		},
+		"Atoi": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Atoi requires exactly one argument"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Atoi argument must be a string"}
+				}
+				var n int64
+				_, err := fmt.Sscanf(s.Value, "%d", &n)
+				if err != nil {
+					return &Error{Message: "Atoi: invalid integer string"}
+				}
+				return &Integer{Value: n}
+			},
+		},
+	},
+	"os": {
+		"Getenv": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Getenv requires exactly one argument"}
+				}
+				key, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Getenv argument must be a string"}
+				}
+				return &String{Value: os.Getenv(key.Value)}
+			},
+		},
+		"Setenv": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Setenv requires exactly two arguments"}
+				}
+				key, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Setenv first argument must be a string"}
+				}
+				value, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Setenv second argument must be a string"}
+				}
+				err := os.Setenv(key.Value, value.Value)
+				if err != nil {
+					return &Error{Message: err.Error()}
+				}
+				return NULL
+			},
+		},
+	},
+}
+
 func Eval(node Node, env *Environment) Object {
 	return EvalWithIO(node, env, os.Stdin, os.Stdout, os.Stderr)
 }
@@ -159,6 +468,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return NULL
 	case *FunctionStatement:
 		return evalFunctionStatement(node, env)
+	case *ImportStatement:
+		return evalImportStatement(node, env)
 	case *ReturnStatement:
 		return evalReturnStatement(node, env, stdin, stdout, stderr)
 	case *InfixExpression:
@@ -906,6 +1217,65 @@ func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 	}
 	env.SetObject(fs.Name, fn)
 	return NULL
+}
+
+func evalImportStatement(is *ImportStatement, env *Environment) Object {
+	path := is.Path
+	
+	// 检查是否以"Go"开头
+	if !strings.HasPrefix(path, "Go") {
+		return &Error{Message: "import path must start with 'Go'"}
+	}
+	
+	// 移除"Go"前缀
+	goPath := strings.TrimPrefix(path, "Go")
+	if goPath == "" {
+		// import "Go" - 导入整个Go标准库（暂时返回空包）
+		env.SetObject("Go", &Package{Name: "Go"})
+		return NULL
+	}
+	
+	// 移除开头的斜杠
+	goPath = strings.TrimPrefix(goPath, "/")
+	
+	// 检查是否是子包
+	if strings.Contains(goPath, "/") {
+		// 处理子包，如 "Go/net/http"
+		parts := strings.Split(goPath, "/")
+		pkgName := parts[len(parts)-1] // 使用最后一个部分作为包名
+		
+		// 检查是否有这个包的映射
+		if _, ok := goStdlib[pkgName]; ok {
+			// 创建包对象
+			pkg := &Package{Name: pkgName}
+			env.SetObject(pkgName, pkg)
+			
+			// 将包中的函数注册到环境中
+			for fnName, fn := range goStdlib[pkgName] {
+				env.SetObject(pkgName+"."+fnName, fn)
+			}
+			return NULL
+		}
+		return &Error{Message: "package not found: " + goPath}
+	}
+	
+	// 处理直接包，如 "Go/fmt"
+	pkgName := goPath
+	
+	// 检查是否有这个包的映射
+	if _, ok := goStdlib[pkgName]; ok {
+		// 创建包对象
+		pkg := &Package{Name: pkgName}
+		env.SetObject(pkgName, pkg)
+		
+		// 将包中的函数注册到环境中
+		for fnName, fn := range goStdlib[pkgName] {
+			env.SetObject(pkgName+"."+fnName, fn)
+		}
+		return NULL
+	}
+	
+	return &Error{Message: "package not found: " + goPath}
 }
 
 func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
