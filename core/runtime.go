@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"kamishell/builtin"
@@ -910,6 +911,14 @@ func evalExecStatement(es *ExecStatement, env *Environment, stdin io.Reader, std
 
 func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	n := len(ps.Commands)
+	if n == 0 {
+		return NULL
+	}
+
+	if canUseSequentialPipe(ps, env) {
+		return evalPipeStatementSequential(ps, env, stdin, stdout, stderr)
+	}
+
 	pipes := make([]*io.PipeWriter, n-1)
 	readers := make([]*io.PipeReader, n-1)
 
@@ -963,6 +972,65 @@ func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, std
 
 	if len(errs) > 0 {
 		return &Error{Message: strings.Join(errs, "; ")}
+	}
+
+	return NULL
+}
+
+func canUseSequentialPipe(ps *PipeStatement, env *Environment) bool {
+	for idx, cmd := range ps.Commands {
+		switch c := cmd.(type) {
+		case *PrintStatement:
+			continue
+		case *CommandStatement:
+			if commandRunsInProcess(c.Name, env) {
+				continue
+			}
+			return false
+		default:
+			if idx == len(ps.Commands)-1 {
+				return false
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func commandRunsInProcess(name string, env *Environment) bool {
+	if _, ok := builtin.Builtins[name]; ok {
+		return true
+	}
+	if _, ok := NativeFns[name]; ok {
+		return true
+	}
+	if val, ok := env.GetObject(name); ok {
+		switch val.(type) {
+		case *Function, *NativeFunction:
+			return true
+		}
+	}
+	return false
+}
+
+func evalPipeStatementSequential(ps *PipeStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	curStdin := stdin
+	for idx, cmd := range ps.Commands {
+		isLast := idx == len(ps.Commands)-1
+		if isLast {
+			res := EvalWithIO(cmd, env, curStdin, stdout, stderr)
+			if isError(res) {
+				return res
+			}
+			return NULL
+		}
+
+		var out bytes.Buffer
+		res := EvalWithIO(cmd, env, curStdin, &out, stderr)
+		if isError(res) {
+			return res
+		}
+		curStdin = bytes.NewReader(out.Bytes())
 	}
 
 	return NULL

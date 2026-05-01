@@ -7,6 +7,8 @@ import "strings"
 
 // EnvEntry holds a variable's value for pointer reference support.
 type EnvEntry struct {
+	Owner *Environment
+	Name  string
 	Value Object
 }
 
@@ -315,7 +317,7 @@ func (e *Environment) GetRef(name string) (*EnvEntry, bool) {
 	// Get or create entry
 	ref, ok := e.refStore[name]
 	if !ok {
-		ref = &EnvEntry{Value: e.store[name]}
+		ref = &EnvEntry{Owner: e, Name: name, Value: e.store[name]}
 		e.refStore[name] = ref
 	}
 	return ref, true
@@ -323,23 +325,17 @@ func (e *Environment) GetRef(name string) (*EnvEntry, bool) {
 
 // SetByPointer sets a value through a pointer reference.
 func (e *Environment) SetByPointer(ref *EnvEntry, val Object) {
+	if ref == nil || ref.Owner == nil || ref.Name == "" {
+		return
+	}
+
 	// Update the reference
 	ref.Value = val
-	// Sync store: find the name for this ref
-	if e.refStore != nil {
-		for name, r := range e.refStore {
-			if r == ref {
-				e.store[name] = val
-				if shouldTrackType(string(val.Type())) {
-					e.ensureTypes()
-					e.types[name] = string(val.Type())
-				}
-				return
-			}
-		}
-	}
-	// If not found in refStore, check outer scopes
-	if e.outer != nil {
-		e.outer.SetByPointer(ref, val)
+
+	owner := ref.Owner
+	owner.store[ref.Name] = val
+	if shouldTrackType(string(val.Type())) {
+		owner.ensureTypes()
+		owner.types[ref.Name] = string(val.Type())
 	}
 }
