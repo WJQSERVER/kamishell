@@ -689,13 +689,28 @@ func evalIfStatement(is *IfStatement, env *Environment, stdin io.Reader, stdout 
 func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var result Object = NULL
 	body := fs.Consequence
+	fastCondition, hasFastCondition := buildForConditionFastPath(fs.Condition)
 	for {
 		if fs.Condition != nil {
-			condition := EvalWithIO(fs.Condition, env, stdin, stdout, stderr)
-			if isError(condition) {
-				return condition
+			if hasFastCondition {
+				ok, errObj := evalFastForCondition(fastCondition, env)
+				if errObj != nil {
+					return errObj
+				}
+				if !ok {
+					break
+				}
+			} else {
+				condition := EvalWithIO(fs.Condition, env, stdin, stdout, stderr)
+				if isError(condition) {
+					return condition
+				}
+				if !isTruthy(condition) {
+					break
+				}
 			}
-			if !isTruthy(condition) {
+
+			if fs.Condition == nil {
 				break
 			}
 		}
@@ -713,6 +728,140 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 		}
 	}
 	return result
+}
+
+type forConditionFastPath struct {
+	varName  string
+	op       string
+	kind     uint8
+	intConst int64
+	fltConst float64
+	swap     bool
+}
+
+const (
+	forCondInt uint8 = iota + 1
+	forCondFloat
+)
+
+func buildForConditionFastPath(expr Expression) (forConditionFastPath, bool) {
+	infix, ok := expr.(*InfixExpression)
+	if !ok {
+		return forConditionFastPath{}, false
+	}
+
+	leftIdent, leftIsIdent := infix.Left.(*Identifier)
+	rightIdent, rightIsIdent := infix.Right.(*Identifier)
+
+	if leftIsIdent {
+		switch right := infix.Right.(type) {
+		case *IntegerLiteral:
+			return makeForIntFastPath(leftIdent.Value, right.Value, infix.Operator, false)
+		case *FloatLiteral:
+			return makeForFloatFastPath(leftIdent.Value, right.Value, infix.Operator, false)
+		}
+	}
+
+	if rightIsIdent {
+		switch left := infix.Left.(type) {
+		case *IntegerLiteral:
+			return makeForIntFastPath(rightIdent.Value, left.Value, infix.Operator, true)
+		case *FloatLiteral:
+			return makeForFloatFastPath(rightIdent.Value, left.Value, infix.Operator, true)
+		}
+	}
+
+	return forConditionFastPath{}, false
+}
+
+func makeForIntFastPath(name string, constant int64, op string, swap bool) (forConditionFastPath, bool) {
+	if !supportsFastCompareOperator(op) {
+		return forConditionFastPath{}, false
+	}
+	return forConditionFastPath{varName: name, intConst: constant, op: op, kind: forCondInt, swap: swap}, true
+}
+
+func makeForFloatFastPath(name string, constant float64, op string, swap bool) (forConditionFastPath, bool) {
+	if !supportsFastCompareOperator(op) {
+		return forConditionFastPath{}, false
+	}
+	return forConditionFastPath{varName: name, fltConst: constant, op: op, kind: forCondFloat, swap: swap}, true
+}
+
+func evalFastForCondition(spec forConditionFastPath, env *Environment) (bool, *Error) {
+	obj, ok := env.GetObject(spec.varName)
+	if !ok {
+		return false, &Error{Message: "identifier not found: " + spec.varName}
+	}
+
+	switch spec.kind {
+	case forCondInt:
+		val, ok := obj.(*Integer)
+		if !ok {
+			return false, &Error{Message: "type mismatch: " + string(obj.Type()) + " " + spec.op + " INTEGER"}
+		}
+		left, right := val.Value, spec.intConst
+		if spec.swap {
+			left, right = right, left
+		}
+		return compareInts(spec.op, left, right), nil
+	case forCondFloat:
+		var value float64
+		switch v := obj.(type) {
+		case *Float:
+			value = v.Value
+		case *Integer:
+			value = float64(v.Value)
+		default:
+			return false, &Error{Message: "type mismatch: " + string(obj.Type()) + " " + spec.op + " FLOAT"}
+		}
+		left, right := value, spec.fltConst
+		if spec.swap {
+			left, right = right, left
+		}
+		return compareFloats(spec.op, left, right), nil
+	default:
+		return false, nil
+	}
+}
+
+func supportsFastCompareOperator(op string) bool {
+	switch op {
+	case "<", ">", "==", "!=":
+		return true
+	default:
+		return false
+	}
+}
+
+func compareInts(op string, left, right int64) bool {
+	switch op {
+	case "<":
+		return left < right
+	case ">":
+		return left > right
+	case "==":
+		return left == right
+	case "!=":
+		return left != right
+	default:
+		return false
+	}
+}
+
+func compareFloats(op string, left, right float64) bool {
+	switch op {
+	case "<":
+		return left < right
+	case ">":
+		return left > right
+	case "==":
+		return left == right
+	case "!=":
+		return left != right
+	default:
+		return false
+	}
 }
 
 func evalLoopBody(body *BlockStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
