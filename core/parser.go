@@ -133,6 +133,9 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 	}
 
 	for {
+		if stmt == nil {
+			break
+		}
 		if p.peekToken.Type == PIPE {
 			stmt = p.parsePipeStatement(stmt)
 		} else if p.peekToken.Type == REDIRECT || p.peekToken.Type == APPEND {
@@ -668,6 +671,11 @@ func (p *Parser) parseVarStatement() *VarStatement {
 		p.nextToken() // move to =
 		p.nextToken() // move to expression
 		stmt.Value = p.parseExpression(LOWEST)
+	}
+
+	// var x must have type or value
+	if stmt.TypeName == "" && stmt.Value == nil {
+		return nil
 	}
 
 	if p.peekToken.Type == SEMICOLON {

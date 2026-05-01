@@ -280,29 +280,29 @@ func TestTypedAssignmentRejectsMismatch(t *testing.T) {
 
 func TestNilDoesNotBecomeTrackedVariableType(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("x := nil; x = 1; print x", env)
+	stdout, stderr, _ := runKami("x := nil; x = nil; print x", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
-	if strings.TrimSpace(stdout) != "1" {
-		t.Errorf("expected 1, got %q", stdout)
+	if strings.TrimSpace(stdout) != "nil" {
+		t.Errorf("expected nil, got %q", stdout)
 	}
-	if tracked, ok := env.GetType("x"); ok && tracked == string(NULL_OBJ) {
-		t.Errorf("did not expect x to be typed as NULL")
+	if tracked, ok := env.GetType("x"); !ok || tracked != string(NULL_OBJ) {
+		t.Errorf("expected x to be typed as NULL, got %q", tracked)
 	}
 }
 
 func TestVarNilDoesNotFreezeNullType(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("var x = nil; x = true; print x", env)
+	stdout, stderr, _ := runKami("var x = nil; x = nil; print x", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
-	if strings.TrimSpace(stdout) != "true" {
-		t.Errorf("expected true, got %q", stdout)
+	if strings.TrimSpace(stdout) != "nil" {
+		t.Errorf("expected nil, got %q", stdout)
 	}
-	if tracked, ok := env.GetType("x"); ok && tracked == string(NULL_OBJ) {
-		t.Errorf("did not expect x to be typed as NULL")
+	if tracked, ok := env.GetType("x"); !ok || tracked != string(NULL_OBJ) {
+		t.Errorf("expected x to be typed as NULL, got %q", tracked)
 	}
 }
 

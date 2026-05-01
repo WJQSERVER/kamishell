@@ -631,6 +631,9 @@ func evalReturnStatement(rs *ReturnStatement, env *Environment, stdin io.Reader,
 func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var result Object
 	for _, statement := range stmts {
+		if statement == nil {
+			continue
+		}
 		result = EvalWithIO(statement, env, stdin, stdout, stderr)
 		if errObj, ok := result.(*Error); ok {
 			env.SetObject("err", errObj)
@@ -1507,6 +1510,9 @@ func evalWaitStatement(ws *WaitStatement, env *Environment, stdin io.Reader, std
 }
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if vs == nil {
+		return &Error{Message: "invalid var statement"}
+	}
 	typeName := ""
 	if vs.TypeName != "" {
 		typeName = string(mapTypeName(vs.TypeName))
