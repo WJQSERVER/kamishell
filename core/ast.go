@@ -410,6 +410,20 @@ func (gs *GoStatement) String() string {
 	return out.String()
 }
 
+type GoExpression struct {
+	Token Token // the go token
+	Node  Node  // BlockStatement or CommandStatement or Function call
+}
+
+func (ge *GoExpression) expressionNode()      {}
+func (ge *GoExpression) TokenLiteral() string { return ge.Token.Literal }
+func (ge *GoExpression) String() string {
+	var out strings.Builder
+	out.WriteString("go ")
+	out.WriteString(ge.Node.String())
+	return out.String()
+}
+
 type ReturnStatement struct {
 	Token       Token // the return token
 	ReturnValue Expression
@@ -483,5 +497,23 @@ func (mcb *MethodCallBlockStatement) String() string {
 	out.WriteString(mcb.Method)
 	out.WriteString(" ")
 	out.WriteString(mcb.Body.String())
+	return out.String()
+}
+
+type WaitStatement struct {
+	Token   Token // the wait token
+	Timeout Expression // optional timeout in seconds
+}
+
+func (ws *WaitStatement) statementNode()       {}
+func (ws *WaitStatement) TokenLiteral() string { return ws.Token.Literal }
+func (ws *WaitStatement) String() string {
+	var out strings.Builder
+	out.WriteString("wait")
+	if ws.Timeout != nil {
+		out.WriteString("(")
+		out.WriteString(ws.Timeout.String())
+		out.WriteString(")")
+	}
 	return out.String()
 }

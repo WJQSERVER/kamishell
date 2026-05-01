@@ -15,6 +15,7 @@ const (
 	FUNCTION_OBJ     ObjectType = "FUNCTION"
 	PACKAGE_OBJ  ObjectType = "PACKAGE"
 	WAITGROUP_OBJ ObjectType = "WAITGROUP"
+	TASK_OBJ     ObjectType = "TASK"
 )
 
 type Object interface {
@@ -137,3 +138,12 @@ type WaitGroup struct {
 
 func (wg *WaitGroup) Type() ObjectType { return WAITGROUP_OBJ }
 func (wg *WaitGroup) Inspect() string  { return "WaitGroup" }
+
+type Task struct {
+	ID     int
+	Done   chan struct{}
+	Result Object
+}
+
+func (t *Task) Type() ObjectType { return TASK_OBJ }
+func (t *Task) Inspect() string  { return "Task" }

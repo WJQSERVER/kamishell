@@ -98,6 +98,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseGoStatement()
 	case IMPORT:
 		stmt = p.parseImportStatement()
+	case WAIT:
+		stmt = p.parseWaitStatement()
 	case IDENT:
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			if p.peekToken.Type == ASSIGN && p.curToken.End == p.peekToken.Start {
@@ -380,6 +382,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseNilLiteral()
 	case LPAREN:
 		leftExp = p.parseGroupedExpression()
+	case GO:
+		leftExp = p.parseGoExpression()
 	default:
 		return nil
 	}
@@ -558,6 +562,35 @@ func (p *Parser) parseGoStatement() *GoStatement {
 	} else {
 		stmt.Node = p.parseCommandStatement()
 	}
+	return stmt
+}
+
+func (p *Parser) parseGoExpression() *GoExpression {
+	expr := &GoExpression{Token: p.curToken}
+	p.nextToken()
+	if p.curToken.Type == LBRACE {
+		expr.Node = p.parseBlockStatement()
+	} else if p.curToken.Type == IDENT && p.peekToken.Type == LPAREN {
+		expr.Node = p.parseExpressionStatement()
+	} else {
+		expr.Node = p.parseCommandStatement()
+	}
+	return expr
+}
+
+func (p *Parser) parseWaitStatement() *WaitStatement {
+	stmt := &WaitStatement{Token: p.curToken}
+	
+	// Check if there's a timeout argument: wait(10)
+	if p.peekToken.Type == LPAREN {
+		p.nextToken() // move to (
+		p.nextToken() // move to timeout value
+		stmt.Timeout = p.parseExpression(LOWEST)
+		if p.peekToken.Type == RPAREN {
+			p.nextToken() // move to )
+		}
+	}
+	
 	return stmt
 }
 

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -446,15 +447,57 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *GoStatement:
 		id := builtin.RegisterJob(node.String())
 		asyncEnv := env.Clone()
+		task := &Task{ID: id, Done: make(chan struct{})}
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					task.Result = &Error{Message: fmt.Sprintf("goroutine panic: %v", r)}
+					close(task.Done)
+					builtin.CompleteJobWithResult(id, false, fmt.Sprintf("panic: %v", r))
+				}
+			}()
 			result := EvalWithIO(node.Node, asyncEnv, stdin, stdout, stderr)
+			// Unwrap ReturnValue to get the actual value
+			if rv, ok := result.(*ReturnValue); ok {
+				task.Result = rv.Value
+			} else {
+				task.Result = result
+			}
+			close(task.Done)
 			if isError(result) {
 				builtin.CompleteJobWithResult(id, false, result.Inspect())
 				return
 			}
 			builtin.CompleteJobWithResult(id, true, "")
 		}()
-		return NULL
+		return task
+	case *GoExpression:
+		id := builtin.RegisterJob(node.String())
+		asyncEnv := env.Clone()
+		task := &Task{ID: id, Done: make(chan struct{})}
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					task.Result = &Error{Message: fmt.Sprintf("goroutine panic: %v", r)}
+					close(task.Done)
+					builtin.CompleteJobWithResult(id, false, fmt.Sprintf("panic: %v", r))
+				}
+			}()
+			result := EvalWithIO(node.Node, asyncEnv, stdin, stdout, stderr)
+			// Unwrap ReturnValue to get the actual value
+			if rv, ok := result.(*ReturnValue); ok {
+				task.Result = rv.Value
+			} else {
+				task.Result = result
+			}
+			close(task.Done)
+			if isError(result) {
+				builtin.CompleteJobWithResult(id, false, result.Inspect())
+				return
+			}
+			builtin.CompleteJobWithResult(id, true, "")
+		}()
+		return task
 	case *BackgroundStatement:
 		id := builtin.RegisterJob(node.String())
 		asyncEnv := env.Clone()
@@ -473,6 +516,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalImportStatement(node, env)
 	case *MethodCallBlockStatement:
 		return evalMethodCallBlock(node, env, stdin, stdout, stderr)
+	case *WaitStatement:
+		return evalWaitStatement(node, env, stdin, stdout, stderr)
 	case *ReturnStatement:
 		return evalReturnStatement(node, env, stdin, stdout, stderr)
 	case *InfixExpression:
@@ -984,12 +1029,55 @@ func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 					if !ok {
 						return &Error{Message: "invalid WaitGroup"}
 					}
+					if len(args) > 0 {
+						if timeout, ok := args[0].(*Integer); ok {
+							done := make(chan struct{})
+							go func() { realWg.Wait(); close(done) }()
+							select {
+							case <-done:
+								return NULL
+							case <-time.After(time.Duration(timeout.Value) * time.Second):
+								return &Error{Message: "WaitGroup timeout"}
+							}
+						}
+					}
 					realWg.Wait()
 					return NULL
 				},
 			}
 		default:
 			return &Error{Message: "unknown method " + node.Property + " on WaitGroup"}
+		}
+	}
+
+	// Handle Task method access (e.g., t.Wait)
+	if task, ok := left.(*Task); ok {
+		switch node.Property {
+		case "Wait":
+			return &NativeFunction{
+				Fn: func(env *Environment, args ...Object) Object {
+					if len(args) > 0 {
+						if timeout, ok := args[0].(*Integer); ok {
+							select {
+							case <-task.Done:
+								if isError(task.Result) {
+									return task.Result
+								}
+								return task.Result
+							case <-time.After(time.Duration(timeout.Value) * time.Second):
+								return &Error{Message: "Task timeout"}
+							}
+						}
+					}
+					<-task.Done
+					if isError(task.Result) {
+						return task.Result
+					}
+					return task.Result
+				},
+			}
+		default:
+			return &Error{Message: "unknown method " + node.Property + " on Task"}
 		}
 	}
 
@@ -1371,6 +1459,50 @@ func evalMethodCallBlock(mcb *MethodCallBlockStatement, env *Environment, stdin 
 		}
 	default:
 		return &Error{Message: fmt.Sprintf("method call with block not supported on %s", obj.Type())}
+	}
+}
+
+func evalWaitStatement(ws *WaitStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	// Check for timeout
+	if ws.Timeout != nil {
+		timeoutVal := EvalWithIO(ws.Timeout, env, stdin, stdout, stderr)
+		if isError(timeoutVal) {
+			return timeoutVal
+		}
+		if timeout, ok := timeoutVal.(*Integer); ok {
+			deadline := time.Now().Add(time.Duration(timeout.Value) * time.Second)
+			for {
+				allDone := true
+				for _, job := range builtin.Jobs {
+					if job.Status == "Running" {
+						allDone = false
+						break
+					}
+				}
+				if allDone {
+					return NULL
+				}
+				if time.Now().After(deadline) {
+					return &Error{Message: "Wait timeout"}
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	}
+	
+	// No timeout - wait for all jobs
+	for {
+		allDone := true
+		for _, job := range builtin.Jobs {
+			if job.Status == "Running" {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			return NULL
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
