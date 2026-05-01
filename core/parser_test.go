@@ -77,14 +77,13 @@ func TestParseCommandStatement(t *testing.T) {
 
 func TestParseVarStatement(t *testing.T) {
 	input := `var count int = 42
-var name string
-var ready = true`
+var name string`
 	l := NewLexer(input)
 	p := NewParser(l)
 	program := p.ParseProgram()
 
-	if len(program.Statements) != 3 {
-		t.Fatalf("program.Statements does not contain 3 statements. got=%d", len(program.Statements))
+	if len(program.Statements) != 2 {
+		t.Fatalf("program.Statements does not contain 2 statements. got=%d", len(program.Statements))
 	}
 
 	stmt0, ok := program.Statements[0].(*VarStatement)
@@ -101,14 +100,6 @@ var ready = true`
 	}
 	if stmt1.Name != "name" || stmt1.TypeName != "string" || stmt1.Value != nil {
 		t.Fatalf("unexpected second var statement: %#v", stmt1)
-	}
-
-	stmt2, ok := program.Statements[2].(*VarStatement)
-	if !ok {
-		t.Fatalf("stmt2 is not *VarStatement. got=%T", program.Statements[2])
-	}
-	if stmt2.Name != "ready" || stmt2.TypeName != "" || stmt2.Value.String() != "true" {
-		t.Fatalf("unexpected third var statement: %#v", stmt2)
 	}
 }
 

@@ -660,22 +660,18 @@ func (p *Parser) parseVarStatement() *VarStatement {
 	p.nextToken()
 	stmt.Name = p.curToken.Literal
 
-	// Optional type
-	if p.peekToken.Type == IDENT {
-		p.nextToken()
-		stmt.TypeName = p.curToken.Literal
+	// Type is required for var
+	if p.peekToken.Type != IDENT {
+		return nil  // var x without type is error
 	}
+	p.nextToken()
+	stmt.TypeName = p.curToken.Literal
 
 	// Optional value
 	if p.peekToken.Type == ASSIGN {
 		p.nextToken() // move to =
 		p.nextToken() // move to expression
 		stmt.Value = p.parseExpression(LOWEST)
-	}
-
-	// var x must have type or value
-	if stmt.TypeName == "" && stmt.Value == nil {
-		return nil
 	}
 
 	if p.peekToken.Type == SEMICOLON {

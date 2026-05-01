@@ -240,7 +240,7 @@ func normalizeValue(val any) (Object, string, bool) {
 }
 
 func shouldTrackType(typeName string) bool {
-	return typeName != ""
+	return typeName != "" && typeName != string(NULL_OBJ)
 }
 
 func clonePackageStore(src map[string]map[string]string) map[string]map[string]string {

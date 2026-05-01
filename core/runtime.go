@@ -537,6 +537,10 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		}
 
 		if node.Token.Literal == ":=" {
+			// nil is untyped, cannot be used with :=
+			if val.Type() == NULL_OBJ {
+				return &Error{Message: "untyped nil cannot be used with :="}
+			}
 			typeName := ""
 			if shouldTrackType(string(val.Type())) {
 				typeName = string(val.Type())
@@ -545,8 +549,15 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		} else {
 			// Fast path: direct lookup in current scope
 			if _, hasIt := env.store[node.Name]; hasIt {
-				if typeName, hasType := env.types[node.Name]; hasType && typeName != "" && string(val.Type()) != typeName {
-					return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), typeName)}
+				if typeName, hasType := env.types[node.Name]; hasType && typeName != "" {
+					// nil can only be assigned to reference types (FUNCTION, ERROR)
+					if val.Type() == NULL_OBJ {
+						if typeName != string(FUNCTION_OBJ) && typeName != string(ERROR_OBJ) {
+							return &Error{Message: fmt.Sprintf("cannot assign nil to variable of type %s", typeName)}
+						}
+					} else if string(val.Type()) != typeName {
+						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), typeName)}
+					}
 				}
 				env.store[node.Name] = val
 				if _, hasType := env.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
@@ -555,8 +566,15 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 				}
 			} else {
 				scope, expectedType, ok := env.ResolveForAssign(node.Name)
-				if ok && expectedType != "" && string(val.Type()) != expectedType {
-					return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
+				if ok && expectedType != "" {
+					// nil can only be assigned to reference types (FUNCTION, ERROR)
+					if val.Type() == NULL_OBJ {
+						if expectedType != string(FUNCTION_OBJ) && expectedType != string(ERROR_OBJ) {
+							return &Error{Message: fmt.Sprintf("cannot assign nil to variable of type %s", expectedType)}
+						}
+					} else if string(val.Type()) != expectedType {
+						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
+					}
 				}
 				if scope != nil {
 					scope.store[node.Name] = val
@@ -1544,8 +1562,15 @@ func evaluateDeclaredValue(vs *VarStatement, env *Environment, stdin io.Reader, 
 		return nil, val.(*Error)
 	}
 
-	if typeName != "" && string(val.Type()) != typeName {
-		return nil, &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
+	if typeName != "" {
+		// nil can only be assigned to reference types (FUNCTION, ERROR)
+		if val.Type() == NULL_OBJ {
+			if typeName != string(FUNCTION_OBJ) && typeName != string(ERROR_OBJ) {
+				return nil, &Error{Message: fmt.Sprintf("cannot initialize %s with nil", typeName)}
+			}
+		} else if string(val.Type()) != typeName {
+			return nil, &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
+		}
 	}
 
 	return val, nil
@@ -1559,6 +1584,10 @@ func mapTypeName(name string) ObjectType {
 		return STRING_OBJ
 	case "bool", "boolean":
 		return BOOLEAN_OBJ
+	case "func", "function":
+		return FUNCTION_OBJ
+	case "error":
+		return ERROR_OBJ
 	default:
 		return ObjectType(strings.ToUpper(name))
 	}
