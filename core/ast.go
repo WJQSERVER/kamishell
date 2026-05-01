@@ -104,6 +104,25 @@ func (as *AssignStatement) String() string {
 	return out.String()
 }
 
+type PointerAssignStatement struct {
+	Token Token // the = token
+	Target Expression // the *p expression
+	Value  Expression
+}
+
+func (pas *PointerAssignStatement) statementNode()       {}
+func (pas *PointerAssignStatement) TokenLiteral() string { return pas.Token.Literal }
+func (pas *PointerAssignStatement) String() string {
+	var out strings.Builder
+	out.WriteString(pas.Target.String())
+	out.WriteString(" = ")
+	if pas.Value != nil {
+		out.WriteString(pas.Value.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
 type Identifier struct {
 	Token Token
 	Value string
@@ -222,6 +241,23 @@ func (es *ExecStatement) String() string {
 		out.WriteString(es.CommandStr.String())
 	}
 	out.WriteString(";")
+	return out.String()
+}
+
+type PrefixExpression struct {
+	Token    Token // The operator token, e.g. & or *
+	Operator string
+	Right    Expression
+}
+
+func (pe *PrefixExpression) expressionNode()      {}
+func (pe *PrefixExpression) TokenLiteral() string { return pe.Token.Literal }
+func (pe *PrefixExpression) String() string {
+	var out strings.Builder
+	out.WriteString("(")
+	out.WriteString(pe.Operator)
+	out.WriteString(pe.Right.String())
+	out.WriteString(")")
 	return out.String()
 }
 

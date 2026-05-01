@@ -100,6 +100,30 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseImportStatement()
 	case WAIT:
 		stmt = p.parseWaitStatement()
+	case ASTERISK:
+		// *p = val (pointer dereference assignment)
+		if p.peekToken.Type == IDENT {
+			// Look ahead to see if this is *p = val
+			// Save state including lexer
+			savedCur := p.curToken
+			savedPeek := p.peekToken
+			savedLexer := p.l.GetPosition()
+			p.nextToken() // move to p
+			isAssign := p.peekToken.Type == ASSIGN
+			// Restore state
+			p.curToken = savedCur
+			p.peekToken = savedPeek
+			p.l.SetPosition(savedLexer)
+			if isAssign {
+				// This is *p = val
+				stmt = p.parsePointerAssignStatement()
+			} else {
+				// Not an assignment, parse as expression
+				stmt = p.parseExpressionStatement()
+			}
+		} else {
+			stmt = p.parseExpressionStatement()
+		}
 	case IDENT:
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			if p.peekToken.Type == ASSIGN && p.curToken.End == p.peekToken.Start {
@@ -218,6 +242,27 @@ func (p *Parser) parseAssignStatement() *AssignStatement {
 		p.nextToken()
 	}
 
+	return stmt
+}
+
+func (p *Parser) parsePointerAssignStatement() *PointerAssignStatement {
+	stmt := &PointerAssignStatement{Token: p.curToken}
+	
+	// curToken is *, peekToken is p
+	// Parse *p as the target
+	target := &PrefixExpression{Token: p.curToken, Operator: "*"}
+	p.nextToken() // move to p
+	target.Right = p.parseIdentifier()
+	stmt.Target = target
+	
+	p.nextToken() // move to =
+	p.nextToken() // move to start of expression
+	stmt.Value = p.parseExpression(LOWEST)
+	
+	if p.peekToken.Type == SEMICOLON {
+		p.nextToken()
+	}
+	
 	return stmt
 }
 
@@ -387,6 +432,10 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseGroupedExpression()
 	case GO:
 		leftExp = p.parseGoExpression()
+	case AMPERSAND:
+		leftExp = p.parseAddressExpression()
+	case ASTERISK:
+		leftExp = p.parseDereferenceExpression()
 	default:
 		return nil
 	}
@@ -691,6 +740,20 @@ func (p *Parser) parseGroupedExpression() Expression {
 	}
 	p.nextToken()
 
+	return exp
+}
+
+func (p *Parser) parseAddressExpression() Expression {
+	exp := &PrefixExpression{Token: p.curToken, Operator: "&"}
+	p.nextToken()
+	exp.Right = p.parseExpression(PREFIX)
+	return exp
+}
+
+func (p *Parser) parseDereferenceExpression() Expression {
+	exp := &PrefixExpression{Token: p.curToken, Operator: "*"}
+	p.nextToken()
+	exp.Right = p.parseExpression(PREFIX)
 	return exp
 }
 

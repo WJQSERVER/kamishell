@@ -524,12 +524,16 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
 		return evalInfixExpression(node.Operator, left, right)
+	case *PrefixExpression:
+		return evalPrefixExpression(node, env, stdin, stdout, stderr)
 	case *MemberExpression:
 		return evalMemberExpression(node, env)
 	case *CallExpression:
 		return evalCallExpression(node, env, stdin, stdout, stderr)
 	case *VarStatement:
 		return evalVarStatement(node, env, stdin, stdout, stderr)
+	case *PointerAssignStatement:
+		return evalPointerAssignStatement(node, env, stdin, stdout, stderr)
 	case *AssignStatement:
 		val := EvalWithIO(node.Value, env, stdin, stdout, stderr)
 		if isError(val) {
@@ -707,6 +711,73 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 		}
 	}
 	return result
+}
+
+func evalPrefixExpression(node *PrefixExpression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	switch node.Operator {
+	case "&":
+		// Address-of operator
+		if ident, ok := node.Right.(*Identifier); ok {
+			ref, ok := env.GetRef(ident.Value)
+			if !ok {
+				return &Error{Message: "identifier not found: " + ident.Value}
+			}
+			return &Pointer{Ref: ref, Env: env}
+		}
+		return &Error{Message: "cannot take address of non-identifier"}
+	case "*":
+		// Dereference operator
+		val := EvalWithIO(node.Right, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		ptr, ok := val.(*Pointer)
+		if !ok {
+			return &Error{Message: "cannot dereference non-pointer"}
+		}
+		if ptr.Ref == nil {
+			return &Error{Message: "nil pointer dereference"}
+		}
+		return ptr.Ref.Value
+	default:
+		return &Error{Message: "unknown prefix operator: " + node.Operator}
+	}
+}
+
+func evalPointerAssignStatement(node *PointerAssignStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	// The target is *p, we need to evaluate p to get the pointer
+	prefixExpr, ok := node.Target.(*PrefixExpression)
+	if !ok || prefixExpr.Operator != "*" {
+		return &Error{Message: "invalid pointer assignment target"}
+	}
+	
+	// Evaluate p (the right side of *)
+	ptrVal := EvalWithIO(prefixExpr.Right, env, stdin, stdout, stderr)
+	if isError(ptrVal) {
+		return ptrVal
+	}
+	
+	ptr, ok := ptrVal.(*Pointer)
+	if !ok {
+		return &Error{Message: "cannot assign to non-pointer"}
+	}
+	
+	if ptr.Ref == nil {
+		return &Error{Message: "nil pointer dereference"}
+	}
+	
+	// Evaluate the value
+	if node.Value == nil {
+		return &Error{Message: "pointer assign: value expression is nil"}
+	}
+	val := EvalWithIO(node.Value, env, stdin, stdout, stderr)
+	if isError(val) {
+		return val
+	}
+	
+	// Assign through pointer - use the pointer's original env
+	ptr.Env.SetByPointer(ptr.Ref, val)
+	return val
 }
 
 func evalInfixExpression(operator string, left, right Object) Object {

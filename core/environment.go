@@ -5,6 +5,11 @@ import "maps"
 import "os"
 import "strings"
 
+// EnvEntry holds a variable's value for pointer reference support.
+type EnvEntry struct {
+	Value Object
+}
+
 func NewEnvironment() *Environment {
 	environ := os.Environ()
 	s := make(map[string]Object, len(environ))
@@ -40,6 +45,7 @@ func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environm
 
 type Environment struct {
 	store        map[string]Object
+	refStore     map[string]*EnvEntry // pointer reference storage (lazy)
 	types        map[string]string
 	outer        *Environment
 	packageStore map[string]map[string]string
@@ -115,6 +121,12 @@ func (e *Environment) SetWithType(name string, val Object, typeName string) {
 
 func (e *Environment) SetObject(name string, val Object) {
 	e.store[name] = val
+	// Sync refStore if entry exists
+	if e.refStore != nil {
+		if ref, ok := e.refStore[name]; ok {
+			ref.Value = val
+		}
+	}
 	if val != nil {
 		typeName := string(val.Type())
 		if shouldTrackType(typeName) {
@@ -282,5 +294,52 @@ func (e *Environment) ensurePackageStore() {
 func (e *Environment) ensureTypes() {
 	if e.types == nil {
 		e.types = make(map[string]string)
+	}
+}
+
+// GetRef returns an EnvEntry for pointer operations.
+// Creates the entry in refStore if it doesn't exist.
+func (e *Environment) GetRef(name string) (*EnvEntry, bool) {
+	// Check if variable exists in store
+	if _, ok := e.store[name]; !ok {
+		// Check outer scopes
+		if e.outer != nil {
+			return e.outer.GetRef(name)
+		}
+		return nil, false
+	}
+	// Ensure refStore exists
+	if e.refStore == nil {
+		e.refStore = make(map[string]*EnvEntry)
+	}
+	// Get or create entry
+	ref, ok := e.refStore[name]
+	if !ok {
+		ref = &EnvEntry{Value: e.store[name]}
+		e.refStore[name] = ref
+	}
+	return ref, true
+}
+
+// SetByPointer sets a value through a pointer reference.
+func (e *Environment) SetByPointer(ref *EnvEntry, val Object) {
+	// Update the reference
+	ref.Value = val
+	// Sync store: find the name for this ref
+	if e.refStore != nil {
+		for name, r := range e.refStore {
+			if r == ref {
+				e.store[name] = val
+				if shouldTrackType(string(val.Type())) {
+					e.ensureTypes()
+					e.types[name] = string(val.Type())
+				}
+				return
+			}
+		}
+	}
+	// If not found in refStore, check outer scopes
+	if e.outer != nil {
+		e.outer.SetByPointer(ref, val)
 	}
 }

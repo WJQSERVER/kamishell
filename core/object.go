@@ -147,3 +147,16 @@ type Task struct {
 
 func (t *Task) Type() ObjectType { return TASK_OBJ }
 func (t *Task) Inspect() string  { return "Task" }
+
+type Pointer struct {
+	Ref *EnvEntry
+	Env *Environment
+}
+
+func (p *Pointer) Type() ObjectType { return "POINTER" }
+func (p *Pointer) Inspect() string {
+	if p.Ref == nil {
+		return "<nil pointer>"
+	}
+	return "&" + p.Ref.Value.Inspect()
+}

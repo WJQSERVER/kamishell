@@ -115,3 +115,87 @@ func mustParseBenchmarkProgram(b *testing.B, input string) *Program {
 	}
 	return program
 }
+
+// Pointer operation benchmarks
+
+func BenchmarkPointerAddressOf(b *testing.B) {
+	// Benchmark &x (address-of)
+	program := mustParseBenchmarkProgram(b, `x := 42; p := &x; print *p`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`x := 42; p := &x; print *p`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkPointerDereference(b *testing.B) {
+	// Benchmark *p (dereference) - read only
+	program := mustParseBenchmarkProgram(b, `x := 42; p := &x; val := *p; print val`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`x := 42; p := &x; val := *p; print val`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkPointerAssign(b *testing.B) {
+	// Benchmark *p = val (pointer assignment)
+	program := mustParseBenchmarkProgram(b, `x := 42; p := &x; *p = 100; print x`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`x := 42; p := &x; *p = 100; print x`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkPointerPassToFunction(b *testing.B) {
+	// Benchmark passing pointer to function
+	program := mustParseBenchmarkProgram(b, `func inc(p) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`func inc(p) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkPointerVsDirectAssign(b *testing.B) {
+	// Compare: direct assignment vs pointer assignment
+	b.Run("DirectAssign", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 0; x = 100; print x`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+	b.Run("PointerAssign", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 0; p := &x; *p = 100; print x`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+}

@@ -28,6 +28,7 @@ const (
 	NEQ TokenType = "!="
 	PLUS TokenType = "+"
 	MINUS TokenType = "-"
+	ASTERISK TokenType = "*"
 	SEMICOLON TokenType = ";"
 	COMMA TokenType = ","
 	DOT TokenType = "."
