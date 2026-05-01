@@ -585,6 +585,56 @@ print "All tasks completed"
 
 - `wg.Go { ... }` 自动处理 `wg.Add(1)` 和 `wg.Done()`
 - `wg.Wait()` 等待所有任务完成
+- `wg.Wait(10)` 等待最多 10 秒，超时返回错误
+
+## 18. Task/Future 并发模型
+
+Kami 支持通过 `go { return val }` 创建带返回值的异步任务。
+
+### 语法
+
+```go
+t := go { return 表达式 }
+result := t.Wait()
+result := t.Wait(超时秒数)
+```
+
+### 示例
+
+```go
+import "Go/fmt"
+
+// 创建带返回值的任务
+t1 := go { return 42 }
+t2 := go { return 100 }
+
+// 等待结果
+r1 := t1.Wait()
+r2 := t2.Wait()
+fmt.Printf("r1=%d r2=%d\n", r1, r2)
+
+// 带超时等待
+t := go { return slowTask() }
+result := t.Wait(10)  // 最多等待 10 秒
+```
+
+### wait 命令
+
+```go
+go { task1() }
+go { task2() }
+go { task3() }
+wait           // 等待所有任务完成
+wait(10)       // 等待最多 10 秒
+```
+
+### 说明
+
+- `go { return val }` 返回 Task 对象
+- `t.Wait()` 等待任务完成并返回结果
+- `t.Wait(N)` 等待最多 N 秒，超时返回错误
+- `wait` 命令等待所有 goroutine 完成
+- `wait(N)` 带超时的全局等待
 - 任务在独立的 goroutine 中执行
 
 ## 18. 当前关键字总览
