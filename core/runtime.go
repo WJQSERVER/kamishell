@@ -688,6 +688,7 @@ func evalIfStatement(is *IfStatement, env *Environment, stdin io.Reader, stdout 
 
 func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var result Object = NULL
+	body := fs.Consequence
 	for {
 		if fs.Condition != nil {
 			condition := EvalWithIO(fs.Condition, env, stdin, stdout, stderr)
@@ -699,7 +700,7 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 			}
 		}
 
-		result = EvalWithIO(fs.Consequence, env, stdin, stdout, stderr)
+		result = evalLoopBody(body, env, stdin, stdout, stderr)
 		if isError(result) {
 			return result
 		}
@@ -709,6 +710,26 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 
 		if fs.Condition == nil {
 			break
+		}
+	}
+	return result
+}
+
+func evalLoopBody(body *BlockStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if body == nil {
+		return NULL
+	}
+	var result Object = NULL
+	for _, statement := range body.Statements {
+		if statement == nil {
+			continue
+		}
+		result = EvalWithIO(statement, env, stdin, stdout, stderr)
+		if isError(result) {
+			return result
+		}
+		if _, ok := result.(*ReturnValue); ok {
+			return result
 		}
 	}
 	return result
