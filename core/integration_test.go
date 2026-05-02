@@ -445,3 +445,25 @@ func TestEnvGetArchNoArgs(t *testing.T) {
 		t.Errorf("expected 'expects no arguments' error, got %q", stderr)
 	}
 }
+
+func TestPointerAssignComplexExpression(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("x := 10; p := &x; *p = *p + 5; print x", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "15" {
+		t.Errorf("expected 15, got %q", stdout)
+	}
+}
+
+func TestPointerAssignWithFunction(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("func inc(p) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "1" {
+		t.Errorf("expected 1, got %q", stdout)
+	}
+}

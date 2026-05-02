@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"kamishell/builtin"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -204,12 +205,7 @@ var goStdlib = map[string]map[string]*NativeFunction{
 				if x < 0 {
 					return &Error{Message: "Sqrt argument must be non-negative"}
 				}
-				// 使用牛顿法计算平方根
-				z := x
-				for i := 0; i < 10; i++ {
-					z = (z + x/z) / 2
-				}
-				return &Float{Value: z}
+				return &Float{Value: math.Sqrt(x)}
 			},
 		},
 		"Abs": &NativeFunction{
@@ -334,7 +330,6 @@ var goStdlib = map[string]map[string]*NativeFunction{
 				if len(args) != 2 {
 					return &Error{Message: "Join requires exactly two arguments"}
 				}
-				// 暂时只支持字符串参数
 				arr, ok := args[0].(*String)
 				if !ok {
 					return &Error{Message: "Join first argument must be a string"}
@@ -343,8 +338,6 @@ var goStdlib = map[string]map[string]*NativeFunction{
 				if !ok {
 					return &Error{Message: "Join second argument must be a string"}
 				}
-				// 简单实现：假设数组是字符串形式
-				// 实际应该解析数组字符串
 				return &String{Value: strings.Join([]string{arr.Value}, sep.Value)}
 			},
 		},
@@ -1765,7 +1758,6 @@ func evalMethodCallBlock(mcb *MethodCallBlockStatement, env *Environment, stdin 
 	case *WaitGroup:
 		switch mcb.Method {
 		case "Go":
-			// Get the actual sync.WaitGroup
 			wg, ok := o.Wg.(*sync.WaitGroup)
 			if !ok {
 				return &Error{Message: "invalid WaitGroup"}
@@ -1773,7 +1765,12 @@ func evalMethodCallBlock(mcb *MethodCallBlockStatement, env *Environment, stdin 
 			wg.Add(1)
 			asyncEnv := env.Clone()
 			go func() {
-				defer wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Fprintf(stderr, "panic in wg.Go: %v\n", r)
+					}
+					wg.Done()
+				}()
 				EvalWithIO(mcb.Body, asyncEnv, stdin, stdout, stderr)
 			}()
 			return NULL
@@ -1793,7 +1790,6 @@ func evalMethodCallBlock(mcb *MethodCallBlockStatement, env *Environment, stdin 
 }
 
 func evalWaitStatement(ws *WaitStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	// Check for timeout
 	if ws.Timeout != nil {
 		timeoutVal := EvalWithIO(ws.Timeout, env, stdin, stdout, stderr)
 		if isError(timeoutVal) {
@@ -1802,14 +1798,7 @@ func evalWaitStatement(ws *WaitStatement, env *Environment, stdin io.Reader, std
 		if timeout, ok := timeoutVal.(*Integer); ok {
 			deadline := time.Now().Add(time.Duration(timeout.Value) * time.Second)
 			for {
-				allDone := true
-				for _, job := range builtin.Jobs {
-					if job.Status == "Running" {
-						allDone = false
-						break
-					}
-				}
-				if allDone {
+				if allJobsDone() {
 					return NULL
 				}
 				if time.Now().After(deadline) {
@@ -1819,21 +1808,24 @@ func evalWaitStatement(ws *WaitStatement, env *Environment, stdin io.Reader, std
 			}
 		}
 	}
-	
-	// No timeout - wait for all jobs
+
 	for {
-		allDone := true
-		for _, job := range builtin.Jobs {
-			if job.Status == "Running" {
-				allDone = false
-				break
-			}
-		}
-		if allDone {
+		if allJobsDone() {
 			return NULL
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+func allJobsDone() bool {
+	builtin.JobsMu.Lock()
+	defer builtin.JobsMu.Unlock()
+	for _, job := range builtin.Jobs {
+		if job.Status == "Running" {
+			return false
+		}
+	}
+	return true
 }
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
