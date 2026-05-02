@@ -25,11 +25,11 @@ func NewEnvironment() *Environment {
 }
 
 func NewEnclosedEnvironment(outer *Environment) *Environment {
-	return &Environment{store: make(map[string]Object), types: make(map[string]string), outer: outer, packageStore: outerPackageStore(outer)}
+	return &Environment{store: make(map[string]Object), outer: outer, packageStore: outerPackageStore(outer)}
 }
 
 func NewScriptEnvironment(outer *Environment) *Environment {
-	return &Environment{store: make(map[string]Object), types: make(map[string]string), outer: outer}
+	return &Environment{store: make(map[string]Object), outer: outer}
 }
 
 func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environment {
@@ -39,7 +39,6 @@ func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environm
 	}
 	return &Environment{
 		store:        make(map[string]Object, storeCap),
-		types:        make(map[string]string, storeCap),
 		outer:        outer,
 		packageStore: outerPackageStore(outer),
 	}
@@ -59,10 +58,10 @@ func (e *Environment) Clone() *Environment {
 	}
 	clone := &Environment{
 		store:        make(map[string]Object, len(e.store)),
-		types:        make(map[string]string, len(e.types)),
 		packageStore: clonePackageStore(e.packageStore),
 	}
 	if len(e.types) > 0 {
+		clone.types = make(map[string]string, len(e.types))
 		maps.Copy(clone.types, e.types)
 	}
 	if e.outer != nil {
@@ -142,6 +141,7 @@ func (e *Environment) Assign(name string, val Object) {
 	if scope := e.scopeWithValue(name); scope != nil {
 		scope.store[name] = val
 		if _, ok := scope.types[name]; !ok && shouldTrackType(string(val.Type())) {
+			scope.ensureTypes()
 			scope.types[name] = string(val.Type())
 		}
 		return
@@ -222,14 +222,14 @@ func (e *Environment) DeletePackageValue(pkg, name string) bool {
 }
 
 func (e *Environment) PackageSnapshot(pkg string) map[string]string {
-	snapshot := make(map[string]string)
 	if e.packageStore == nil || pkg == "" {
-		return snapshot
+		return make(map[string]string)
 	}
 	values, ok := e.packageStore[pkg]
 	if !ok {
-		return snapshot
+		return make(map[string]string)
 	}
+	snapshot := make(map[string]string, len(values))
 	maps.Copy(snapshot, values)
 	return snapshot
 }
