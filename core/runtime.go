@@ -512,6 +512,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalMethodCallBlock(node, env, stdin, stdout, stderr)
 	case *WaitStatement:
 		return evalWaitStatement(node, env, stdin, stdout, stderr)
+	case *SwitchStatement:
+		return evalSwitchStatement(node, env, stdin, stdout, stderr)
 	case *ReturnStatement:
 		return evalReturnStatement(node, env, stdin, stdout, stderr)
 	case *InfixExpression:
@@ -1826,6 +1828,61 @@ func allJobsDone() bool {
 		}
 	}
 	return true
+}
+
+func evalSwitchStatement(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var tagVal Object
+	if ss.Tag != nil {
+		tagVal = EvalWithIO(ss.Tag, env, stdin, stdout, stderr)
+		if isError(tagVal) {
+			return tagVal
+		}
+	}
+
+	var defaultClause *CaseClause
+	for i := range ss.Cases {
+		c := &ss.Cases[i]
+
+		if c.Values == nil {
+			defaultClause = c
+			continue
+		}
+
+		// tagless switch: case condition is a bool expression
+		if tagVal == nil {
+			for _, v := range c.Values {
+				result := EvalWithIO(v, env, stdin, stdout, stderr)
+				if isError(result) {
+					return result
+				}
+				if isTruthy(result) {
+					return EvalWithIO(c.Body, env, stdin, stdout, stderr)
+				}
+			}
+			continue
+		}
+
+		// tagged switch: compare tag == case value
+		for _, v := range c.Values {
+			caseVal := EvalWithIO(v, env, stdin, stdout, stderr)
+			if isError(caseVal) {
+				return caseVal
+			}
+			eq := evalInfixExpression("==", tagVal, caseVal)
+			if isError(eq) {
+				return eq
+			}
+			if eq == TRUE {
+				return EvalWithIO(c.Body, env, stdin, stdout, stderr)
+			}
+		}
+	}
+
+	if defaultClause != nil {
+		return EvalWithIO(defaultClause.Body, env, stdin, stdout, stderr)
+	}
+
+	return NULL
 }
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {

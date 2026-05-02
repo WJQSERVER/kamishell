@@ -370,6 +370,55 @@ func (fs *ForStatement) String() string {
 	return out.String()
 }
 
+type SwitchStatement struct {
+	Token Token       // the switch token
+	Tag   Expression  // optional, nil for tagless switch
+	Cases []CaseClause
+}
+
+func (ss *SwitchStatement) statementNode()       {}
+func (ss *SwitchStatement) TokenLiteral() string { return ss.Token.Literal }
+func (ss *SwitchStatement) String() string {
+	var out strings.Builder
+	out.WriteString("switch ")
+	if ss.Tag != nil {
+		out.WriteString(ss.Tag.String())
+	}
+	out.WriteString(" { ")
+	for _, c := range ss.Cases {
+		out.WriteString(c.String())
+	}
+	out.WriteString(" }")
+	return out.String()
+}
+
+type CaseClause struct {
+	Token  Token          // case or default keyword
+	Values []Expression   // case values; nil for default
+	Body   *BlockStatement
+}
+
+func (cc *CaseClause) String() string {
+	var out strings.Builder
+	if cc.Values == nil {
+		out.WriteString("default:")
+	} else {
+		out.WriteString("case ")
+		for i, v := range cc.Values {
+			if i > 0 {
+				out.WriteString(", ")
+			}
+			out.WriteString(v.String())
+		}
+		out.WriteString(":")
+	}
+	if cc.Body != nil {
+		out.WriteString(" ")
+		out.WriteString(cc.Body.String())
+	}
+	return out.String()
+}
+
 type LogicalStatement struct {
 	Token    Token // && or ||
 	Left     Statement

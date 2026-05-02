@@ -199,3 +199,38 @@ func BenchmarkPointerVsDirectAssign(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkEvalSwitchProgram(b *testing.B) {
+	program := mustParseBenchmarkProgram(b, `x := 3; switch x { case 1: print "one" case 2: print "two" case 3: print "three" case 4: print "four" default: print "other" }`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`x := 3; switch x { case 1: print "one" case 2: print "two" case 3: print "three" case 4: print "four" default: print "other" }`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkEvalSwitchVsIfChain(b *testing.B) {
+	b.Run("Switch", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 5; switch x { case 1: print "1" case 2: print "2" case 3: print "3" case 4: print "4" case 5: print "5" default: print "?" }`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+	b.Run("IfChain", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 5; if x == 1 { print "1" } else { if x == 2 { print "2" } else { if x == 3 { print "3" } else { if x == 4 { print "4" } else { if x == 5 { print "5" } else { print "?" } } } } }`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+}

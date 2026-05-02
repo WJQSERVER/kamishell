@@ -100,6 +100,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseImportStatement()
 	case WAIT:
 		stmt = p.parseWaitStatement()
+	case SWITCH:
+		stmt = p.parseSwitchStatement()
 	case ASTERISK:
 		// *p = val (pointer dereference assignment)
 		if p.peekToken.Type == IDENT {
@@ -644,6 +646,95 @@ func (p *Parser) parseWaitStatement() *WaitStatement {
 	}
 	
 	return stmt
+}
+
+func (p *Parser) parseSwitchStatement() *SwitchStatement {
+	stmt := &SwitchStatement{Token: p.curToken}
+
+	p.nextToken()
+
+	// tagless switch: switch { ... }
+	// tagged switch: switch expr { ... }
+	if p.curToken.Type == LBRACE {
+		// tagless switch, curToken is already {
+	} else {
+		stmt.Tag = p.parseExpression(LOWEST)
+		if p.peekToken.Type == SEMICOLON {
+			p.nextToken()
+		}
+		// expect LBRACE
+		if p.peekToken.Type != LBRACE {
+			return stmt
+		}
+		p.nextToken() // move to {
+	}
+	p.nextToken() // move past {
+
+	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+		switch p.curToken.Type {
+		case CASE:
+			clause := p.parseCaseClause()
+			stmt.Cases = append(stmt.Cases, clause)
+		case DEFAULT:
+			clause := p.parseDefaultClause()
+			stmt.Cases = append(stmt.Cases, clause)
+		default:
+			p.nextToken()
+		}
+	}
+
+	return stmt
+}
+
+func (p *Parser) parseCaseClause() CaseClause {
+	clause := CaseClause{Token: p.curToken}
+
+	// parse case value list (comma separated)
+	p.nextToken()
+	clause.Values = append(clause.Values, p.parseExpression(LOWEST))
+	p.nextToken()
+	for p.curToken.Type == COMMA {
+		p.nextToken()
+		clause.Values = append(clause.Values, p.parseExpression(LOWEST))
+		p.nextToken()
+	}
+
+	// curToken should be COLON
+	if p.curToken.Type == COLON {
+		p.nextToken()
+	}
+
+	clause.Body = p.parseCaseBody()
+	return clause
+}
+
+func (p *Parser) parseDefaultClause() CaseClause {
+	clause := CaseClause{Token: p.curToken}
+
+	// expect COLON
+	if p.peekToken.Type == COLON {
+		p.nextToken()
+	}
+	p.nextToken()
+
+	clause.Body = p.parseCaseBody()
+	return clause
+}
+
+func (p *Parser) parseCaseBody() *BlockStatement {
+	block := &BlockStatement{}
+	block.Statements = []Statement{}
+
+	for p.curToken.Type != CASE && p.curToken.Type != DEFAULT &&
+		p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+		stmt := p.parseStatement()
+		if stmt != nil {
+			block.Statements = append(block.Statements, stmt)
+		}
+		p.nextToken()
+	}
+
+	return block
 }
 
 func (p *Parser) isMethodCallWithBlock() bool {

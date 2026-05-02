@@ -109,7 +109,7 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			tok = Token{Type: COLON_ASSIGN, Literal: ":=", Start: start, End: l.readPosition}
 		} else {
-			tok = Token{Type: ILLEGAL, Literal: string(l.ch), Start: l.position, End: l.position + 1}
+			tok = Token{Type: COLON, Literal: ":", Start: l.position, End: l.position + 1}
 		}
 	case '|':
 		if l.peekChar() == '|' {
