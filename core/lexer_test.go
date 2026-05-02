@@ -11,7 +11,7 @@ func TestNextToken(t *testing.T) {
 	   Multi-line
 	   comment
 	*/
-	files := ls -la
+	files := ls "-la"
 	if err != nil {
 		exit 1
 	}`
@@ -26,7 +26,7 @@ func TestNextToken(t *testing.T) {
 		{IDENT, "files"},
 		{COLON_ASSIGN, ":="},
 		{IDENT, "ls"},
-		{IDENT, "-la"},
+		{STRING, "-la"},
 		{SEMICOLON, ";"},
 		{IF, "if"},
 		{IDENT, "err"},
@@ -121,10 +121,10 @@ func TestUnicodeIdentifierTokenization(t *testing.T) {
 }
 
 func TestASCIIIdentifierTokenizationWithPathCharacters(t *testing.T) {
-	l := NewLexer("cmd/sub-command_1 := 1")
+	l := NewLexer("cmd/sub_command_1 := 1")
 
 	tok := l.NextToken()
-	if tok.Type != IDENT || tok.Literal != "cmd/sub-command_1" {
+	if tok.Type != IDENT || tok.Literal != "cmd/sub_command_1" {
 		t.Fatalf("expected path-like IDENT, got type=%q literal=%q", tok.Type, tok.Literal)
 	}
 

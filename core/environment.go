@@ -5,6 +5,13 @@ import "maps"
 import "os"
 import "strings"
 
+// EnvEntry holds a variable's value for pointer reference support.
+type EnvEntry struct {
+	Owner *Environment
+	Name  string
+	Value Object
+}
+
 func NewEnvironment() *Environment {
 	environ := os.Environ()
 	s := make(map[string]Object, len(environ))
@@ -18,11 +25,11 @@ func NewEnvironment() *Environment {
 }
 
 func NewEnclosedEnvironment(outer *Environment) *Environment {
-	return &Environment{store: make(map[string]Object), types: make(map[string]string), outer: outer, packageStore: outerPackageStore(outer)}
+	return &Environment{store: make(map[string]Object), outer: outer, packageStore: outerPackageStore(outer)}
 }
 
 func NewScriptEnvironment(outer *Environment) *Environment {
-	return &Environment{store: make(map[string]Object), types: make(map[string]string), outer: outer}
+	return &Environment{store: make(map[string]Object), outer: outer}
 }
 
 func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environment {
@@ -32,7 +39,6 @@ func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environm
 	}
 	return &Environment{
 		store:        make(map[string]Object, storeCap),
-		types:        make(map[string]string, storeCap),
 		outer:        outer,
 		packageStore: outerPackageStore(outer),
 	}
@@ -40,6 +46,7 @@ func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environm
 
 type Environment struct {
 	store        map[string]Object
+	refStore     map[string]*EnvEntry // pointer reference storage (lazy)
 	types        map[string]string
 	outer        *Environment
 	packageStore map[string]map[string]string
@@ -51,10 +58,10 @@ func (e *Environment) Clone() *Environment {
 	}
 	clone := &Environment{
 		store:        make(map[string]Object, len(e.store)),
-		types:        make(map[string]string, len(e.types)),
 		packageStore: clonePackageStore(e.packageStore),
 	}
 	if len(e.types) > 0 {
+		clone.types = make(map[string]string, len(e.types))
 		maps.Copy(clone.types, e.types)
 	}
 	if e.outer != nil {
@@ -115,6 +122,12 @@ func (e *Environment) SetWithType(name string, val Object, typeName string) {
 
 func (e *Environment) SetObject(name string, val Object) {
 	e.store[name] = val
+	// Sync refStore if entry exists
+	if e.refStore != nil {
+		if ref, ok := e.refStore[name]; ok {
+			ref.Value = val
+		}
+	}
 	if val != nil {
 		typeName := string(val.Type())
 		if shouldTrackType(typeName) {
@@ -128,6 +141,7 @@ func (e *Environment) Assign(name string, val Object) {
 	if scope := e.scopeWithValue(name); scope != nil {
 		scope.store[name] = val
 		if _, ok := scope.types[name]; !ok && shouldTrackType(string(val.Type())) {
+			scope.ensureTypes()
 			scope.types[name] = string(val.Type())
 		}
 		return
@@ -208,14 +222,14 @@ func (e *Environment) DeletePackageValue(pkg, name string) bool {
 }
 
 func (e *Environment) PackageSnapshot(pkg string) map[string]string {
-	snapshot := make(map[string]string)
 	if e.packageStore == nil || pkg == "" {
-		return snapshot
+		return make(map[string]string)
 	}
 	values, ok := e.packageStore[pkg]
 	if !ok {
-		return snapshot
+		return make(map[string]string)
 	}
+	snapshot := make(map[string]string, len(values))
 	maps.Copy(snapshot, values)
 	return snapshot
 }
@@ -282,5 +296,46 @@ func (e *Environment) ensurePackageStore() {
 func (e *Environment) ensureTypes() {
 	if e.types == nil {
 		e.types = make(map[string]string)
+	}
+}
+
+// GetRef returns an EnvEntry for pointer operations.
+// Creates the entry in refStore if it doesn't exist.
+func (e *Environment) GetRef(name string) (*EnvEntry, bool) {
+	// Check if variable exists in store
+	if _, ok := e.store[name]; !ok {
+		// Check outer scopes
+		if e.outer != nil {
+			return e.outer.GetRef(name)
+		}
+		return nil, false
+	}
+	// Ensure refStore exists
+	if e.refStore == nil {
+		e.refStore = make(map[string]*EnvEntry)
+	}
+	// Get or create entry
+	ref, ok := e.refStore[name]
+	if !ok {
+		ref = &EnvEntry{Owner: e, Name: name, Value: e.store[name]}
+		e.refStore[name] = ref
+	}
+	return ref, true
+}
+
+// SetByPointer sets a value through a pointer reference.
+func (e *Environment) SetByPointer(ref *EnvEntry, val Object) {
+	if ref == nil || ref.Owner == nil || ref.Name == "" {
+		return
+	}
+
+	// Update the reference
+	ref.Value = val
+
+	owner := ref.Owner
+	owner.store[ref.Name] = val
+	if shouldTrackType(string(val.Type())) {
+		owner.ensureTypes()
+		owner.types[ref.Name] = string(val.Type())
 	}
 }

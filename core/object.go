@@ -10,9 +10,12 @@ const (
 	BOOLEAN_OBJ  ObjectType = "BOOLEAN"
 	STRING_OBJ   ObjectType = "STRING"
 	NULL_OBJ     ObjectType = "NULL"
-	ERROR_OBJ    ObjectType = "ERROR"
-	FUNCTION_OBJ ObjectType = "FUNCTION"
+	RETURN_VALUE_OBJ ObjectType = "RETURN_VALUE"
+	ERROR_OBJ       ObjectType = "ERROR"
+	FUNCTION_OBJ     ObjectType = "FUNCTION"
 	PACKAGE_OBJ  ObjectType = "PACKAGE"
+	WAITGROUP_OBJ ObjectType = "WAITGROUP"
+	TASK_OBJ     ObjectType = "TASK"
 )
 
 type Object interface {
@@ -85,6 +88,13 @@ type Null struct{}
 func (n *Null) Inspect() string  { return "nil" }
 func (n *Null) Type() ObjectType { return NULL_OBJ }
 
+type ReturnValue struct {
+	Value Object
+}
+
+func (rv *ReturnValue) Inspect() string  { return rv.Value.Inspect() }
+func (rv *ReturnValue) Type() ObjectType { return RETURN_VALUE_OBJ }
+
 type Error struct {
 	Message string
 	Code    int
@@ -121,3 +131,32 @@ type Package struct {
 
 func (p *Package) Type() ObjectType { return PACKAGE_OBJ }
 func (p *Package) Inspect() string  { return p.Name }
+
+type WaitGroup struct {
+	Wg interface{} // *sync.WaitGroup - using interface{} to avoid import cycle
+}
+
+func (wg *WaitGroup) Type() ObjectType { return WAITGROUP_OBJ }
+func (wg *WaitGroup) Inspect() string  { return "WaitGroup" }
+
+type Task struct {
+	ID     int
+	Done   chan struct{}
+	Result Object
+}
+
+func (t *Task) Type() ObjectType { return TASK_OBJ }
+func (t *Task) Inspect() string  { return "Task" }
+
+type Pointer struct {
+	Ref *EnvEntry
+	Env *Environment
+}
+
+func (p *Pointer) Type() ObjectType { return "POINTER" }
+func (p *Pointer) Inspect() string {
+	if p.Ref == nil {
+		return "<nil pointer>"
+	}
+	return "&" + p.Ref.Value.Inspect()
+}

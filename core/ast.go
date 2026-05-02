@@ -104,6 +104,25 @@ func (as *AssignStatement) String() string {
 	return out.String()
 }
 
+type PointerAssignStatement struct {
+	Token Token // the = token
+	Target Expression // the *p expression
+	Value  Expression
+}
+
+func (pas *PointerAssignStatement) statementNode()       {}
+func (pas *PointerAssignStatement) TokenLiteral() string { return pas.Token.Literal }
+func (pas *PointerAssignStatement) String() string {
+	var out strings.Builder
+	out.WriteString(pas.Target.String())
+	out.WriteString(" = ")
+	if pas.Value != nil {
+		out.WriteString(pas.Value.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
 type Identifier struct {
 	Token Token
 	Value string
@@ -222,6 +241,23 @@ func (es *ExecStatement) String() string {
 		out.WriteString(es.CommandStr.String())
 	}
 	out.WriteString(";")
+	return out.String()
+}
+
+type PrefixExpression struct {
+	Token    Token // The operator token, e.g. & or *
+	Operator string
+	Right    Expression
+}
+
+func (pe *PrefixExpression) expressionNode()      {}
+func (pe *PrefixExpression) TokenLiteral() string { return pe.Token.Literal }
+func (pe *PrefixExpression) String() string {
+	var out strings.Builder
+	out.WriteString("(")
+	out.WriteString(pe.Operator)
+	out.WriteString(pe.Right.String())
+	out.WriteString(")")
 	return out.String()
 }
 
@@ -410,6 +446,37 @@ func (gs *GoStatement) String() string {
 	return out.String()
 }
 
+type GoExpression struct {
+	Token Token // the go token
+	Node  Node  // BlockStatement or CommandStatement or Function call
+}
+
+func (ge *GoExpression) expressionNode()      {}
+func (ge *GoExpression) TokenLiteral() string { return ge.Token.Literal }
+func (ge *GoExpression) String() string {
+	var out strings.Builder
+	out.WriteString("go ")
+	out.WriteString(ge.Node.String())
+	return out.String()
+}
+
+type ReturnStatement struct {
+	Token       Token // the return token
+	ReturnValue Expression
+}
+
+func (rs *ReturnStatement) statementNode()       {}
+func (rs *ReturnStatement) TokenLiteral() string { return rs.Token.Literal }
+func (rs *ReturnStatement) String() string {
+	var out strings.Builder
+	out.WriteString(rs.TokenLiteral() + " ")
+	if rs.ReturnValue != nil {
+		out.WriteString(rs.ReturnValue.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
 type VarStatement struct {
 	Token    Token // the var token
 	Name     string
@@ -432,5 +499,57 @@ func (vs *VarStatement) String() string {
 		out.WriteString(vs.Value.String())
 	}
 	out.WriteString(";")
+	return out.String()
+}
+
+type ImportStatement struct {
+	Token   Token // the import token
+	Path    string // import path like "Go" or "Go/fmt"
+}
+
+func (is *ImportStatement) statementNode()       {}
+func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
+func (is *ImportStatement) String() string {
+	var out strings.Builder
+	out.WriteString("import \"")
+	out.WriteString(is.Path)
+	out.WriteString("\"")
+	return out.String()
+}
+
+type MethodCallBlockStatement struct {
+	Token  Token           // the object token (e.g., "wg")
+	Object Expression      // the object expression (e.g., Identifier{Value: "wg"})
+	Method string          // the method name (e.g., "Go")
+	Body   *BlockStatement // the block body
+}
+
+func (mcb *MethodCallBlockStatement) statementNode()       {}
+func (mcb *MethodCallBlockStatement) TokenLiteral() string { return mcb.Token.Literal }
+func (mcb *MethodCallBlockStatement) String() string {
+	var out strings.Builder
+	out.WriteString(mcb.Object.String())
+	out.WriteString(".")
+	out.WriteString(mcb.Method)
+	out.WriteString(" ")
+	out.WriteString(mcb.Body.String())
+	return out.String()
+}
+
+type WaitStatement struct {
+	Token   Token // the wait token
+	Timeout Expression // optional timeout in seconds
+}
+
+func (ws *WaitStatement) statementNode()       {}
+func (ws *WaitStatement) TokenLiteral() string { return ws.Token.Literal }
+func (ws *WaitStatement) String() string {
+	var out strings.Builder
+	out.WriteString("wait")
+	if ws.Timeout != nil {
+		out.WriteString("(")
+		out.WriteString(ws.Timeout.String())
+		out.WriteString(")")
+	}
 	return out.String()
 }

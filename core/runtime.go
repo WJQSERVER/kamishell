@@ -1,13 +1,16 @@
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"kamishell/builtin"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -15,6 +18,7 @@ var (
 	TRUE   = &Boolean{Value: true}
 	FALSE  = &Boolean{Value: false}
 	ENVPKG = &Package{Name: "env"}
+	SYNCPKG = &Package{Name: "sync"}
 )
 
 var NativeFns = make(map[string]*NativeFunction)
@@ -105,6 +109,307 @@ func init() {
 	}
 }
 
+// Go标准库映射表
+var goStdlib = map[string]map[string]*NativeFunction{
+	"fmt": {
+		"Println": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				// 转换参数并调用fmt.Println
+				goArgs := make([]interface{}, len(args))
+				for i, arg := range args {
+					switch v := arg.(type) {
+					case *Integer:
+						goArgs[i] = v.Value
+					case *String:
+						goArgs[i] = v.Value
+					case *Boolean:
+						goArgs[i] = v.Value
+					default:
+						goArgs[i] = arg.Inspect()
+					}
+				}
+				fmt.Println(goArgs...)
+				return NULL
+			},
+		},
+		"Printf": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) < 1 {
+					return &Error{Message: "Printf requires at least one argument"}
+				}
+				format, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Printf first argument must be a string"}
+				}
+				// 转换剩余参数
+				goArgs := make([]interface{}, len(args)-1)
+				for i := 1; i < len(args); i++ {
+					switch v := args[i].(type) {
+					case *Integer:
+						goArgs[i-1] = v.Value
+					case *String:
+						goArgs[i-1] = v.Value
+					case *Boolean:
+						goArgs[i-1] = v.Value
+					default:
+						goArgs[i-1] = args[i].Inspect()
+					}
+				}
+				fmt.Printf(format.Value, goArgs...)
+				return NULL
+			},
+		},
+		"Sprintf": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) < 1 {
+					return &Error{Message: "Sprintf requires at least one argument"}
+				}
+				format, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Sprintf first argument must be a string"}
+				}
+				// 转换剩余参数
+				goArgs := make([]interface{}, len(args)-1)
+				for i := 1; i < len(args); i++ {
+					switch v := args[i].(type) {
+					case *Integer:
+						goArgs[i-1] = v.Value
+					case *String:
+						goArgs[i-1] = v.Value
+					case *Boolean:
+						goArgs[i-1] = v.Value
+					default:
+						goArgs[i-1] = args[i].Inspect()
+					}
+				}
+				result := fmt.Sprintf(format.Value, goArgs...)
+				return &String{Value: result}
+			},
+		},
+	},
+	"math": {
+		"Sqrt": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Sqrt requires exactly one argument"}
+				}
+				var x float64
+				switch v := args[0].(type) {
+				case *Integer:
+					x = float64(v.Value)
+				case *Float:
+					x = v.Value
+				default:
+					return &Error{Message: "Sqrt argument must be a number"}
+				}
+				if x < 0 {
+					return &Error{Message: "Sqrt argument must be non-negative"}
+				}
+				return &Float{Value: math.Sqrt(x)}
+			},
+		},
+		"Abs": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Abs requires exactly one argument"}
+				}
+				switch v := args[0].(type) {
+				case *Integer:
+					if v.Value < 0 {
+						return &Integer{Value: -v.Value}
+					}
+					return v
+				case *Float:
+					if v.Value < 0 {
+						return &Float{Value: -v.Value}
+					}
+					return v
+				default:
+					return &Error{Message: "Abs argument must be a number"}
+				}
+			},
+		},
+	},
+	"strings": {
+		"Contains": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Contains requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Contains first argument must be a string"}
+				}
+				substr, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Contains second argument must be a string"}
+				}
+				return nativeBoolToBooleanObject(strings.Contains(s.Value, substr.Value))
+			},
+		},
+		"HasPrefix": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "HasPrefix requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "HasPrefix first argument must be a string"}
+				}
+				prefix, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "HasPrefix second argument must be a string"}
+				}
+				return nativeBoolToBooleanObject(strings.HasPrefix(s.Value, prefix.Value))
+			},
+		},
+		"HasSuffix": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "HasSuffix requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "HasSuffix first argument must be a string"}
+				}
+				suffix, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "HasSuffix second argument must be a string"}
+				}
+				return nativeBoolToBooleanObject(strings.HasSuffix(s.Value, suffix.Value))
+			},
+		},
+		"Replace": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 3 {
+					return &Error{Message: "Replace requires exactly three arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Replace first argument must be a string"}
+				}
+				old, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Replace second argument must be a string"}
+				}
+				new, ok := args[2].(*String)
+				if !ok {
+					return &Error{Message: "Replace third argument must be a string"}
+				}
+				return &String{Value: strings.Replace(s.Value, old.Value, new.Value, -1)}
+			},
+		},
+		"Split": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Split requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Split first argument must be a string"}
+				}
+				sep, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Split second argument must be a string"}
+				}
+				parts := strings.Split(s.Value, sep.Value)
+				// 返回字符串数组（暂时用字符串表示）
+				result := "["
+				for i, part := range parts {
+					if i > 0 {
+						result += ", "
+					}
+					result += "\"" + part + "\""
+				}
+				result += "]"
+				return &String{Value: result}
+			},
+		},
+		"Join": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Join requires exactly two arguments"}
+				}
+				arr, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Join first argument must be a string"}
+				}
+				sep, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Join second argument must be a string"}
+				}
+				return &String{Value: strings.Join([]string{arr.Value}, sep.Value)}
+			},
+		},
+	},
+	"strconv": {
+		"Itoa": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Itoa requires exactly one argument"}
+				}
+				switch v := args[0].(type) {
+				case *Integer:
+					return &String{Value: fmt.Sprintf("%d", v.Value)}
+				default:
+					return &Error{Message: "Itoa argument must be an integer"}
+				}
+			},
+		},
+		"Atoi": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Atoi requires exactly one argument"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Atoi argument must be a string"}
+				}
+				var n int64
+				_, err := fmt.Sscanf(s.Value, "%d", &n)
+				if err != nil {
+					return &Error{Message: "Atoi: invalid integer string"}
+				}
+				return &Integer{Value: n}
+			},
+		},
+	},
+	"os": {
+		"Getenv": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Getenv requires exactly one argument"}
+				}
+				key, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Getenv argument must be a string"}
+				}
+				return &String{Value: os.Getenv(key.Value)}
+			},
+		},
+		"Setenv": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Setenv requires exactly two arguments"}
+				}
+				key, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Setenv first argument must be a string"}
+				}
+				value, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Setenv second argument must be a string"}
+				}
+				err := os.Setenv(key.Value, value.Value)
+				if err != nil {
+					return &Error{Message: err.Error()}
+				}
+				return NULL
+			},
+		},
+	},
+}
+
 func Eval(node Node, env *Environment) Object {
 	return EvalWithIO(node, env, os.Stdin, os.Stdout, os.Stderr)
 }
@@ -112,7 +417,11 @@ func Eval(node Node, env *Environment) Object {
 func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	switch node := node.(type) {
 	case *Program:
-		return evalStatements(node.Statements, env, stdin, stdout, stderr)
+		result := evalStatements(node.Statements, env, stdin, stdout, stderr)
+		if returnValue, ok := result.(*ReturnValue); ok {
+			return returnValue.Value
+		}
+		return result
 	case *BlockStatement:
 		return evalStatements(node.Statements, env, stdin, stdout, stderr)
 	case *ExpressionStatement:
@@ -132,15 +441,57 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *GoStatement:
 		id := builtin.RegisterJob(node.String())
 		asyncEnv := env.Clone()
+		task := &Task{ID: id, Done: make(chan struct{})}
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					task.Result = &Error{Message: fmt.Sprintf("goroutine panic: %v", r)}
+					close(task.Done)
+					builtin.CompleteJobWithResult(id, false, fmt.Sprintf("panic: %v", r))
+				}
+			}()
 			result := EvalWithIO(node.Node, asyncEnv, stdin, stdout, stderr)
+			// Unwrap ReturnValue to get the actual value
+			if rv, ok := result.(*ReturnValue); ok {
+				task.Result = rv.Value
+			} else {
+				task.Result = result
+			}
+			close(task.Done)
 			if isError(result) {
 				builtin.CompleteJobWithResult(id, false, result.Inspect())
 				return
 			}
 			builtin.CompleteJobWithResult(id, true, "")
 		}()
-		return NULL
+		return task
+	case *GoExpression:
+		id := builtin.RegisterJob(node.String())
+		asyncEnv := env.Clone()
+		task := &Task{ID: id, Done: make(chan struct{})}
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					task.Result = &Error{Message: fmt.Sprintf("goroutine panic: %v", r)}
+					close(task.Done)
+					builtin.CompleteJobWithResult(id, false, fmt.Sprintf("panic: %v", r))
+				}
+			}()
+			result := EvalWithIO(node.Node, asyncEnv, stdin, stdout, stderr)
+			// Unwrap ReturnValue to get the actual value
+			if rv, ok := result.(*ReturnValue); ok {
+				task.Result = rv.Value
+			} else {
+				task.Result = result
+			}
+			close(task.Done)
+			if isError(result) {
+				builtin.CompleteJobWithResult(id, false, result.Inspect())
+				return
+			}
+			builtin.CompleteJobWithResult(id, true, "")
+		}()
+		return task
 	case *BackgroundStatement:
 		id := builtin.RegisterJob(node.String())
 		asyncEnv := env.Clone()
@@ -155,42 +506,83 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return NULL
 	case *FunctionStatement:
 		return evalFunctionStatement(node, env)
+	case *ImportStatement:
+		return evalImportStatement(node, env)
+	case *MethodCallBlockStatement:
+		return evalMethodCallBlock(node, env, stdin, stdout, stderr)
+	case *WaitStatement:
+		return evalWaitStatement(node, env, stdin, stdout, stderr)
+	case *ReturnStatement:
+		return evalReturnStatement(node, env, stdin, stdout, stderr)
 	case *InfixExpression:
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
 		return evalInfixExpression(node.Operator, left, right)
+	case *PrefixExpression:
+		return evalPrefixExpression(node, env, stdin, stdout, stderr)
 	case *MemberExpression:
 		return evalMemberExpression(node, env)
 	case *CallExpression:
 		return evalCallExpression(node, env, stdin, stdout, stderr)
 	case *VarStatement:
 		return evalVarStatement(node, env, stdin, stdout, stderr)
+	case *PointerAssignStatement:
+		return evalPointerAssignStatement(node, env, stdin, stdout, stderr)
 	case *AssignStatement:
 		val := EvalWithIO(node.Value, env, stdin, stdout, stderr)
 		if isError(val) {
 			return val
 		}
 
-		scope, expectedType, ok := env.ResolveForAssign(node.Name)
-		if ok && expectedType != "" && string(val.Type()) != expectedType {
-			return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
-		}
-
 		if node.Token.Literal == ":=" {
+			// nil is untyped, cannot be used with :=
+			if val.Type() == NULL_OBJ {
+				return &Error{Message: "untyped nil cannot be used with :="}
+			}
 			typeName := ""
 			if shouldTrackType(string(val.Type())) {
 				typeName = string(val.Type())
 			}
 			env.SetWithType(node.Name, val, typeName)
 		} else {
-			if scope != nil {
-				scope.store[node.Name] = val
-				if _, hasType := scope.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
-					scope.ensureTypes()
-					scope.types[node.Name] = string(val.Type())
+			// Fast path: direct lookup in current scope
+			if _, hasIt := env.store[node.Name]; hasIt {
+				if typeName, hasType := env.types[node.Name]; hasType && typeName != "" {
+					// nil can only be assigned to reference types (FUNCTION, ERROR)
+					if val.Type() == NULL_OBJ {
+						if typeName != string(FUNCTION_OBJ) && typeName != string(ERROR_OBJ) {
+							return &Error{Message: fmt.Sprintf("cannot assign nil to variable of type %s", typeName)}
+						}
+					} else if string(val.Type()) != typeName {
+						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), typeName)}
+					}
+				}
+				env.store[node.Name] = val
+				if _, hasType := env.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
+					env.ensureTypes()
+					env.types[node.Name] = string(val.Type())
 				}
 			} else {
-				env.Set(node.Name, val)
+				scope, expectedType, ok := env.ResolveForAssign(node.Name)
+				if ok && expectedType != "" {
+					// nil can only be assigned to reference types (FUNCTION, ERROR)
+					if val.Type() == NULL_OBJ {
+						if expectedType != string(FUNCTION_OBJ) && expectedType != string(ERROR_OBJ) {
+							return &Error{Message: fmt.Sprintf("cannot assign nil to variable of type %s", expectedType)}
+						}
+					} else if string(val.Type()) != expectedType {
+						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
+					}
+				}
+				if scope != nil {
+					scope.store[node.Name] = val
+					if _, hasType := scope.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
+						scope.ensureTypes()
+						scope.types[node.Name] = string(val.Type())
+					}
+				} else {
+					env.Set(node.Name, val)
+				}
 			}
 		}
 		return val
@@ -241,16 +633,34 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	return NULL
 }
 
+func evalReturnStatement(rs *ReturnStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var val Object = NULL
+	if rs.ReturnValue != nil {
+		val = EvalWithIO(rs.ReturnValue, env, stdin, stdout, stderr)
+	}
+	if isError(val) {
+		return val
+	}
+	return &ReturnValue{Value: val}
+}
+
 func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var result Object
 	for _, statement := range stmts {
+		if statement == nil {
+			continue
+		}
 		result = EvalWithIO(statement, env, stdin, stdout, stderr)
 		if errObj, ok := result.(*Error); ok {
 			env.SetObject("err", errObj)
-		} else {
+			return result
+		}
+		if _, ok := result.(*ReturnValue); ok {
 			env.SetObject("err", NULL)
+			return result
 		}
 	}
+	env.SetObject("err", NULL)
 	return result
 }
 
@@ -271,19 +681,38 @@ func evalIfStatement(is *IfStatement, env *Environment, stdin io.Reader, stdout 
 
 func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var result Object = NULL
+	body := fs.Consequence
+	fastCondition, hasFastCondition := buildForConditionFastPath(fs.Condition)
 	for {
 		if fs.Condition != nil {
-			condition := EvalWithIO(fs.Condition, env, stdin, stdout, stderr)
-			if isError(condition) {
-				return condition
+			if hasFastCondition {
+				ok, errObj := evalFastForCondition(fastCondition, env)
+				if errObj != nil {
+					return errObj
+				}
+				if !ok {
+					break
+				}
+			} else {
+				condition := EvalWithIO(fs.Condition, env, stdin, stdout, stderr)
+				if isError(condition) {
+					return condition
+				}
+				if !isTruthy(condition) {
+					break
+				}
 			}
-			if !isTruthy(condition) {
+
+			if fs.Condition == nil {
 				break
 			}
 		}
 
-		result = EvalWithIO(fs.Consequence, env, stdin, stdout, stderr)
+		result = evalLoopBody(body, env, stdin, stdout, stderr)
 		if isError(result) {
+			return result
+		}
+		if _, ok := result.(*ReturnValue); ok {
 			return result
 		}
 
@@ -292,6 +721,227 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 		}
 	}
 	return result
+}
+
+type forConditionFastPath struct {
+	varName  string
+	op       string
+	kind     uint8
+	intConst int64
+	fltConst float64
+	swap     bool
+}
+
+const (
+	forCondInt uint8 = iota + 1
+	forCondFloat
+)
+
+func buildForConditionFastPath(expr Expression) (forConditionFastPath, bool) {
+	infix, ok := expr.(*InfixExpression)
+	if !ok {
+		return forConditionFastPath{}, false
+	}
+
+	leftIdent, leftIsIdent := infix.Left.(*Identifier)
+	rightIdent, rightIsIdent := infix.Right.(*Identifier)
+
+	if leftIsIdent {
+		switch right := infix.Right.(type) {
+		case *IntegerLiteral:
+			return makeForIntFastPath(leftIdent.Value, right.Value, infix.Operator, false)
+		case *FloatLiteral:
+			return makeForFloatFastPath(leftIdent.Value, right.Value, infix.Operator, false)
+		}
+	}
+
+	if rightIsIdent {
+		switch left := infix.Left.(type) {
+		case *IntegerLiteral:
+			return makeForIntFastPath(rightIdent.Value, left.Value, infix.Operator, true)
+		case *FloatLiteral:
+			return makeForFloatFastPath(rightIdent.Value, left.Value, infix.Operator, true)
+		}
+	}
+
+	return forConditionFastPath{}, false
+}
+
+func makeForIntFastPath(name string, constant int64, op string, swap bool) (forConditionFastPath, bool) {
+	if !supportsFastCompareOperator(op) {
+		return forConditionFastPath{}, false
+	}
+	return forConditionFastPath{varName: name, intConst: constant, op: op, kind: forCondInt, swap: swap}, true
+}
+
+func makeForFloatFastPath(name string, constant float64, op string, swap bool) (forConditionFastPath, bool) {
+	if !supportsFastCompareOperator(op) {
+		return forConditionFastPath{}, false
+	}
+	return forConditionFastPath{varName: name, fltConst: constant, op: op, kind: forCondFloat, swap: swap}, true
+}
+
+func evalFastForCondition(spec forConditionFastPath, env *Environment) (bool, *Error) {
+	obj, ok := env.GetObject(spec.varName)
+	if !ok {
+		return false, &Error{Message: "identifier not found: " + spec.varName}
+	}
+
+	switch spec.kind {
+	case forCondInt:
+		val, ok := obj.(*Integer)
+		if !ok {
+			return false, &Error{Message: "type mismatch: " + string(obj.Type()) + " " + spec.op + " INTEGER"}
+		}
+		left, right := val.Value, spec.intConst
+		if spec.swap {
+			left, right = right, left
+		}
+		return compareInts(spec.op, left, right), nil
+	case forCondFloat:
+		var value float64
+		switch v := obj.(type) {
+		case *Float:
+			value = v.Value
+		case *Integer:
+			value = float64(v.Value)
+		default:
+			return false, &Error{Message: "type mismatch: " + string(obj.Type()) + " " + spec.op + " FLOAT"}
+		}
+		left, right := value, spec.fltConst
+		if spec.swap {
+			left, right = right, left
+		}
+		return compareFloats(spec.op, left, right), nil
+	default:
+		return false, nil
+	}
+}
+
+func supportsFastCompareOperator(op string) bool {
+	switch op {
+	case "<", ">", "==", "!=":
+		return true
+	default:
+		return false
+	}
+}
+
+func compareInts(op string, left, right int64) bool {
+	switch op {
+	case "<":
+		return left < right
+	case ">":
+		return left > right
+	case "==":
+		return left == right
+	case "!=":
+		return left != right
+	default:
+		return false
+	}
+}
+
+func compareFloats(op string, left, right float64) bool {
+	switch op {
+	case "<":
+		return left < right
+	case ">":
+		return left > right
+	case "==":
+		return left == right
+	case "!=":
+		return left != right
+	default:
+		return false
+	}
+}
+
+func evalLoopBody(body *BlockStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if body == nil {
+		return NULL
+	}
+	var result Object = NULL
+	for _, statement := range body.Statements {
+		if statement == nil {
+			continue
+		}
+		result = EvalWithIO(statement, env, stdin, stdout, stderr)
+		if isError(result) {
+			return result
+		}
+		if _, ok := result.(*ReturnValue); ok {
+			return result
+		}
+	}
+	return result
+}
+
+func evalPrefixExpression(node *PrefixExpression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	switch node.Operator {
+	case "&":
+		// Address-of operator
+		if ident, ok := node.Right.(*Identifier); ok {
+			ref, ok := env.GetRef(ident.Value)
+			if !ok {
+				return &Error{Message: "identifier not found: " + ident.Value}
+			}
+			return &Pointer{Ref: ref, Env: env}
+		}
+		return &Error{Message: "cannot take address of non-identifier"}
+	case "*":
+		// Dereference operator
+		val := EvalWithIO(node.Right, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		ptr, ok := val.(*Pointer)
+		if !ok {
+			return &Error{Message: "cannot dereference non-pointer"}
+		}
+		if ptr.Ref == nil {
+			return &Error{Message: "nil pointer dereference"}
+		}
+		return ptr.Ref.Value
+	default:
+		return &Error{Message: "unknown prefix operator: " + node.Operator}
+	}
+}
+
+func evalPointerAssignStatement(node *PointerAssignStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	// The target is *p, we need to evaluate p to get the pointer
+	prefixExpr, ok := node.Target.(*PrefixExpression)
+	if !ok || prefixExpr.Operator != "*" {
+		return &Error{Message: "invalid pointer assignment target"}
+	}
+	
+	// Evaluate p (the right side of *)
+	ptrVal := EvalWithIO(prefixExpr.Right, env, stdin, stdout, stderr)
+	if isError(ptrVal) {
+		return ptrVal
+	}
+	
+	ptr, ok := ptrVal.(*Pointer)
+	if !ok {
+		return &Error{Message: "cannot assign to non-pointer"}
+	}
+	
+	if ptr.Ref == nil {
+		return &Error{Message: "nil pointer dereference"}
+	}
+	
+	// Evaluate the value
+	if node.Value == nil {
+		return &Error{Message: "pointer assign: value expression is nil"}
+	}
+	val := EvalWithIO(node.Value, env, stdin, stdout, stderr)
+	if isError(val) {
+		return val
+	}
+	
+	// Assign through pointer - use the pointer's original env
+	ptr.Env.SetByPointer(ptr.Ref, val)
+	return val
 }
 
 func evalInfixExpression(operator string, left, right Object) Object {
@@ -342,6 +992,8 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case "+":
 		return getIntegerObject(leftVal + rightVal)
+	case "-":
+		return getIntegerObject(leftVal - rightVal)
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
@@ -362,6 +1014,8 @@ func evalFloatInfixExpression(operator string, left, right Object) Object {
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case "+":
 		return &Float{Value: leftVal + rightVal}
+	case "-":
+		return &Float{Value: leftVal - rightVal}
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
@@ -420,6 +1074,14 @@ func evalExecStatement(es *ExecStatement, env *Environment, stdin io.Reader, std
 
 func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	n := len(ps.Commands)
+	if n == 0 {
+		return NULL
+	}
+
+	if canUseSequentialPipe(ps, env) {
+		return evalPipeStatementSequential(ps, env, stdin, stdout, stderr)
+	}
+
 	pipes := make([]*io.PipeWriter, n-1)
 	readers := make([]*io.PipeReader, n-1)
 
@@ -473,6 +1135,65 @@ func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, std
 
 	if len(errs) > 0 {
 		return &Error{Message: strings.Join(errs, "; ")}
+	}
+
+	return NULL
+}
+
+func canUseSequentialPipe(ps *PipeStatement, env *Environment) bool {
+	for idx, cmd := range ps.Commands {
+		switch c := cmd.(type) {
+		case *PrintStatement:
+			continue
+		case *CommandStatement:
+			if commandRunsInProcess(c.Name, env) {
+				continue
+			}
+			return false
+		default:
+			if idx == len(ps.Commands)-1 {
+				return false
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func commandRunsInProcess(name string, env *Environment) bool {
+	if _, ok := builtin.Builtins[name]; ok {
+		return true
+	}
+	if _, ok := NativeFns[name]; ok {
+		return true
+	}
+	if val, ok := env.GetObject(name); ok {
+		switch val.(type) {
+		case *Function, *NativeFunction:
+			return true
+		}
+	}
+	return false
+}
+
+func evalPipeStatementSequential(ps *PipeStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	curStdin := stdin
+	for idx, cmd := range ps.Commands {
+		isLast := idx == len(ps.Commands)-1
+		if isLast {
+			res := EvalWithIO(cmd, env, curStdin, stdout, stderr)
+			if isError(res) {
+				return res
+			}
+			return NULL
+		}
+
+		var out bytes.Buffer
+		res := EvalWithIO(cmd, env, curStdin, &out, stderr)
+		if isError(res) {
+			return res
+		}
+		curStdin = bytes.NewReader(out.Bytes())
 	}
 
 	return NULL
@@ -604,6 +1325,85 @@ func evalMemberExpression(node *MemberExpression, env *Environment) Object {
 		return left
 	}
 
+	// Handle sync package methods (e.g., sync.NewWaitGroup)
+	if pkg, ok := left.(*Package); ok && pkg.Name == "sync" {
+		switch node.Property {
+		case "NewWaitGroup":
+			return &NativeFunction{
+				Fn: func(env *Environment, args ...Object) Object {
+					if len(args) != 0 {
+						return &Error{Message: "NewWaitGroup expects no arguments"}
+					}
+					return &WaitGroup{Wg: &sync.WaitGroup{}}
+				},
+			}
+		default:
+			return &Error{Message: "unknown sync method: " + node.Property}
+		}
+	}
+
+	// Handle WaitGroup method access (e.g., wg.Wait)
+	if wg, ok := left.(*WaitGroup); ok {
+		switch node.Property {
+		case "Wait":
+			return &NativeFunction{
+				Fn: func(env *Environment, args ...Object) Object {
+					realWg, ok := wg.Wg.(*sync.WaitGroup)
+					if !ok {
+						return &Error{Message: "invalid WaitGroup"}
+					}
+					if len(args) > 0 {
+						if timeout, ok := args[0].(*Integer); ok {
+							done := make(chan struct{})
+							go func() { realWg.Wait(); close(done) }()
+							select {
+							case <-done:
+								return NULL
+							case <-time.After(time.Duration(timeout.Value) * time.Second):
+								return &Error{Message: "WaitGroup timeout"}
+							}
+						}
+					}
+					realWg.Wait()
+					return NULL
+				},
+			}
+		default:
+			return &Error{Message: "unknown method " + node.Property + " on WaitGroup"}
+		}
+	}
+
+	// Handle Task method access (e.g., t.Wait)
+	if task, ok := left.(*Task); ok {
+		switch node.Property {
+		case "Wait":
+			return &NativeFunction{
+				Fn: func(env *Environment, args ...Object) Object {
+					if len(args) > 0 {
+						if timeout, ok := args[0].(*Integer); ok {
+							select {
+							case <-task.Done:
+								if isError(task.Result) {
+									return task.Result
+								}
+								return task.Result
+							case <-time.After(time.Duration(timeout.Value) * time.Second):
+								return &Error{Message: "Task timeout"}
+							}
+						}
+					}
+					<-task.Done
+					if isError(task.Result) {
+						return task.Result
+					}
+					return task.Result
+				},
+			}
+		default:
+			return &Error{Message: "unknown method " + node.Property + " on Task"}
+		}
+	}
+
 	name := inspectObject(left) + "." + node.Property
 	if fn, ok := NativeFns[name]; ok {
 		return fn
@@ -681,6 +1481,9 @@ func evalIdentifier(node *Identifier, env *Environment) Object {
 	if node.Value == "env" {
 		return ENVPKG
 	}
+	if node.Value == "sync" {
+		return SYNCPKG
+	}
 	if fn, ok := NativeFns[node.Value]; ok {
 		return fn
 	}
@@ -701,6 +1504,13 @@ func nativeBoolToBooleanObject(input bool) *Boolean {
 func isError(obj Object) bool {
 	if obj != nil {
 		return obj.Type() == ERROR_OBJ
+	}
+	return false
+}
+
+func isReturn(obj Object) bool {
+	if obj != nil {
+		return obj.Type() == RETURN_VALUE_OBJ
 	}
 	return false
 }
@@ -805,6 +1615,8 @@ func inspectObject(obj Object) string {
 		return "false"
 	case *Null:
 		return "nil"
+	case *ReturnValue:
+		return inspectObject(v.Value)
 	default:
 		return obj.Inspect()
 	}
@@ -860,6 +1672,65 @@ func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 	return NULL
 }
 
+func evalImportStatement(is *ImportStatement, env *Environment) Object {
+	path := is.Path
+	
+	// 检查是否以"Go"开头
+	if !strings.HasPrefix(path, "Go") {
+		return &Error{Message: "import path must start with 'Go'"}
+	}
+	
+	// 移除"Go"前缀
+	goPath := strings.TrimPrefix(path, "Go")
+	if goPath == "" {
+		// import "Go" - 导入整个Go标准库（暂时返回空包）
+		env.SetObject("Go", &Package{Name: "Go"})
+		return NULL
+	}
+	
+	// 移除开头的斜杠
+	goPath = strings.TrimPrefix(goPath, "/")
+	
+	// 检查是否是子包
+	if strings.Contains(goPath, "/") {
+		// 处理子包，如 "Go/net/http"
+		parts := strings.Split(goPath, "/")
+		pkgName := parts[len(parts)-1] // 使用最后一个部分作为包名
+		
+		// 检查是否有这个包的映射
+		if _, ok := goStdlib[pkgName]; ok {
+			// 创建包对象
+			pkg := &Package{Name: pkgName}
+			env.SetObject(pkgName, pkg)
+			
+			// 将包中的函数注册到环境中
+			for fnName, fn := range goStdlib[pkgName] {
+				env.SetObject(pkgName+"."+fnName, fn)
+			}
+			return NULL
+		}
+		return &Error{Message: "package not found: " + goPath}
+	}
+	
+	// 处理直接包，如 "Go/fmt"
+	pkgName := goPath
+	
+	// 检查是否有这个包的映射
+	if _, ok := goStdlib[pkgName]; ok {
+		// 创建包对象
+		pkg := &Package{Name: pkgName}
+		env.SetObject(pkgName, pkg)
+		
+		// 将包中的函数注册到环境中
+		for fnName, fn := range goStdlib[pkgName] {
+			env.SetObject(pkgName+"."+fnName, fn)
+		}
+		return NULL
+	}
+	
+	return &Error{Message: "package not found: " + goPath}
+}
+
 func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	extendEnv := NewFunctionCallEnvironment(fn.Env, len(fn.Parameters))
 
@@ -869,10 +1740,98 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 		}
 	}
 
-	return EvalWithIO(fn.Body, extendEnv, stdin, stdout, stderr)
+	result := EvalWithIO(fn.Body, extendEnv, stdin, stdout, stderr)
+	if returnValue, ok := result.(*ReturnValue); ok {
+		return returnValue.Value
+	}
+	return result
+}
+
+func evalMethodCallBlock(mcb *MethodCallBlockStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	// Evaluate the object
+	obj := EvalWithIO(mcb.Object, env, stdin, stdout, stderr)
+	if isError(obj) {
+		return obj
+	}
+
+	switch o := obj.(type) {
+	case *WaitGroup:
+		switch mcb.Method {
+		case "Go":
+			wg, ok := o.Wg.(*sync.WaitGroup)
+			if !ok {
+				return &Error{Message: "invalid WaitGroup"}
+			}
+			wg.Add(1)
+			asyncEnv := env.Clone()
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Fprintf(stderr, "panic in wg.Go: %v\n", r)
+					}
+					wg.Done()
+				}()
+				EvalWithIO(mcb.Body, asyncEnv, stdin, stdout, stderr)
+			}()
+			return NULL
+		case "Wait":
+			wg, ok := o.Wg.(*sync.WaitGroup)
+			if !ok {
+				return &Error{Message: "invalid WaitGroup"}
+			}
+			wg.Wait()
+			return NULL
+		default:
+			return &Error{Message: fmt.Sprintf("unknown method %s on WaitGroup", mcb.Method)}
+		}
+	default:
+		return &Error{Message: fmt.Sprintf("method call with block not supported on %s", obj.Type())}
+	}
+}
+
+func evalWaitStatement(ws *WaitStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if ws.Timeout != nil {
+		timeoutVal := EvalWithIO(ws.Timeout, env, stdin, stdout, stderr)
+		if isError(timeoutVal) {
+			return timeoutVal
+		}
+		if timeout, ok := timeoutVal.(*Integer); ok {
+			deadline := time.Now().Add(time.Duration(timeout.Value) * time.Second)
+			for {
+				if allJobsDone() {
+					return NULL
+				}
+				if time.Now().After(deadline) {
+					return &Error{Message: "Wait timeout"}
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	}
+
+	for {
+		if allJobsDone() {
+			return NULL
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func allJobsDone() bool {
+	builtin.JobsMu.Lock()
+	defer builtin.JobsMu.Unlock()
+	for _, job := range builtin.Jobs {
+		if job.Status == "Running" {
+			return false
+		}
+	}
+	return true
 }
 
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if vs == nil {
+		return &Error{Message: "invalid var statement"}
+	}
 	typeName := ""
 	if vs.TypeName != "" {
 		typeName = string(mapTypeName(vs.TypeName))
@@ -904,8 +1863,15 @@ func evaluateDeclaredValue(vs *VarStatement, env *Environment, stdin io.Reader, 
 		return nil, val.(*Error)
 	}
 
-	if typeName != "" && string(val.Type()) != typeName {
-		return nil, &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
+	if typeName != "" {
+		// nil can only be assigned to reference types (FUNCTION, ERROR)
+		if val.Type() == NULL_OBJ {
+			if typeName != string(FUNCTION_OBJ) && typeName != string(ERROR_OBJ) {
+				return nil, &Error{Message: fmt.Sprintf("cannot initialize %s with nil", typeName)}
+			}
+		} else if string(val.Type()) != typeName {
+			return nil, &Error{Message: fmt.Sprintf("cannot initialize %s with value of type %s", typeName, val.Type())}
+		}
 	}
 
 	return val, nil
@@ -919,6 +1885,10 @@ func mapTypeName(name string) ObjectType {
 		return STRING_OBJ
 	case "bool", "boolean":
 		return BOOLEAN_OBJ
+	case "func", "function":
+		return FUNCTION_OBJ
+	case "error":
+		return ERROR_OBJ
 	default:
 		return ObjectType(strings.ToUpper(name))
 	}

@@ -13,27 +13,30 @@ const (
 	FLOAT  TokenType = "FLOAT"
 
 	// Operators
-	ASSIGN       TokenType = "="
+	ASSIGN TokenType = "="
 	COLON_ASSIGN TokenType = ":="
-	PIPE         TokenType = "|"
-	GREATER      TokenType = ">"
-	LESS         TokenType = "<"
-	APPEND       TokenType = ">>"
-	AND          TokenType = "&&"
-	AMPERSAND    TokenType = "&"
-	OR           TokenType = "||"
-	NOT          TokenType = "!"
-	EQ           TokenType = "=="
-	NEQ          TokenType = "!="
-	PLUS         TokenType = "+"
-	SEMICOLON    TokenType = ";"
-	COMMA        TokenType = ","
-	DOT          TokenType = "."
-	LPAREN       TokenType = "("
-	RPAREN       TokenType = ")"
-	LBRACE       TokenType = "{"
-	RBRACE       TokenType = "}"
-	DOLLAR       TokenType = "$"
+	PIPE TokenType = "|"
+	GREATER TokenType = ">"
+	LESS TokenType = "<"
+	APPEND TokenType = ">>"
+	REDIRECT TokenType = "->"
+	AND TokenType = "&&"
+	AMPERSAND TokenType = "&"
+	OR TokenType = "||"
+	NOT TokenType = "!"
+	EQ TokenType = "=="
+	NEQ TokenType = "!="
+	PLUS TokenType = "+"
+	MINUS TokenType = "-"
+	ASTERISK TokenType = "*"
+	SEMICOLON TokenType = ";"
+	COMMA TokenType = ","
+	DOT TokenType = "."
+	LPAREN TokenType = "("
+	RPAREN TokenType = ")"
+	LBRACE TokenType = "{"
+	RBRACE TokenType = "}"
+	DOLLAR TokenType = "$"
 
 	// Keywords
 	IF        TokenType = "IF"
@@ -49,6 +52,8 @@ const (
 	NIL       TokenType = "NIL"
 	TRUE_TOK  TokenType = "TRUE"
 	FALSE_TOK TokenType = "FALSE"
+	IMPORT    TokenType = "IMPORT"
+	WAIT      TokenType = "WAIT"
 )
 
 type Token struct {
@@ -86,6 +91,10 @@ func LookupIdent(ident string) TokenType {
 		return TRUE_TOK
 	case "false":
 		return FALSE_TOK
+	case "import":
+		return IMPORT
+	case "wait":
+		return WAIT
 	default:
 		return IDENT
 	}

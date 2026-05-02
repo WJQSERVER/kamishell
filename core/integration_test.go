@@ -85,7 +85,7 @@ func TestRedirection(t *testing.T) {
 	tempFile := "test_redir.txt"
 	defer os.Remove(tempFile)
 
-	input := "print \"hello world\" > \"" + tempFile + "\"; cat \"" + tempFile + "\""
+	input := "print \"hello world\" -> \"" + tempFile + "\"; cat \"" + tempFile + "\""
 	stdout, stderr, _ := runKami(input, env)
 
 	if stderr != "" {
@@ -280,29 +280,23 @@ func TestTypedAssignmentRejectsMismatch(t *testing.T) {
 
 func TestNilDoesNotBecomeTrackedVariableType(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("x := nil; x = 1; print x", env)
-	if stderr != "" {
-		t.Errorf("unexpected stderr: %s", stderr)
+	stdout, stderr, _ := runKami("x := nil", env)
+	if !strings.Contains(stderr, "untyped nil cannot be used with :=") {
+		t.Errorf("expected error about untyped nil, got stderr: %q", stderr)
 	}
-	if strings.TrimSpace(stdout) != "1" {
-		t.Errorf("expected 1, got %q", stdout)
-	}
-	if tracked, ok := env.GetType("x"); ok && tracked == string(NULL_OBJ) {
-		t.Errorf("did not expect x to be typed as NULL")
+	if strings.TrimSpace(stdout) != "" {
+		t.Errorf("expected empty stdout, got %q", stdout)
 	}
 }
 
 func TestVarNilDoesNotFreezeNullType(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("var x = nil; x = true; print x", env)
-	if stderr != "" {
-		t.Errorf("unexpected stderr: %s", stderr)
+	stdout, stderr, _ := runKami("var x = nil", env)
+	if !strings.Contains(stderr, "invalid var statement") {
+		t.Errorf("expected error about invalid var statement, got stderr: %q", stderr)
 	}
-	if strings.TrimSpace(stdout) != "true" {
-		t.Errorf("expected true, got %q", stdout)
-	}
-	if tracked, ok := env.GetType("x"); ok && tracked == string(NULL_OBJ) {
-		t.Errorf("did not expect x to be typed as NULL")
+	if strings.TrimSpace(stdout) != "" {
+		t.Errorf("expected empty stdout, got %q", stdout)
 	}
 }
 
@@ -449,5 +443,27 @@ func TestEnvGetArchNoArgs(t *testing.T) {
 	_, stderr, _ := runKami("env.GetArch(\"invalid\")", env)
 	if !strings.Contains(stderr, "expects no arguments") {
 		t.Errorf("expected 'expects no arguments' error, got %q", stderr)
+	}
+}
+
+func TestPointerAssignComplexExpression(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("x := 10; p := &x; *p = *p + 5; print x", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "15" {
+		t.Errorf("expected 15, got %q", stdout)
+	}
+}
+
+func TestPointerAssignWithFunction(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("func inc(p) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "1" {
+		t.Errorf("expected 1, got %q", stdout)
 	}
 }

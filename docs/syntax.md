@@ -464,7 +464,180 @@ target_env "app" "CGO_ENABLED=0"
 
 更详细的构建说明见 `docs/make.md`。
 
-## 15. 当前关键字总览
+## 15. Go 标准库导入
+
+Kami 支持通过 `import` 语法导入 Go 标准库函数。
+
+### 语法
+
+```go
+import "Go/包名"
+```
+
+### 已支持的包
+
+- `fmt` - 格式化输出
+- `math` - 数学函数
+- `strings` - 字符串处理
+- `strconv` - 字符串转换
+- `os` - 操作系统功能
+
+### 内置包（无需 import）
+
+- `env` - 环境变量管理
+- `sync` - 并发同步（WaitGroup）
+
+### 示例
+
+```go
+import "Go/fmt"
+import "Go/math"
+import "Go/strings"
+
+// 使用 fmt 包
+fmt.Println("Hello, Kami!")
+fmt.Printf("Name: %s, Age: %d\n", "Kami", 1)
+
+// 使用 math 包
+x := math.Sqrt(16)
+print "sqrt(16) = $x"
+
+// 使用 strings 包
+s := "Hello, World!"
+contains := strings.Contains(s, "World")
+print "contains 'World': $contains"
+```
+
+## 16. Go 协程支持
+
+Kami 支持使用 `go` 关键字启动协程。
+
+### 语法
+
+```go
+go {
+    // 协程代码块
+}
+
+go 函数名(参数)
+```
+
+### 示例
+
+```go
+import "Go/fmt"
+
+// 协程代码块
+go {
+    fmt.Println("Inside goroutine")
+    x := 10 + 20
+    fmt.Printf("Result: %d\n", x)
+}
+
+// 协程函数调用
+func backgroundJob() {
+    fmt.Println("Background job started")
+    // 模拟工作
+    i := 0
+    for i < 5 {
+        fmt.Printf("Working... %d\n", i)
+        i = i + 1
+    }
+    fmt.Println("Background job completed")
+}
+
+go backgroundJob()
+```
+
+## 17. WaitGroup 同步
+
+Kami 支持使用 `wg.Go { ... }` 语法进行并发任务同步。
+
+### 语法
+
+```go
+wg := sync.NewWaitGroup()
+wg.Go { 任务1 }
+wg.Go { 任务2 }
+wg.Wait()
+```
+
+### 示例
+
+```go
+import "Go/fmt"
+
+func processTask(id) {
+    fmt.Printf("Task %d started\n", id)
+    // 模拟工作
+    fmt.Printf("Task %d completed\n", id)
+}
+
+wg := sync.NewWaitGroup()
+wg.Go { processTask(1) }
+wg.Go { processTask(2) }
+wg.Go { processTask(3) }
+wg.Wait()
+print "All tasks completed"
+```
+
+### 说明
+
+- `wg.Go { ... }` 自动处理 `wg.Add(1)` 和 `wg.Done()`
+- `wg.Wait()` 等待所有任务完成
+- `wg.Wait(10)` 等待最多 10 秒，超时返回错误
+
+## 18. Task/Future 并发模型
+
+Kami 支持通过 `go { return val }` 创建带返回值的异步任务。
+
+### 语法
+
+```go
+t := go { return 表达式 }
+result := t.Wait()
+result := t.Wait(超时秒数)
+```
+
+### 示例
+
+```go
+import "Go/fmt"
+
+// 创建带返回值的任务
+t1 := go { return 42 }
+t2 := go { return 100 }
+
+// 等待结果
+r1 := t1.Wait()
+r2 := t2.Wait()
+fmt.Printf("r1=%d r2=%d\n", r1, r2)
+
+// 带超时等待
+t := go { return slowTask() }
+result := t.Wait(10)  // 最多等待 10 秒
+```
+
+### wait 命令
+
+```go
+go { task1() }
+go { task2() }
+go { task3() }
+wait           // 等待所有任务完成
+wait(10)       // 等待最多 10 秒
+```
+
+### 说明
+
+- `go { return val }` 返回 Task 对象
+- `t.Wait()` 等待任务完成并返回结果
+- `t.Wait(N)` 等待最多 N 秒，超时返回错误
+- `wait` 命令等待所有 goroutine 完成
+- `wait(N)` 带超时的全局等待
+- 任务在独立的 goroutine 中执行
+
+## 18. 当前关键字总览
 
 ### 已实现关键字
 
@@ -476,6 +649,7 @@ target_env "app" "CGO_ENABLED=0"
 - `var`
 - `print`
 - `exec`
+- `import`
 - `nil`
 - `true`
 - `false`

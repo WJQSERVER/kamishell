@@ -10,7 +10,7 @@ func BenchmarkParseProgram(b *testing.B) {
 	if x {
 		print "yes";
 	} else {
-		ls -la;
+		ls "-la";
 	}`
 	benchmarkParseProgram(b, input)
 }

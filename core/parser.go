@@ -92,8 +92,38 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseForStatement()
 	case FUNC:
 		stmt = p.parseFunctionStatement()
+	case RETURN:
+		stmt = p.parseReturnStatement()
 	case GO:
 		stmt = p.parseGoStatement()
+	case IMPORT:
+		stmt = p.parseImportStatement()
+	case WAIT:
+		stmt = p.parseWaitStatement()
+	case ASTERISK:
+		// *p = val (pointer dereference assignment)
+		if p.peekToken.Type == IDENT {
+			// Look ahead to see if this is *p = val
+			// Save state including lexer
+			savedCur := p.curToken
+			savedPeek := p.peekToken
+			savedLexer := p.l.GetPosition()
+			p.nextToken() // move to p
+			isAssign := p.peekToken.Type == ASSIGN
+			// Restore state
+			p.curToken = savedCur
+			p.peekToken = savedPeek
+			p.l.SetPosition(savedLexer)
+			if isAssign {
+				// This is *p = val
+				stmt = p.parsePointerAssignStatement()
+			} else {
+				// Not an assignment, parse as expression
+				stmt = p.parseExpressionStatement()
+			}
+		} else {
+			stmt = p.parseExpressionStatement()
+		}
 	case IDENT:
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			if p.peekToken.Type == ASSIGN && p.curToken.End == p.peekToken.Start {
@@ -101,7 +131,19 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 				break
 			}
 			stmt = p.parseAssignStatement()
-		} else if p.peekToken.Type == DOT || p.peekToken.Type == LPAREN {
+		} else if p.peekToken.Type == DOT {
+			// Check for IDENT.IDENT { pattern (method call with block)
+			if p.isMethodCallWithBlock() {
+				mcbStmt := p.parseMethodCallBlockStatement()
+				if mcbStmt != nil {
+					stmt = mcbStmt
+				} else {
+					stmt = p.parseExpressionStatement()
+				}
+			} else {
+				stmt = p.parseExpressionStatement()
+			}
+		} else if p.peekToken.Type == LPAREN {
 			stmt = p.parseExpressionStatement()
 		} else {
 			stmt = p.parseCommandStatement()
@@ -115,9 +157,12 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 	}
 
 	for {
+		if stmt == nil {
+			break
+		}
 		if p.peekToken.Type == PIPE {
 			stmt = p.parsePipeStatement(stmt)
-		} else if p.peekToken.Type == GREATER || p.peekToken.Type == APPEND {
+		} else if p.peekToken.Type == REDIRECT || p.peekToken.Type == APPEND {
 			stmt = p.parseRedirectStatement(stmt)
 		} else {
 			break
@@ -142,7 +187,7 @@ func (p *Parser) parseRedirectStatement(left Statement) *RedirectStatement {
 	stmt := &RedirectStatement{Token: p.peekToken, Source: left}
 	stmt.Append = p.peekToken.Type == APPEND
 
-	p.nextToken() // move to > or >>
+	p.nextToken() // move to -> or >>
 	p.nextToken() // move to target
 
 	if p.curToken.Type == IDENT {
@@ -197,6 +242,27 @@ func (p *Parser) parseAssignStatement() *AssignStatement {
 		p.nextToken()
 	}
 
+	return stmt
+}
+
+func (p *Parser) parsePointerAssignStatement() *PointerAssignStatement {
+	stmt := &PointerAssignStatement{Token: p.curToken}
+	
+	// curToken is *, peekToken is p
+	// Parse *p as the target
+	target := &PrefixExpression{Token: p.curToken, Operator: "*"}
+	p.nextToken() // move to p
+	target.Right = p.parseIdentifier()
+	stmt.Target = target
+	
+	p.nextToken() // move to =
+	p.nextToken() // move to start of expression
+	stmt.Value = p.parseExpression(LOWEST)
+	
+	if p.peekToken.Type == SEMICOLON {
+		p.nextToken()
+	}
+	
 	return stmt
 }
 
@@ -285,7 +351,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{Token: p.curToken, Name: p.curToken.Literal}
 
-	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND {
+	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != REDIRECT && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND {
 		if merged, ok := p.tryParseKeyValueArgument(); ok {
 			stmt.Arguments = append(stmt.Arguments, merged)
 			continue
@@ -364,14 +430,20 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseNilLiteral()
 	case LPAREN:
 		leftExp = p.parseGroupedExpression()
+	case GO:
+		leftExp = p.parseGoExpression()
+	case AMPERSAND:
+		leftExp = p.parseAddressExpression()
+	case ASTERISK:
+		leftExp = p.parseDereferenceExpression()
 	default:
 		return nil
 	}
 
-	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != GREATER && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND && precedence < p.peekPrecedence() {
+	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND && precedence < p.peekPrecedence() {
 		p.nextToken()
 		switch p.curToken.Type {
-		case EQ, NEQ, GREATER, LESS, PLUS:
+		case EQ, NEQ, GREATER, LESS, PLUS, MINUS:
 			leftExp = p.parseInfixExpression(leftExp)
 		case DOT:
 			leftExp = p.parseMemberExpression(leftExp)
@@ -462,7 +534,7 @@ func precedenceForToken(tokenType TokenType) int {
 		return EQUALS
 	case GREATER, LESS:
 		return LESSGREATER
-	case PLUS:
+	case PLUS, MINUS:
 		return SUM
 	case DOT:
 		return MEMBER
@@ -516,14 +588,115 @@ func (p *Parser) parseFunctionParameters() []string {
 	return identifiers
 }
 
+func (p *Parser) parseReturnStatement() *ReturnStatement {
+	stmt := &ReturnStatement{Token: p.curToken}
+
+	p.nextToken()
+
+	if p.curToken.Type != SEMICOLON && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+		stmt.ReturnValue = p.parseExpression(LOWEST)
+	}
+
+	if p.peekToken.Type == SEMICOLON {
+		p.nextToken()
+	}
+
+	return stmt
+}
+
 func (p *Parser) parseGoStatement() *GoStatement {
 	stmt := &GoStatement{Token: p.curToken}
 	p.nextToken()
 	if p.curToken.Type == LBRACE {
 		stmt.Node = p.parseBlockStatement()
+	} else if p.curToken.Type == IDENT && p.peekToken.Type == LPAREN {
+		stmt.Node = p.parseExpressionStatement()
 	} else {
 		stmt.Node = p.parseCommandStatement()
 	}
+	return stmt
+}
+
+func (p *Parser) parseGoExpression() *GoExpression {
+	expr := &GoExpression{Token: p.curToken}
+	p.nextToken()
+	if p.curToken.Type == LBRACE {
+		expr.Node = p.parseBlockStatement()
+	} else if p.curToken.Type == IDENT && p.peekToken.Type == LPAREN {
+		expr.Node = p.parseExpressionStatement()
+	} else {
+		expr.Node = p.parseCommandStatement()
+	}
+	return expr
+}
+
+func (p *Parser) parseWaitStatement() *WaitStatement {
+	stmt := &WaitStatement{Token: p.curToken}
+	
+	// Check if there's a timeout argument: wait(10)
+	if p.peekToken.Type == LPAREN {
+		p.nextToken() // move to (
+		p.nextToken() // move to timeout value
+		stmt.Timeout = p.parseExpression(LOWEST)
+		if p.peekToken.Type == RPAREN {
+			p.nextToken() // move to )
+		}
+	}
+	
+	return stmt
+}
+
+func (p *Parser) isMethodCallWithBlock() bool {
+	// Check for IDENT.IDENT { pattern without consuming tokens
+	// curToken = IDENT (object), peekToken = DOT
+	if p.curToken.Type != IDENT || p.peekToken.Type != DOT {
+		return false
+	}
+	// Save state
+	savedCur := p.curToken
+	savedPeek := p.peekToken
+	savedLexerPos := p.l.GetPosition()
+	// Look ahead: DOT IDENT LBRACE
+	p.nextToken() // move to DOT
+	p.nextToken() // move to method name
+	isBlock := p.curToken.Type == IDENT && p.peekToken.Type == LBRACE
+	// Restore state
+	p.curToken = savedCur
+	p.peekToken = savedPeek
+	p.l.SetPosition(savedLexerPos)
+	return isBlock
+}
+
+func (p *Parser) parseMethodCallBlockStatement() *MethodCallBlockStatement {
+	stmt := &MethodCallBlockStatement{Token: p.curToken}
+	stmt.Object = &Identifier{Token: p.curToken, Value: p.curToken.Literal} // object name
+
+	p.nextToken() // move to .
+	p.nextToken() // move to method name
+
+	// Verify it's actually IDENT.IDENT { pattern
+	if p.curToken.Type != IDENT || p.peekToken.Type != LBRACE {
+		// Not a method call with block, fallback to expression
+		// This shouldn't happen if isMethodCallWithBlock worked correctly
+		return nil
+	}
+
+	stmt.Method = p.curToken.Literal
+	p.nextToken() // move to {
+	stmt.Body = p.parseBlockStatement()
+	return stmt
+}
+
+func (p *Parser) parseImportStatement() *ImportStatement {
+	stmt := &ImportStatement{Token: p.curToken}
+	
+	// Expect a string literal for the import path
+	if p.peekToken.Type != STRING {
+		return nil
+	}
+	p.nextToken()
+	stmt.Path = p.curToken.Literal
+	
 	return stmt
 }
 
@@ -536,11 +709,12 @@ func (p *Parser) parseVarStatement() *VarStatement {
 	p.nextToken()
 	stmt.Name = p.curToken.Literal
 
-	// Optional type
-	if p.peekToken.Type == IDENT {
-		p.nextToken()
-		stmt.TypeName = p.curToken.Literal
+	// Type is required for var
+	if p.peekToken.Type != IDENT {
+		return nil  // var x without type is error
 	}
+	p.nextToken()
+	stmt.TypeName = p.curToken.Literal
 
 	// Optional value
 	if p.peekToken.Type == ASSIGN {
@@ -566,6 +740,20 @@ func (p *Parser) parseGroupedExpression() Expression {
 	}
 	p.nextToken()
 
+	return exp
+}
+
+func (p *Parser) parseAddressExpression() Expression {
+	exp := &PrefixExpression{Token: p.curToken, Operator: "&"}
+	p.nextToken()
+	exp.Right = p.parseExpression(PREFIX)
+	return exp
+}
+
+func (p *Parser) parseDereferenceExpression() Expression {
+	exp := &PrefixExpression{Token: p.curToken, Operator: "*"}
+	p.nextToken()
+	exp.Right = p.parseExpression(PREFIX)
 	return exp
 }
 
