@@ -15,6 +15,7 @@ func init() {
 		Help:        "显示 shell 总帮助、指定内建命令帮助或关键字说明。",
 		Action:      Help,
 	})
+	SetArgCompleter("help", completeBuiltinNames)
 }
 
 func Help(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

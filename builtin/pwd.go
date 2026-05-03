@@ -23,8 +23,9 @@ func Pwd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 	fs := flag.NewFlagSet("pwd", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	logical := fs.Bool("L", true, "use PWD from environment, even if it contains symlinks")
-	physical := fs.Bool("P", false, "avoid all symlinks")
+	m := RegisterMeta("pwd")
+	BoolFlag(fs, m, "L", "L", true, "use PWD from environment, even if it contains symlinks")
+	physical := BoolFlag(fs, m, "P", "P", false, "avoid all symlinks")
 
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -41,8 +42,6 @@ func Pwd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 			usePhysical = true
 		}
 	}
-
-	_ = logical // satisfy compiler if not used elsewhere
 
 	if usePhysical {
 		dir, err := os.Getwd()

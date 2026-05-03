@@ -14,6 +14,7 @@ func init() {
 		Help:        "仅在 PATH 中查找外部可执行文件，不解析内建命令。",
 		Action:      Which,
 	})
+	SetArgCompleter("which", completeCommandNames)
 }
 
 func Which(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

@@ -54,23 +54,18 @@ func Cp(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	fs := flag.NewFlagSet("cp", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
+	m := RegisterMeta("cp")
 	opts := &cpOptions{}
-	fs.BoolVar(&opts.recursive, "r", false, "copy directories recursively")
+	BoolFlagVar(fs, m, &opts.recursive, "recursive", "r", false, "copy directories recursively")
 	fs.BoolVar(&opts.recursive, "R", false, "copy directories recursively")
-	fs.BoolVar(&opts.recursive, "recursive", false, "copy directories recursively")
-	fs.BoolVar(&opts.preserve, "p", false, "preserve file attributes")
-	fs.BoolVar(&opts.preserve, "preserve", false, "preserve file attributes")
-	fs.BoolVar(&opts.force, "f", false, "if an existing destination file cannot be opened, remove it and try again")
-	fs.BoolVar(&opts.force, "force", false, "if an existing destination file cannot be opened, remove it and try again")
-	fs.BoolVar(&opts.interactive, "i", false, "prompt before overwrite")
-	fs.BoolVar(&opts.interactive, "interactive", false, "prompt before overwrite")
-	fs.BoolVar(&opts.noClobber, "n", false, "do not overwrite an existing file")
-	fs.BoolVar(&opts.noClobber, "no-clobber", false, "do not overwrite an existing file")
-	fs.BoolVar(&opts.update, "u", false, "copy only when the SOURCE file is newer than the destination file or when the destination file is missing")
-	fs.BoolVar(&opts.update, "update", false, "copy only when the SOURCE file is newer than the destination file or when the destination file is missing")
-	fs.BoolVar(&opts.verbose, "v", false, "explain what is being done")
-	fs.BoolVar(&opts.verbose, "verbose", false, "explain what is being done")
-	fs.StringVar(&opts.reflink, "reflink", "auto", "COW reflink: auto, always, never")
+	m.RegisterFlag("R", "R", "copy directories recursively", FlagBool)
+	BoolFlagVar(fs, m, &opts.preserve, "preserve", "p", false, "preserve file attributes")
+	BoolFlagVar(fs, m, &opts.force, "force", "f", false, "if an existing destination file cannot be opened, remove it and try again")
+	BoolFlagVar(fs, m, &opts.interactive, "interactive", "i", false, "prompt before overwrite")
+	BoolFlagVar(fs, m, &opts.noClobber, "no-clobber", "n", false, "do not overwrite an existing file")
+	BoolFlagVar(fs, m, &opts.update, "update", "u", false, "copy only when the SOURCE file is newer than the destination file or when the destination file is missing")
+	BoolFlagVar(fs, m, &opts.verbose, "verbose", "v", false, "explain what is being done")
+	StringFlagVar(fs, m, &opts.reflink, "reflink", "", "auto", "COW reflink: auto, always, never")
 
 	if err := fs.Parse(args); err != nil {
 		return 1

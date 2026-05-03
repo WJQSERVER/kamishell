@@ -15,6 +15,7 @@ func init() {
 		Help:        "显示名称是函数、变量、内建命令还是外部可执行文件。",
 		Action:      Type,
 	})
+	SetArgCompleter("type", completeCommandNames)
 }
 
 func Type(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {

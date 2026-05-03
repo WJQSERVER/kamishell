@@ -16,6 +16,7 @@ func init() {
 		Help:        "切换当前工作目录；不带参数时跳转到 HOME，`cd -` 跳回 OLDPWD。",
 		Action:      Cd,
 	})
+	SetArgCompleter("cd", completeDirectoryPaths)
 }
 
 func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -23,9 +24,9 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	fs := flag.NewFlagSet("cd", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	logical := fs.Bool("L", true, "handle the directory operand dot-dot component logically")
-	_ = logical
-	physical := fs.Bool("P", false, "handle the directory operand dot-dot component physically")
+	m := RegisterMeta("cd")
+	BoolFlag(fs, m, "L", "L", true, "handle the directory operand dot-dot component logically")
+	physical := BoolFlag(fs, m, "P", "P", false, "handle the directory operand dot-dot component physically")
 
 	if err := fs.Parse(args); err != nil {
 		return 1

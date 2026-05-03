@@ -26,13 +26,14 @@ func Rm(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	fs := flag.NewFlagSet("rm", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	force := fs.Bool("f", false, "ignore nonexistent files and arguments, never prompt")
-	interactive := fs.Bool("i", false, "prompt before every removal")
-	recursive := fs.Bool("r", false, "remove directories and their contents recursively")
-	recursiveUpper := fs.Bool("R", false, "remove directories and their contents recursively")
-	verbose := fs.Bool("v", false, "explain what is being done")
-	noPreserveRoot := fs.Bool("no-preserve-root", false, "do not treat '/' specially")
-	_ = fs.Bool("preserve-root", true, "do not remove '/' (default)")
+	m := RegisterMeta("rm")
+	force := BoolFlag(fs, m, "f", "f", false, "ignore nonexistent files and arguments, never prompt")
+	interactive := BoolFlag(fs, m, "i", "i", false, "prompt before every removal")
+	recursive := BoolFlag(fs, m, "r", "r", false, "remove directories and their contents recursively")
+	recursiveUpper := BoolFlag(fs, m, "R", "R", false, "remove directories and their contents recursively")
+	verbose := BoolFlag(fs, m, "v", "v", false, "explain what is being done")
+	noPreserveRoot := BoolFlag(fs, m, "no-preserve-root", "", false, "do not treat '/' specially")
+	BoolFlag(fs, m, "preserve-root", "", true, "do not remove '/' (default)")
 
 	if err := fs.Parse(args); err != nil {
 		return 1

@@ -209,6 +209,7 @@ func parseHTTPCommand(args []string, stderr io.Writer) (httpCommandSpec, error) 
 		printHTTPUsage(stderr)
 	}
 
+	m := RegisterMeta("http")
 	var methodFlag string
 	var headers stringListFlag
 	var queries stringListFlag
@@ -233,42 +234,61 @@ func parseHTTPCommand(args []string, stderr io.Writer) (httpCommandSpec, error) 
 	var dump bool
 	var noDefaultHeaders bool
 
-	fs.StringVar(&methodFlag, "X", "", "HTTP method")
-	fs.StringVar(&methodFlag, "method", "", "HTTP method")
+	StringFlagVar(fs, m, &methodFlag, "method", "X", "", "HTTP method")
+	m.SetFlagCompleter("method", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+	})
 	fs.Var(&headers, "H", "request header")
 	fs.Var(&headers, "header", "request header")
+	m.RegisterFlag("header", "H", "request header", FlagString)
+	m.SetFlagCompleter("header", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{
+			"Accept:", "Accept-Encoding:", "Accept-Language:", "Authorization:",
+			"Cache-Control:", "Content-Type:", "Cookie:", "Origin:",
+			"User-Agent:", "X-Requested-With:",
+		}
+	})
 	fs.Var(&queries, "q", "query parameter")
 	fs.Var(&queries, "query", "query parameter")
+	m.RegisterFlag("query", "q", "query parameter", FlagString)
 	fs.Var(&forms, "f", "form field")
 	fs.Var(&forms, "form", "form field")
+	m.RegisterFlag("form", "f", "form field", FlagString)
 	fs.Var(&dataFlag, "d", "raw request body")
 	fs.Var(&dataFlag, "data", "raw request body")
+	m.RegisterFlag("data", "d", "raw request body", FlagString)
 	fs.Var(&jsonFlag, "j", "json request body")
 	fs.Var(&jsonFlag, "json", "json request body")
-	fs.StringVar(&contentType, "content-type", "", "request content type")
-	fs.StringVar(&accept, "accept", "", "request accept header")
-	fs.StringVar(&auth, "auth", "", "basic auth user:pass")
-	fs.StringVar(&bearer, "bearer", "", "bearer token")
-	fs.StringVar(&outputPath, "o", "", "write response body to file")
-	fs.StringVar(&outputPath, "output", "", "write response body to file")
-	fs.BoolVar(&include, "i", false, "include response status and headers")
-	fs.BoolVar(&include, "include", false, "include response status and headers")
-	fs.BoolVar(&headersOnly, "I", false, "print response status and headers only")
-	fs.BoolVar(&headersOnly, "headers", false, "print response status and headers only")
-	fs.BoolVar(&statusOnly, "s", false, "print response status only")
-	fs.BoolVar(&statusOnly, "status", false, "print response status only")
-	fs.BoolVar(&discardBody, "discard-body", false, "discard response body")
-	fs.DurationVar(&timeout, "t", 0, "request timeout")
-	fs.DurationVar(&timeout, "timeout", 0, "request timeout")
-	fs.IntVar(&retries, "r", 0, "retry count")
-	fs.IntVar(&retries, "retries", 0, "retry count")
-	fs.StringVar(&retryStatusCSV, "retry-status", "429,500,502,503,504", "retry status codes")
-	fs.DurationVar(&retryBase, "retry-base", 100*time.Millisecond, "retry base delay")
-	fs.DurationVar(&retryMax, "retry-max", time.Second, "retry max delay")
-	fs.StringVar(&userAgent, "u", "", "user agent")
-	fs.StringVar(&userAgent, "user-agent", "", "user agent")
-	fs.BoolVar(&dump, "dump", false, "dump request log")
-	fs.BoolVar(&noDefaultHeaders, "no-default-headers", false, "disable default request headers")
+	m.RegisterFlag("json", "j", "json request body", FlagString)
+	StringFlagVar(fs, m, &contentType, "content-type", "", "", "request content type")
+	m.SetFlagCompleter("content-type", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{
+			"application/json", "application/xml", "application/x-www-form-urlencoded",
+			"multipart/form-data", "text/plain", "text/html", "text/xml",
+		}
+	})
+	StringFlagVar(fs, m, &accept, "accept", "", "", "request accept header")
+	m.SetFlagCompleter("accept", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{
+			"application/json", "application/xml", "text/plain", "text/html",
+			"text/xml", "application/octet-stream", "*/*",
+		}
+	})
+	StringFlagVar(fs, m, &auth, "auth", "", "", "basic auth user:pass")
+	StringFlagVar(fs, m, &bearer, "bearer", "", "", "bearer token")
+	StringFlagVar(fs, m, &outputPath, "output", "o", "", "write response body to file")
+	BoolFlagVar(fs, m, &include, "include", "i", false, "include response status and headers")
+	BoolFlagVar(fs, m, &headersOnly, "headers", "I", false, "print response status and headers only")
+	BoolFlagVar(fs, m, &statusOnly, "status", "s", false, "print response status only")
+	BoolFlagVar(fs, m, &discardBody, "discard-body", "", false, "discard response body")
+	DurationFlagVar(fs, m, &timeout, "timeout", "t", 0, "request timeout")
+	IntFlagVar(fs, m, &retries, "retries", "r", 0, "retry count")
+	StringFlagVar(fs, m, &retryStatusCSV, "retry-status", "", "429,500,502,503,504", "retry status codes")
+	DurationFlagVar(fs, m, &retryBase, "retry-base", "", 100*time.Millisecond, "retry base delay")
+	DurationFlagVar(fs, m, &retryMax, "retry-max", "", time.Second, "retry max delay")
+	StringFlagVar(fs, m, &userAgent, "user-agent", "u", "", "user agent")
+	BoolFlagVar(fs, m, &dump, "dump", "", false, "dump request log")
+	BoolFlagVar(fs, m, &noDefaultHeaders, "no-default-headers", "", false, "disable default request headers")
 
 	if err := fs.Parse(args); err != nil {
 		return httpCommandSpec{}, err
