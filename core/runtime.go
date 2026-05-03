@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -595,7 +596,13 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		if isError(val) {
 			return val
 		}
-		fmt.Fprintln(stdout, inspectObject(val))
+		if i, ok := val.(*Integer); ok {
+			fmt.Fprintln(stdout, strconv.FormatInt(i.Value, 10))
+		} else if s, ok := val.(*String); ok {
+			fmt.Fprintln(stdout, s.Value)
+		} else {
+			fmt.Fprintln(stdout, inspectObject(val))
+		}
 		return NULL
 	case *ExecStatement:
 		return evalExecStatement(node, env, stdin, stdout, stderr)
@@ -685,6 +692,11 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 	var result Object = NULL
 	body := fs.Consequence
 	fastCondition, hasFastCondition := buildForConditionFastPath(fs.Condition)
+
+	if fs.HasInc && hasFastCondition && body != nil && len(body.Statements) == 1 {
+		return evalForInlinedInc(fs, fastCondition, env, stdin, stdout, stderr)
+	}
+
 	for {
 		if fs.Condition != nil {
 			if hasFastCondition {
@@ -721,6 +733,33 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 		if fs.Condition == nil {
 			break
 		}
+	}
+	return result
+}
+
+func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var result Object = NULL
+	incName := fs.IncVarName
+	delta := fs.IncDelta
+
+	for {
+		ok, errObj := evalFastForCondition(cond, env)
+		if errObj != nil {
+			return errObj
+		}
+		if !ok {
+			break
+		}
+
+		obj, found := env.GetObject(incName)
+		if !found {
+			return &Error{Message: "identifier not found: " + incName}
+		}
+		intObj, ok := obj.(*Integer)
+		if !ok {
+			return &Error{Message: "type mismatch: for increment requires INTEGER"}
+		}
+		env.SetObject(incName, getIntegerObject(intObj.Value+delta))
 	}
 	return result
 }

@@ -129,6 +129,73 @@ func TestForLoop(t *testing.T) {
 	}
 }
 
+func TestForLoopLargeCount(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := "i := 0; for i < 1000 { i = i + 1 }; print i"
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "1000" {
+		t.Errorf("expected 1000, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestForLoopDecrement(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := "i := 5; for i > 0 { i = i - 1 }; print i"
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "0" {
+		t.Errorf("expected 0, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestForLoopEmptyBody(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := "i := 0; for i < 5 { i = i + 1 }; print i"
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "5" {
+		t.Errorf("expected 5, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestForLoopZeroIterations(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := "i := 10; for i < 5 { i = i + 1 }; print i"
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "10" {
+		t.Errorf("expected 10, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestForLoopMultiStatementBody(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := "i := 0; for i < 3 { x := i + 1; print x; i = i + 1 }"
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d: %v", len(lines), lines)
+	}
+	expected := []string{"1", "2", "3"}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
 func TestBuiltins(t *testing.T) {
 	env := NewEmptyEnvironment()
 	dirName := "test_dir_builtin"

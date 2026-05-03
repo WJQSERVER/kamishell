@@ -14,6 +14,14 @@ func BenchmarkEvalLoopProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `i := 0; for i < 100 { i = i + 1 }; print i`)
 }
 
+func BenchmarkEvalLoopLargeProgram(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 1000 { i = i + 1 }; print i`)
+}
+
+func BenchmarkEvalLoopWithPrintProgram(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 100 { print i; i = i + 1 }`)
+}
+
 func BenchmarkEvalFunctionCallProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `func greet(name) { print name }; greet("kami")`)
 }

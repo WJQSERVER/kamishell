@@ -354,6 +354,10 @@ type ForStatement struct {
 	Token       Token // the for token
 	Condition   Expression
 	Consequence *BlockStatement
+	// Pre-analyzed increment pattern (Parser stage)
+	IncVarName string // variable name for i = i + N pattern
+	IncDelta   int64  // +1 or -1 for i = i +/- 1
+	HasInc     bool   // true if body is a single i = i +/- 1 assignment
 }
 
 func (fs *ForStatement) statementNode()       {}

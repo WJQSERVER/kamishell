@@ -330,7 +330,44 @@ func (p *Parser) parseForStatement() *ForStatement {
 		stmt.Consequence = p.parseBlockStatement()
 	}
 
+	p.classifyForIncrement(stmt)
 	return stmt
+}
+
+func (p *Parser) classifyForIncrement(stmt *ForStatement) {
+	body := stmt.Consequence
+	if body == nil || len(body.Statements) != 1 {
+		return
+	}
+	assign, ok := body.Statements[0].(*AssignStatement)
+	if !ok || assign.Token.Literal != "=" {
+		return
+	}
+	infix, ok := assign.Value.(*InfixExpression)
+	if !ok {
+		return
+	}
+	leftIdent, leftIsIdent := infix.Left.(*Identifier)
+	if !leftIsIdent || leftIdent.Value != assign.Name {
+		return
+	}
+	rightLit, rightIsLit := infix.Right.(*IntegerLiteral)
+	if !rightIsLit || rightLit.Err != "" {
+		return
+	}
+	if rightLit.Value != 1 && rightLit.Value != -1 {
+		return
+	}
+	switch infix.Operator {
+	case "+":
+		stmt.IncVarName = assign.Name
+		stmt.IncDelta = rightLit.Value
+		stmt.HasInc = true
+	case "-":
+		stmt.IncVarName = assign.Name
+		stmt.IncDelta = -rightLit.Value
+		stmt.HasInc = true
+	}
 }
 
 func (p *Parser) parseBlockStatement() *BlockStatement {
