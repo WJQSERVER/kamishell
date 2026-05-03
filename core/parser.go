@@ -683,6 +683,7 @@ func (p *Parser) parseSwitchStatement() *SwitchStatement {
 		}
 	}
 
+	p.classifySwitch(stmt)
 	return stmt
 }
 
@@ -706,6 +707,60 @@ func (p *Parser) parseCaseClause() CaseClause {
 
 	clause.Body = p.parseCaseBody()
 	return clause
+}
+
+func (p *Parser) classifySwitch(stmt *SwitchStatement) {
+	if len(stmt.Cases) == 0 {
+		return
+	}
+	allInt := true
+	allStr := true
+	for i := range stmt.Cases {
+		c := &stmt.Cases[i]
+		if c.Values == nil {
+			continue
+		}
+		caseInts := make([]int64, 0, len(c.Values))
+		caseStrs := make([]string, 0, len(c.Values))
+		for _, v := range c.Values {
+			switch lit := v.(type) {
+			case *IntegerLiteral:
+				if lit.Err != "" {
+					allInt = false
+					allStr = false
+					caseInts = nil
+					caseStrs = nil
+					break
+				}
+				allStr = false
+				caseInts = append(caseInts, lit.Value)
+			case *StringLiteral:
+				if strings.IndexByte(lit.Value, '$') >= 0 {
+					allInt = false
+					allStr = false
+					caseInts = nil
+					caseStrs = nil
+					break
+				}
+				allInt = false
+				caseStrs = append(caseStrs, lit.Value)
+			default:
+				allInt = false
+				allStr = false
+				caseInts = nil
+				caseStrs = nil
+			}
+		}
+		if len(caseInts) == len(c.Values) {
+			c.IntConsts = caseInts
+			c.HasConstVals = true
+		} else if len(caseStrs) == len(c.Values) {
+			c.StringConsts = caseStrs
+			c.HasConstVals = true
+		}
+	}
+	stmt.IntSwitch = allInt
+	stmt.StringSwitch = allStr
 }
 
 func (p *Parser) parseDefaultClause() CaseClause {

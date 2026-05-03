@@ -1831,6 +1831,131 @@ func allJobsDone() bool {
 }
 
 func evalSwitchStatement(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if ss.IntSwitch {
+		return evalIntSwitch(ss, env, stdin, stdout, stderr)
+	}
+	if ss.StringSwitch {
+		return evalStringSwitch(ss, env, stdin, stdout, stderr)
+	}
+	return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+}
+
+type intCasePair struct {
+	val     int64
+	caseIdx int
+}
+
+func evalIntSwitch(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var tagVal Object
+	if ss.Tag != nil {
+		tagVal = EvalWithIO(ss.Tag, env, stdin, stdout, stderr)
+		if isError(tagVal) {
+			return tagVal
+		}
+	}
+
+	var defaultClause *CaseClause
+	if tagVal == nil {
+		// tagless int switch: evaluate conditions as bool
+		return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+	}
+
+	tagInt, ok := tagVal.(*Integer)
+	if !ok {
+		return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+	}
+
+	// Build sorted (value, caseIndex) pairs for binary search
+	pairs := make([]intCasePair, 0, len(ss.Cases))
+	for i := range ss.Cases {
+		c := &ss.Cases[i]
+		if c.Values == nil {
+			defaultClause = c
+			continue
+		}
+		for _, v := range c.IntConsts {
+			pairs = append(pairs, intCasePair{val: v, caseIdx: i})
+		}
+	}
+
+	// Sort by value for binary search
+	sortIntCasePairs(pairs)
+
+	// Binary search for tag value
+	target := tagInt.Value
+	lo, hi := 0, len(pairs)-1
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		if pairs[mid].val == target {
+			return EvalWithIO(ss.Cases[pairs[mid].caseIdx].Body, env, stdin, stdout, stderr)
+		}
+		if pairs[mid].val < target {
+			lo = mid + 1
+		} else {
+			hi = mid - 1
+		}
+	}
+
+	if defaultClause != nil {
+		return EvalWithIO(defaultClause.Body, env, stdin, stdout, stderr)
+	}
+	return NULL
+}
+
+func sortIntCasePairs(p []intCasePair) {
+	for i := 1; i < len(p); i++ {
+		key := p[i]
+		j := i - 1
+		for j >= 0 && p[j].val > key.val {
+			p[j+1] = p[j]
+			j--
+		}
+		p[j+1] = key
+	}
+}
+
+func evalStringSwitch(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var tagVal Object
+	if ss.Tag != nil {
+		tagVal = EvalWithIO(ss.Tag, env, stdin, stdout, stderr)
+		if isError(tagVal) {
+			return tagVal
+		}
+	}
+
+	var defaultClause *CaseClause
+	if tagVal == nil {
+		return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+	}
+
+	tagStr, ok := tagVal.(*String)
+	if !ok {
+		return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+	}
+
+	for i := range ss.Cases {
+		c := &ss.Cases[i]
+		if c.Values == nil {
+			defaultClause = c
+			continue
+		}
+		if !c.HasConstVals {
+			return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+		}
+		for _, sv := range c.StringConsts {
+			if tagStr.Value == sv {
+				return EvalWithIO(c.Body, env, stdin, stdout, stderr)
+			}
+		}
+	}
+
+	if defaultClause != nil {
+		return EvalWithIO(defaultClause.Body, env, stdin, stdout, stderr)
+	}
+	return NULL
+}
+
+func evalSwitchFallback(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var tagVal Object
 	if ss.Tag != nil {
 		tagVal = EvalWithIO(ss.Tag, env, stdin, stdout, stderr)

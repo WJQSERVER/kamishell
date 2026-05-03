@@ -566,3 +566,80 @@ func TestSwitchDefaultFirst(t *testing.T) {
 		t.Errorf("expected five (case should take priority over default position), got %q", stdout)
 	}
 }
+
+func TestSwitchLargeIntBinarySearch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := 15; switch x { case 1: print "1" case 3: print "3" case 5: print "5" case 7: print "7" case 9: print "9" case 11: print "11" case 13: print "13" case 15: print "15" case 17: print "17" case 19: print "19" default: print "?" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "15" {
+		t.Errorf("expected 15, got %q", stdout)
+	}
+}
+
+func TestSwitchLargeIntDefault(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := 99; switch x { case 1: print "1" case 2: print "2" case 3: print "3" case 4: print "4" case 5: print "5" case 6: print "6" case 7: print "7" case 8: print "8" case 9: print "9" case 10: print "10" default: print "default" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "default" {
+		t.Errorf("expected default, got %q", stdout)
+	}
+}
+
+func TestSwitchLargeStringMatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := "hello"; switch x { case "alpha": print "a" case "beta": print "b" case "hello": print "matched" case "world": print "w" default: print "?" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "matched" {
+		t.Errorf("expected matched, got %q", stdout)
+	}
+}
+
+func TestSwitchLargeStringDefault(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := "nope"; switch x { case "alpha": print "a" case "beta": print "b" case "hello": print "h" case "world": print "w" default: print "default" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "default" {
+		t.Errorf("expected default, got %q", stdout)
+	}
+}
+
+func TestSwitchIntFirstCase(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := 1; switch x { case 1: print "first" case 2: print "second" case 3: print "third" case 4: print "fourth" case 5: print "fifth" default: print "?" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "first" {
+		t.Errorf("expected first, got %q", stdout)
+	}
+}
+
+func TestSwitchIntLastCase(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := 5; switch x { case 1: print "first" case 2: print "second" case 3: print "third" case 4: print "fourth" case 5: print "fifth" default: print "?" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "fifth" {
+		t.Errorf("expected fifth, got %q", stdout)
+	}
+}
+
+func TestSwitchIntMultipleValues(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := 3; switch x { case 1, 2, 3: print "matched" case 4, 5, 6: print "other" default: print "?" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "matched" {
+		t.Errorf("expected matched, got %q", stdout)
+	}
+}

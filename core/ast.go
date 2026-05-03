@@ -371,9 +371,11 @@ func (fs *ForStatement) String() string {
 }
 
 type SwitchStatement struct {
-	Token Token       // the switch token
-	Tag   Expression  // optional, nil for tagless switch
-	Cases []CaseClause
+	Token        Token       // the switch token
+	Tag          Expression  // optional, nil for tagless switch
+	Cases        []CaseClause
+	IntSwitch    bool // true if all non-default case values are integer literals
+	StringSwitch bool // true if all non-default case values are string literals (no $)
 }
 
 func (ss *SwitchStatement) statementNode()       {}
@@ -396,6 +398,9 @@ type CaseClause struct {
 	Token  Token          // case or default keyword
 	Values []Expression   // case values; nil for default
 	Body   *BlockStatement
+	IntConsts    []int64  // pre-computed integer literal values (Parser stage)
+	StringConsts []string // pre-computed string literal values (Parser stage)
+	HasConstVals bool     // true when all Values are same-type literals
 }
 
 func (cc *CaseClause) String() string {
