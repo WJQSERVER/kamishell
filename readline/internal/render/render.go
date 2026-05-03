@@ -98,37 +98,105 @@ func (r *Renderer) NewLine() {
 	r.lastRows = 0
 }
 
-func (r *Renderer) RefreshSearch(query *buffer.Buffer, result string) {
+func (r *Renderer) RefreshSearchWithMatches(query string, matches []string, selected int, matchPos int) {
 	var out bytes.Buffer
 
 	out.WriteString("\x1b[?25l")
 
+	totalRows := r.lastRows
 	if r.lastRows > 1 {
 		fmt.Fprintf(&out, "\x1b[%dA", r.lastRows-1)
 	}
-	for i := 0; i < max(1, r.lastRows); i++ {
+	for i := 0; i < max(1, totalRows); i++ {
 		out.WriteString("\r\x1b[2K")
-		if i < max(1, r.lastRows)-1 {
+		if i < max(1, totalRows)-1 {
 			out.WriteString("\x1b[1B")
 		}
 	}
-	if r.lastRows > 1 {
-		fmt.Fprintf(&out, "\x1b[%dA", r.lastRows-1)
+	if totalRows > 1 {
+		fmt.Fprintf(&out, "\x1b[%dA", totalRows-1)
 	}
 
-	fmt.Fprintf(&out, "\x1b[1G(reverse-i-search)`%s': %s", query.String(), result)
+	total := len(matches)
+	var currentLine string
+	if total > 0 && selected >= 0 && selected < total {
+		currentLine = matches[selected]
+	}
+
+	// Header line
+	if total > 0 {
+		fmt.Fprintf(&out, "\x1b[1G(reverse-i-search)`%s': [%d/%d] ", query, selected+1, total)
+	} else {
+		fmt.Fprintf(&out, "\x1b[1G(reverse-i-search)`%s': ", query)
+	}
+
+	// Current match with highlight
+	if currentLine != "" && matchPos >= 0 {
+		qLen := len(query)
+		before := currentLine[:matchPos]
+		match := currentLine[matchPos : matchPos+qLen]
+		after := currentLine[matchPos+qLen:]
+		out.WriteString(before)
+		out.WriteString("\x1b[7m")
+		out.WriteString(match)
+		out.WriteString("\x1b[0m")
+		out.WriteString(after)
+	} else {
+		out.WriteString(currentLine)
+	}
 	out.WriteString("\x1b[K")
 
-	termWidth := r.getTerminalWidth()
-	searchWidth := runewidth.StringWidth("(reverse-i-search)`': ") + query.FullWidth() + runewidth.StringWidth(result)
-	cursorCol := runewidth.StringWidth("(reverse-i-search)`") + query.FullWidth()
+	// Candidate list below (max 5 visible)
+	const maxVisible = 5
+	if total > 0 {
+		pageStart := 0
+		if total > maxVisible {
+			pageStart = selected / maxVisible * maxVisible
+		}
+		pageEnd := min(pageStart+maxVisible, total)
+
+		for idx := pageStart; idx < pageEnd; idx++ {
+			out.WriteString("\r\n")
+			m := matches[idx]
+			if idx == selected {
+				out.WriteString("\x1b[36m>\x1b[0m ")
+			} else {
+				out.WriteString("  ")
+			}
+
+			// Highlight match in candidate
+			qIdx := strings.Index(m, query)
+			if qIdx >= 0 {
+				qLen := len(query)
+				out.WriteString(m[:qIdx])
+				out.WriteString("\x1b[7m")
+				out.WriteString(m[qIdx : qIdx+qLen])
+				out.WriteString("\x1b[0m")
+				out.WriteString(m[qIdx+qLen:])
+			} else {
+				out.WriteString(m)
+			}
+			out.WriteString("\x1b[K")
+		}
+	}
+
+	searchWidth := runewidth.StringWidth("(reverse-i-search)`': ") + runewidth.StringWidth(query) + runewidth.StringWidth(currentLine)
+	cursorCol := runewidth.StringWidth("(reverse-i-search)`") + runewidth.StringWidth(query)
+
+	rowsUp := 0
+	if total > 0 {
+		rowsUp = min(maxVisible, total)
+	}
+	if rowsUp > 0 {
+		fmt.Fprintf(&out, "\x1b[%dA", rowsUp)
+	}
 	fmt.Fprintf(&out, "\x1b[%dG", cursorCol+1)
 
 	out.WriteString("\x1b[?25h")
 
-	r.out.Write(out.Bytes())
-	r.lastWidth = query.FullWidth() + runewidth.StringWidth(result)
-	r.lastRows = max(1, rowsForWidth(searchWidth, termWidth))
+	_, _ = r.out.Write(out.Bytes())
+	r.lastWidth = runewidth.StringWidth(query) + runewidth.StringWidth(currentLine)
+	r.lastRows = max(1, rowsForWidth(searchWidth, r.getTerminalWidth())) + rowsUp
 }
 
 func (r *Renderer) RefreshWithCompletion(b *buffer.Buffer, candidates [][]rune, selected int) error {

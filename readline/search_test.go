@@ -353,10 +353,106 @@ func TestReverseSearchWithEmptyHistory(t *testing.T) {
 	rl.mu.Lock()
 	rl.startSearch()
 	rl.searchQuery.SetContent("anything")
-	rl.updateSearchResult()
+	rl.rebuildSearchMatches()
 	rl.mu.Unlock()
 
 	if rl.searchResult != "" {
 		t.Fatalf("expected empty result with empty history, got %q", rl.searchResult)
+	}
+}
+
+func TestSearchMatchPosition(t *testing.T) {
+	h := NewHistory()
+	h.Append("git status")
+	h.Append("echo hello world")
+	h.Append("git push origin main")
+
+	cfg := &Config{
+		Prompt:  "> ",
+		History: h,
+		Stdin:   os.Stdin,
+		Stdout:  os.Stdout,
+	}
+	cfg.Init()
+
+	rl, err := NewInstance(cfg)
+	if err != nil {
+		t.Fatalf("NewInstance failed: %v", err)
+	}
+
+	rl.mu.Lock()
+	rl.startSearch()
+	rl.searchQuery.SetContent("origin")
+	rl.rebuildSearchMatches()
+	rl.mu.Unlock()
+
+	if len(rl.searchMatches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(rl.searchMatches))
+	}
+	if rl.searchMatches[0].matchPos != 9 {
+		t.Fatalf("expected matchPos=9, got %d", rl.searchMatches[0].matchPos)
+	}
+}
+
+func TestSearchMultipleMatches(t *testing.T) {
+	h := NewHistory()
+	h.Append("go build")
+	h.Append("go test")
+	h.Append("go vet")
+	h.Append("echo done")
+
+	cfg := &Config{
+		Prompt:  "> ",
+		History: h,
+		Stdin:   os.Stdin,
+		Stdout:  os.Stdout,
+	}
+	cfg.Init()
+
+	rl, err := NewInstance(cfg)
+	if err != nil {
+		t.Fatalf("NewInstance failed: %v", err)
+	}
+
+	rl.mu.Lock()
+	rl.startSearch()
+	rl.searchQuery.SetContent("go")
+	rl.rebuildSearchMatches()
+	rl.mu.Unlock()
+
+	if len(rl.searchMatches) != 3 {
+		t.Fatalf("expected 3 matches, got %d", len(rl.searchMatches))
+	}
+
+	// Most recent should be first (go vet)
+	if rl.searchResult != "go vet" {
+		t.Fatalf("expected first match 'go vet', got %q", rl.searchResult)
+	}
+
+	// Navigate to next
+	rl.mu.Lock()
+	rl.searchPrevMatch()
+	rl.mu.Unlock()
+
+	if rl.searchResult != "go test" {
+		t.Fatalf("expected second match 'go test', got %q", rl.searchResult)
+	}
+
+	// Navigate to next
+	rl.mu.Lock()
+	rl.searchPrevMatch()
+	rl.mu.Unlock()
+
+	if rl.searchResult != "go build" {
+		t.Fatalf("expected third match 'go build', got %q", rl.searchResult)
+	}
+
+	// Wrap around
+	rl.mu.Lock()
+	rl.searchPrevMatch()
+	rl.mu.Unlock()
+
+	if rl.searchResult != "go vet" {
+		t.Fatalf("expected wrap to 'go vet', got %q", rl.searchResult)
 	}
 }
