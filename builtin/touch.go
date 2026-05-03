@@ -64,17 +64,15 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 	fs := flag.NewFlagSet("touch", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
+	m := RegisterMeta("touch")
 	opts := &touchOptions{}
-	fs.BoolVar(&opts.atime, "a", false, "change only the access time")
-	fs.BoolVar(&opts.noCreate, "c", false, "do not create the file if it does not exist")
-	fs.BoolVar(&opts.noCreate, "no-create", false, "do not create the file if it does not exist")
-	fs.StringVar(&opts.date, "d", "", "use DATE instead of current time")
-	fs.StringVar(&opts.date, "date", "", "use DATE instead of current time")
-	fs.BoolVar(&opts.mtime, "m", false, "change only the modification time")
-	fs.StringVar(&opts.reference, "r", "", "use this file's times instead of current time")
-	fs.StringVar(&opts.reference, "reference", "", "use this file's times instead of current time")
-	fs.StringVar(&opts.timestamp, "t", "", "use [[CC]YY]MMDDhhmm[.ss] instead of current time")
-	fs.StringVar(&opts.timeSelector, "time", "", "change the specified time: access, atime, use, modify, mtime")
+	BoolFlagVar(fs, m, &opts.atime, "a", "a", false, "change only the access time")
+	BoolFlagVar(fs, m, &opts.noCreate, "no-create", "c", false, "do not create the file if it does not exist")
+	StringFlagVar(fs, m, &opts.date, "date", "d", "", "use DATE instead of current time")
+	BoolFlagVar(fs, m, &opts.mtime, "m", "m", false, "change only the modification time")
+	StringFlagVar(fs, m, &opts.reference, "reference", "r", "", "use this file's times instead of current time")
+	StringFlagVar(fs, m, &opts.timestamp, "t", "t", "", "use [[CC]YY]MMDDhhmm[.ss] instead of current time")
+	StringFlagVar(fs, m, &opts.timeSelector, "time", "", "", "change the specified time: access, atime, use, modify, mtime")
 
 	if err := fs.Parse(args); err != nil {
 		return 1

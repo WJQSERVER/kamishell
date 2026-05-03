@@ -45,15 +45,12 @@ func Mv(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	fs := flag.NewFlagSet("mv", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
+	m := RegisterMeta("mv")
 	opts := &mvOptions{}
-	fs.BoolVar(&opts.force, "f", false, "do not prompt before overwriting")
-	fs.BoolVar(&opts.force, "force", false, "do not prompt before overwriting")
-	fs.BoolVar(&opts.interactive, "i", false, "prompt before overwrite")
-	fs.BoolVar(&opts.interactive, "interactive", false, "prompt before overwrite")
-	fs.BoolVar(&opts.noClobber, "n", false, "do not overwrite an existing file")
-	fs.BoolVar(&opts.noClobber, "no-clobber", false, "do not overwrite an existing file")
-	fs.BoolVar(&opts.verbose, "v", false, "explain what is being done")
-	fs.BoolVar(&opts.verbose, "verbose", false, "explain what is being done")
+	BoolFlagVar(fs, m, &opts.force, "force", "f", false, "do not prompt before overwriting")
+	BoolFlagVar(fs, m, &opts.interactive, "interactive", "i", false, "prompt before overwrite")
+	BoolFlagVar(fs, m, &opts.noClobber, "no-clobber", "n", false, "do not overwrite an existing file")
+	BoolFlagVar(fs, m, &opts.verbose, "verbose", "v", false, "explain what is being done")
 
 	if err := fs.Parse(args); err != nil {
 		return 1

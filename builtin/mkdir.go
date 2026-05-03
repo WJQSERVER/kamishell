@@ -23,8 +23,9 @@ func Mkdir(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 	fs := flag.NewFlagSet("mkdir", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	parents := fs.Bool("p", false, "no error if existing, make parent directories as needed")
-	modeStr := fs.String("m", "0755", "set file mode (octal)")
+	m := RegisterMeta("mkdir")
+	parents := BoolFlag(fs, m, "p", "p", false, "no error if existing, make parent directories as needed")
+	modeStr := StringFlag(fs, m, "m", "m", "0755", "set file mode (octal)")
 
 	if err := fs.Parse(args); err != nil {
 		return 1

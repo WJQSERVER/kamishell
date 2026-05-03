@@ -26,15 +26,16 @@ func Ls(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	fs := flag.NewFlagSet("ls", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	all := fs.Bool("a", false, "do not ignore entries starting with .")
-	long := fs.Bool("l", false, "use a long listing format")
-	human := fs.Bool("h", false, "with -l, print sizes like 1K 234M 2G etc.")
-	classify := fs.Bool("F", false, "append indicator (one of */=>@|) to entries")
-	recursive := fs.Bool("R", false, "list subdirectories recursively")
-	reverse := fs.Bool("r", false, "reverse order while sorting")
-	sortByTime := fs.Bool("t", false, "sort by modification time, newest first")
-	sortBySize := fs.Bool("S", false, "sort by file size, largest first")
-	dirOnly := fs.Bool("d", false, "list directories themselves, not their contents")
+	m := RegisterMeta("ls")
+	all := BoolFlag(fs, m, "a", "a", false, "do not ignore entries starting with .")
+	long := BoolFlag(fs, m, "l", "l", false, "use a long listing format")
+	human := BoolFlag(fs, m, "h", "h", false, "with -l, print sizes like 1K 234M 2G etc.")
+	classify := BoolFlag(fs, m, "F", "F", false, "append indicator (one of */=>@|) to entries")
+	recursive := BoolFlag(fs, m, "R", "R", false, "list subdirectories recursively")
+	reverse := BoolFlag(fs, m, "r", "r", false, "reverse order while sorting")
+	sortByTime := BoolFlag(fs, m, "t", "t", false, "sort by modification time, newest first")
+	sortBySize := BoolFlag(fs, m, "S", "S", false, "sort by file size, largest first")
+	dirOnly := BoolFlag(fs, m, "d", "d", false, "list directories themselves, not their contents")
 
 	if err := fs.Parse(args); err != nil {
 		return 1

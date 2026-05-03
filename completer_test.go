@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"kamishell/core"
@@ -64,18 +63,40 @@ func TestCompleterDeduplicatesEnvironmentCandidates(t *testing.T) {
 	}
 }
 
-func TestExtractCompletionTokenHandlesEscapedQuote(t *testing.T) {
-	line := `make "a path with\" quote/quo`
-	line = strings.Replace(line, `\"a`, `"a`, 1)
-	token, prefix, raw := extractCompletionToken(line)
+func TestParseCompletionContextHandlesQuotedPath(t *testing.T) {
+	line := `make "a path with" quo`
+	ctx := parseCompletionContext(line)
 
-	if prefix != `"` {
-		t.Fatalf("expected quoted prefix, got %q", prefix)
+	if ctx.currentToken != "quo" {
+		t.Fatalf("expected current token 'quo', got %q", ctx.currentToken)
 	}
-	if token != `a path with\" quote/quo` {
-		t.Fatalf("expected token to preserve escaped quote context, got %q", token)
+	if ctx.commandName != "make" {
+		t.Fatalf("expected command name 'make', got %q", ctx.commandName)
 	}
-	if raw != `a path with\" quote/quo` {
-		t.Fatalf("expected raw token to preserve escaped quote context, got %q", raw)
+	if ctx.isFirstWord {
+		t.Fatal("expected not first word")
+	}
+}
+
+func TestParseCompletionContextFirstWord(t *testing.T) {
+	ctx := parseCompletionContext("ls")
+	if !ctx.isFirstWord {
+		t.Fatal("expected first word")
+	}
+	if ctx.currentToken != "ls" {
+		t.Fatalf("expected current token 'ls', got %q", ctx.currentToken)
+	}
+}
+
+func TestParseCompletionContextFlag(t *testing.T) {
+	ctx := parseCompletionContext("ls -")
+	if ctx.isFirstWord {
+		t.Fatal("expected not first word")
+	}
+	if ctx.commandName != "ls" {
+		t.Fatalf("expected command name 'ls', got %q", ctx.commandName)
+	}
+	if ctx.currentToken != "-" {
+		t.Fatalf("expected current token '-', got %q", ctx.currentToken)
 	}
 }
