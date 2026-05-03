@@ -8,20 +8,20 @@ import (
 type ObjectType string
 
 const (
-	INTEGER_OBJ  ObjectType = "INTEGER"
-	FLOAT_OBJ    ObjectType = "FLOAT"
-	BOOLEAN_OBJ  ObjectType = "BOOLEAN"
-	STRING_OBJ   ObjectType = "STRING"
-	NULL_OBJ     ObjectType = "NULL"
+	INTEGER_OBJ      ObjectType = "INTEGER"
+	FLOAT_OBJ        ObjectType = "FLOAT"
+	BOOLEAN_OBJ      ObjectType = "BOOLEAN"
+	STRING_OBJ       ObjectType = "STRING"
+	NULL_OBJ         ObjectType = "NULL"
 	RETURN_VALUE_OBJ ObjectType = "RETURN_VALUE"
-	ERROR_OBJ       ObjectType = "ERROR"
+	ERROR_OBJ        ObjectType = "ERROR"
 	FUNCTION_OBJ     ObjectType = "FUNCTION"
-	PACKAGE_OBJ  ObjectType = "PACKAGE"
-	WAITGROUP_OBJ ObjectType = "WAITGROUP"
-	TASK_OBJ     ObjectType = "TASK"
-	BREAK_OBJ    ObjectType = "BREAK"
-	CONTINUE_OBJ ObjectType = "CONTINUE"
-	ARRAY_OBJ    ObjectType = "ARRAY"
+	PACKAGE_OBJ      ObjectType = "PACKAGE"
+	WAITGROUP_OBJ    ObjectType = "WAITGROUP"
+	TASK_OBJ         ObjectType = "TASK"
+	BREAK_OBJ        ObjectType = "BREAK"
+	CONTINUE_OBJ     ObjectType = "CONTINUE"
+	ARRAY_OBJ        ObjectType = "ARRAY"
 )
 
 var (
@@ -144,7 +144,7 @@ func (p *Package) Type() ObjectType { return PACKAGE_OBJ }
 func (p *Package) Inspect() string  { return p.Name }
 
 type WaitGroup struct {
-	Wg interface{} // *sync.WaitGroup - using interface{} to avoid import cycle
+	Wg any // *sync.WaitGroup - using interface{} to avoid import cycle
 }
 
 func (wg *WaitGroup) Type() ObjectType { return WAITGROUP_OBJ }

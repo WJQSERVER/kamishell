@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,10 +16,10 @@ import (
 )
 
 var (
-	NULL   = &Null{}
-	TRUE   = &Boolean{Value: true}
-	FALSE  = &Boolean{Value: false}
-	ENVPKG = &Package{Name: "env"}
+	NULL    = &Null{}
+	TRUE    = &Boolean{Value: true}
+	FALSE   = &Boolean{Value: false}
+	ENVPKG  = &Package{Name: "env"}
 	SYNCPKG = &Package{Name: "sync"}
 )
 
@@ -152,7 +153,7 @@ var goStdlib = map[string]map[string]*NativeFunction{
 		"Println": &NativeFunction{
 			Fn: func(env *Environment, args ...Object) Object {
 				// 转换参数并调用fmt.Println
-				goArgs := make([]interface{}, len(args))
+				goArgs := make([]any, len(args))
 				for i, arg := range args {
 					switch v := arg.(type) {
 					case *Integer:
@@ -179,7 +180,7 @@ var goStdlib = map[string]map[string]*NativeFunction{
 					return &Error{Message: "Printf first argument must be a string"}
 				}
 				// 转换剩余参数
-				goArgs := make([]interface{}, len(args)-1)
+				goArgs := make([]any, len(args)-1)
 				for i := 1; i < len(args); i++ {
 					switch v := args[i].(type) {
 					case *Integer:
@@ -206,7 +207,7 @@ var goStdlib = map[string]map[string]*NativeFunction{
 					return &Error{Message: "Sprintf first argument must be a string"}
 				}
 				// 转换剩余参数
-				goArgs := make([]interface{}, len(args)-1)
+				goArgs := make([]any, len(args)-1)
 				for i := 1; i < len(args); i++ {
 					switch v := args[i].(type) {
 					case *Integer:
@@ -351,15 +352,16 @@ var goStdlib = map[string]map[string]*NativeFunction{
 				}
 				parts := strings.Split(s.Value, sep.Value)
 				// 返回字符串数组（暂时用字符串表示）
-				result := "["
+				var result strings.Builder
+				result.WriteString("[")
 				for i, part := range parts {
 					if i > 0 {
-						result += ", "
+						result.WriteString(", ")
 					}
-					result += "\"" + part + "\""
+					result.WriteString("\"" + part + "\"")
 				}
-				result += "]"
-				return &String{Value: result}
+				result.WriteString("]")
+				return &String{Value: result.String()}
 			},
 		},
 		"Join": &NativeFunction{
@@ -1209,22 +1211,22 @@ func evalPointerAssignStatement(node *PointerAssignStatement, env *Environment, 
 	if !ok || prefixExpr.Operator != "*" {
 		return &Error{Message: "invalid pointer assignment target"}
 	}
-	
+
 	// Evaluate p (the right side of *)
 	ptrVal := EvalWithIO(prefixExpr.Right, env, stdin, stdout, stderr)
 	if isError(ptrVal) {
 		return ptrVal
 	}
-	
+
 	ptr, ok := ptrVal.(*Pointer)
 	if !ok {
 		return &Error{Message: "cannot assign to non-pointer"}
 	}
-	
+
 	if ptr.Ref == nil {
 		return &Error{Message: "nil pointer dereference"}
 	}
-	
+
 	// Evaluate the value
 	if node.Value == nil {
 		return &Error{Message: "pointer assign: value expression is nil"}
@@ -1233,7 +1235,7 @@ func evalPointerAssignStatement(node *PointerAssignStatement, env *Environment, 
 	if isError(val) {
 		return val
 	}
-	
+
 	// Assign through pointer - use the pointer's original env
 	ptr.Env.SetByPointer(ptr.Ref, val)
 	return val
@@ -1998,12 +2000,12 @@ func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 
 func evalImportStatement(is *ImportStatement, env *Environment) Object {
 	path := is.Path
-	
+
 	// 检查是否以"Go"开头
 	if !strings.HasPrefix(path, "Go") {
 		return &Error{Message: "import path must start with 'Go'"}
 	}
-	
+
 	// 移除"Go"前缀
 	goPath := strings.TrimPrefix(path, "Go")
 	if goPath == "" {
@@ -2011,22 +2013,22 @@ func evalImportStatement(is *ImportStatement, env *Environment) Object {
 		env.SetObject("Go", &Package{Name: "Go"})
 		return NULL
 	}
-	
+
 	// 移除开头的斜杠
 	goPath = strings.TrimPrefix(goPath, "/")
-	
+
 	// 检查是否是子包
 	if strings.Contains(goPath, "/") {
 		// 处理子包，如 "Go/net/http"
 		parts := strings.Split(goPath, "/")
 		pkgName := parts[len(parts)-1] // 使用最后一个部分作为包名
-		
+
 		// 检查是否有这个包的映射
 		if _, ok := goStdlib[pkgName]; ok {
 			// 创建包对象
 			pkg := &Package{Name: pkgName}
 			env.SetObject(pkgName, pkg)
-			
+
 			// 将包中的函数注册到环境中
 			for fnName, fn := range goStdlib[pkgName] {
 				env.SetObject(pkgName+"."+fnName, fn)
@@ -2035,23 +2037,23 @@ func evalImportStatement(is *ImportStatement, env *Environment) Object {
 		}
 		return &Error{Message: "package not found: " + goPath}
 	}
-	
+
 	// 处理直接包，如 "Go/fmt"
 	pkgName := goPath
-	
+
 	// 检查是否有这个包的映射
 	if _, ok := goStdlib[pkgName]; ok {
 		// 创建包对象
 		pkg := &Package{Name: pkgName}
 		env.SetObject(pkgName, pkg)
-		
+
 		// 将包中的函数注册到环境中
 		for fnName, fn := range goStdlib[pkgName] {
 			env.SetObject(pkgName+"."+fnName, fn)
 		}
 		return NULL
 	}
-	
+
 	return &Error{Message: "package not found: " + goPath}
 }
 
@@ -2264,10 +2266,8 @@ func evalStringSwitch(ss *SwitchStatement, env *Environment, stdin io.Reader, st
 		if !c.HasConstVals {
 			return evalSwitchFallback(ss, env, stdin, stdout, stderr)
 		}
-		for _, sv := range c.StringConsts {
-			if tagStr.Value == sv {
-				return EvalWithIO(c.Body, env, stdin, stdout, stderr)
-			}
+		if slices.Contains(c.StringConsts, tagStr.Value) {
+			return EvalWithIO(c.Body, env, stdin, stdout, stderr)
 		}
 	}
 

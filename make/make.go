@@ -34,8 +34,8 @@ func parseMakeArgs(args []string) (filename string, params map[string]core.Objec
 	params = make(map[string]core.Object)
 
 	for _, arg := range args {
-		if strings.HasPrefix(arg, "--") {
-			kv := strings.TrimPrefix(arg, "--")
+		if after, ok := strings.CutPrefix(arg, "--"); ok {
+			kv := after
 			if idx := strings.Index(kv, "="); idx > 0 {
 				key := kv[:idx]
 				value := kv[idx+1:]

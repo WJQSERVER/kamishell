@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -79,12 +80,12 @@ func repeatBenchmarkSnippet(snippet string, times int) string {
 		return snippet
 	}
 
-	result := ""
-	for i := 0; i < times; i++ {
+	var result strings.Builder
+	for i := range times {
 		if i > 0 {
-			result += "\n"
+			result.WriteString("\n")
 		}
-		result += snippet
+		result.WriteString(snippet)
 	}
-	return result
+	return result.String()
 }
