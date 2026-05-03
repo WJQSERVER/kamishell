@@ -45,15 +45,20 @@ func (c *KamiCompleter) Do(line []rune, pos int) ([][]rune, int) {
 		// Flag position: complete flags from command metadata
 		c.completeFlags(ctx.commandName, ctx.currentToken, &candidates, seen)
 	} else if ctx.commandName != "" {
-		// Argument position: check if previous token is a flag that takes a value
-		completed := c.completeFlagValue(ctx.commandName, ctx.prevToken, ctx.currentToken, &candidates, seen)
-		if !completed {
-			// Try arg completer, then fall back to file paths
-			completed = c.completeArgs(ctx.commandName, ctx.currentToken, &candidates, seen)
-		}
-		if !completed {
-			for _, candidate := range completePaths(ctx.rawToken, ctx.currentToken) {
-				appendUniqueCandidate(&candidates, seen, candidate)
+		// Argument position: check for env var completion ($PREFIX)
+		if strings.HasPrefix(ctx.currentToken, "$") {
+			c.completeEnvVars(ctx.currentToken, &candidates, seen)
+		} else {
+			// Check if previous token is a flag that takes a value
+			completed := c.completeFlagValue(ctx.commandName, ctx.prevToken, ctx.currentToken, &candidates, seen)
+			if !completed {
+				// Try arg completer, then fall back to file paths
+				completed = c.completeArgs(ctx.commandName, ctx.currentToken, &candidates, seen)
+			}
+			if !completed {
+				for _, candidate := range completePaths(ctx.rawToken, ctx.currentToken) {
+					appendUniqueCandidate(&candidates, seen, candidate)
+				}
 			}
 		}
 	}
@@ -130,6 +135,30 @@ func (c *KamiCompleter) completeFlagValue(cmdName string, prevToken string, toke
 		}
 	}
 	return len(completions) > 0
+}
+
+// completeEnvVars completes environment variable names with $ prefix.
+func (c *KamiCompleter) completeEnvVars(token string, candidates *[][]rune, seen map[string]struct{}) {
+	// Strip the $ prefix for matching
+	prefix := strings.TrimPrefix(token, "$")
+
+	// Complete from OS environment
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		name := parts[0]
+		if strings.HasPrefix(name, prefix) {
+			appendUniqueCandidate(candidates, seen, "$"+name)
+		}
+	}
+
+	// Complete from script environment
+	if c.env != nil {
+		for _, key := range c.env.Keys() {
+			if strings.HasPrefix(key, prefix) {
+				appendUniqueCandidate(candidates, seen, "$"+key)
+			}
+		}
+	}
 }
 
 // completeExternalCommands scans PATH for executable files matching the prefix.

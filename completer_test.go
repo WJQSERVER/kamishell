@@ -172,3 +172,22 @@ func TestCompleterHelpCompletesBuiltinNames(t *testing.T) {
 	// or nothing if no files match. The important thing is it doesn't crash.
 	_ = candidates
 }
+
+func TestCompleterEnvVarCompletion(t *testing.T) {
+	t.Setenv("KAMI_TEST_VAR", "test")
+
+	c := &KamiCompleter{env: core.NewEnvironment()}
+	input := []rune("echo $KAMI_TEST")
+	candidates, _ := c.Do(input, len(input))
+
+	found := false
+	for _, cand := range candidates {
+		if string(cand) == "$KAMI_TEST_VAR" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected $KAMI_TEST_VAR in env var candidates")
+	}
+}
