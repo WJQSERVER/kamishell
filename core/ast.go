@@ -352,7 +352,9 @@ func (rs *RedirectStatement) String() string {
 
 type ForStatement struct {
 	Token       Token // the for token
-	Condition   Expression
+	Init        Statement  // init statement (3-clause: i := 0), nil for while-style
+	Condition   Expression // condition expression, nil for infinite loop
+	Post        Statement  // post statement (3-clause: i = i + 1), nil for while-style
 	Consequence *BlockStatement
 	// Pre-analyzed increment pattern (Parser stage)
 	IncVarName string // variable name for i = i + N pattern
@@ -365,11 +367,21 @@ func (fs *ForStatement) TokenLiteral() string { return fs.Token.Literal }
 func (fs *ForStatement) String() string {
 	var out strings.Builder
 	out.WriteString("for ")
+	if fs.Init != nil {
+		out.WriteString(fs.Init.String())
+		out.WriteString(" ")
+	}
 	if fs.Condition != nil {
 		out.WriteString(fs.Condition.String())
 	}
+	if fs.Post != nil {
+		out.WriteString("; ")
+		out.WriteString(fs.Post.String())
+	}
 	out.WriteString(" { ")
-	out.WriteString(fs.Consequence.String())
+	if fs.Consequence != nil {
+		out.WriteString(fs.Consequence.String())
+	}
 	out.WriteString(" }")
 	return out.String()
 }

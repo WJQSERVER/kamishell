@@ -317,14 +317,56 @@ func (p *Parser) parseForStatement() *ForStatement {
 	stmt := &ForStatement{Token: p.curToken}
 
 	p.nextToken()
-	if p.curToken.Type != LBRACE {
-		stmt.Condition = p.parseExpression(LOWEST)
+	if p.curToken.Type == LBRACE {
+		stmt.Consequence = p.parseBlockStatement()
+		p.classifyForIncrement(stmt)
+		return stmt
+	}
+
+	firstExpr := p.parseExpression(LOWEST)
+
+	isAssign := p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN
+	hasInit := isAssign || p.peekToken.Type == SEMICOLON
+
+	if isAssign {
+		stmt.Init = p.buildForClauseStatement(firstExpr)
+	} else if hasInit {
+		stmt.Init = &ExpressionStatement{Expression: firstExpr}
+	}
+
+	if hasInit {
+		if p.curToken.Type != SEMICOLON {
+			if p.peekToken.Type == SEMICOLON {
+				p.nextToken()
+			}
+		}
+		if p.curToken.Type == SEMICOLON {
+			p.nextToken()
+		}
+		if p.curToken.Type != LBRACE && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+			stmt.Condition = p.parseExpression(LOWEST)
+		}
+		if p.peekToken.Type == SEMICOLON {
+			p.nextToken()
+			if p.peekToken.Type != LBRACE {
+				p.nextToken()
+				if p.curToken.Type != LBRACE && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+					postExpr := p.parseExpression(LOWEST)
+					if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
+						stmt.Post = p.buildForClauseStatement(postExpr)
+					} else {
+						stmt.Post = &ExpressionStatement{Expression: postExpr}
+					}
+				}
+			}
+		}
+	} else {
+		stmt.Condition = firstExpr
 	}
 
 	if p.peekToken.Type == SEMICOLON {
 		p.nextToken()
 	}
-
 	if p.peekToken.Type == LBRACE {
 		p.nextToken()
 		stmt.Consequence = p.parseBlockStatement()
@@ -332,6 +374,19 @@ func (p *Parser) parseForStatement() *ForStatement {
 
 	p.classifyForIncrement(stmt)
 	return stmt
+}
+
+func (p *Parser) buildForClauseStatement(expr Expression) Statement {
+	if ident, ok := expr.(*Identifier); ok {
+		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
+			op := p.peekToken
+			p.nextToken()
+			p.nextToken()
+			val := p.parseExpression(LOWEST)
+			return &AssignStatement{Token: op, Name: ident.Value, Value: val}
+		}
+	}
+	return &ExpressionStatement{Expression: expr}
 }
 
 func (p *Parser) classifyForIncrement(stmt *ForStatement) {

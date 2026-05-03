@@ -693,8 +693,15 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 	body := fs.Consequence
 	fastCondition, hasFastCondition := buildForConditionFastPath(fs.Condition)
 
-	if fs.HasInc && hasFastCondition && body != nil && len(body.Statements) == 1 {
+	if fs.HasInc && hasFastCondition && body != nil && len(body.Statements) == 1 && fs.Init == nil && fs.Post == nil {
 		return evalForInlinedInc(fs, fastCondition, env, stdin, stdout, stderr)
+	}
+
+	if fs.Init != nil {
+		result = EvalWithIO(fs.Init, env, stdin, stdout, stderr)
+		if isError(result) {
+			return result
+		}
 	}
 
 	for {
@@ -716,10 +723,6 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 					break
 				}
 			}
-
-			if fs.Condition == nil {
-				break
-			}
 		}
 
 		result = evalLoopBody(body, env, stdin, stdout, stderr)
@@ -730,7 +733,14 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 			return result
 		}
 
-		if fs.Condition == nil {
+		if fs.Post != nil {
+			postResult := EvalWithIO(fs.Post, env, stdin, stdout, stderr)
+			if isError(postResult) {
+				return postResult
+			}
+		}
+
+		if fs.Condition == nil && fs.Init == nil && fs.Post == nil {
 			break
 		}
 	}

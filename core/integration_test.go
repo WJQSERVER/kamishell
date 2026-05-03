@@ -196,7 +196,83 @@ func TestForLoopMultiStatementBody(t *testing.T) {
 	}
 }
 
-func TestBuiltins(t *testing.T) {
+func TestForThreeClauseBasic(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i := 0; i < 5; i = i + 1 { print i }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "2", "3", "4"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestForThreeClausePostIncrement(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i := 0; i < 3; i = i + 1 { x := i + i; print x }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "2", "4"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestForThreeClauseZeroIterations(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i := 10; i < 5; i = i + 1 { print i }; print "done"`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "done" {
+		t.Errorf("expected done, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestForThreeClauseCountDown(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i := 5; i > 0; i = i - 1 { print i }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"5", "4", "3", "2", "1"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestForThreeClauseWithReturn(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func find(n) { for i := 0; i < n; i = i + 1 { if i == 3 { return i } }; return -1 }; print find(10)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "3" {
+		t.Errorf("expected 3, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestForBuiltins(t *testing.T) {
 	env := NewEmptyEnvironment()
 	dirName := "test_dir_builtin"
 	defer os.RemoveAll(dirName)
