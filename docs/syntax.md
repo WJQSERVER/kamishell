@@ -2,7 +2,7 @@
 
 这份文档描述的是 Kamishell **当前代码实际支持** 的语法与关键字，而不是理想设计或长期规划。
 
-如果某个能力仍在规划中，本文会明确标记为“未实现”或“部分实现”。
+如果某个能力仍在规划中，本文会明确标记为"未实现"或"部分实现"。
 
 ## 1. 语言定位
 
@@ -45,31 +45,46 @@ name := "kami"; print name
 
 当前运行时核心对象类型：
 
-- `INTEGER`
-- `STRING`
-- `BOOLEAN`
-- `FUNCTION`
-- `NULL`，源码字面量写作 `nil`
-- `ERROR`
-- `PACKAGE`，目前主要用于脚本内 `env` 包
+- `INTEGER` — 64 位有符号整数
+- `FLOAT` — 64 位浮点数
+- `STRING` — 字符串
+- `BOOLEAN` — `true` / `false`
+- `ARRAY` — 同构数组（元素必须同一类型）
+- `FUNCTION` — 函数（含闭包）
+- `NULL` — 空值，源码字面量写作 `nil`
+- `ERROR` — 错误对象
+- `PACKAGE` — 包对象（`env`、`sync` 等）
 
 ### 字面量
 
 ```go
-1
+42
+3.14
 "hello"
 true
 false
 nil
+[1, 2, 3]
 ```
 
 ### 当前变量静态类型约束
 
-显式和推断出的变量类型目前主要支持：
+Kamishell 是静态类型语言，变量一旦赋值，类型即固定：
+
+```go
+x := 10
+x = "hello"   // 错误：cannot assign STRING to variable of type INTEGER
+
+arr := [1, 2, 3]
+arr[0] = "a"  // 错误：cannot assign STRING to ARRAY[INTEGER] element
+```
+
+支持的显式类型声明：
 
 - `int` / `integer`
 - `string`
 - `bool` / `boolean`
+- `array`
 
 注意：
 
@@ -86,6 +101,7 @@ nil
 x := 10
 name := "kami"
 ready := true
+arr := [1, 2, 3]
 ```
 
 ### `=` 赋值
@@ -96,10 +112,15 @@ ready := true
 
 - 优先更新最近作用域中的同名变量
 - 如果该变量有类型约束，则新值必须匹配
+- 数组赋值遵循值语义（拷贝）
 
 ```go
 x := 1
 x = 2
+
+a := [1, 2, 3]
+b := a        // 值拷贝
+b[0] = 99     // a 不变
 ```
 
 ### `var` 显式声明
@@ -114,6 +135,7 @@ x = 2
 var count int
 var name string
 var ready bool
+var arr array
 
 var retries int = 3
 var title = "kami"
@@ -126,6 +148,7 @@ var title = "kami"
 - `int` -> `0`
 - `string` -> `""`
 - `bool` -> `false`
+- `array` -> `[]`
 
 ```go
 var count int
@@ -136,18 +159,6 @@ print title   // 空字符串
 
 var ok bool
 print ok      // false
-```
-
-### `nil` 与变量类型
-
-`nil` 只是空值，不是变量静态类型。
-
-```go
-x := nil
-x = 1
-
-var y = nil
-y = true
 ```
 
 ## 5. 字符串与插值
@@ -193,20 +204,38 @@ print $PATH
 
 ## 6. 表达式
 
-当前已实现的核心表达式：
-
-- 加法 / 字符串拼接：`+`
-- 等于：`==`
-- 不等于：`!=`
-- 大于：`>`
-- 小于：`<`
-- 括号分组：`( ... )`
+### 算术运算
 
 ```go
-x := 10 + 20
-print x
+x := 10 + 20     // 整数加法
+y := 3.14 * 2.0  // 浮点乘法（未实现）
+z := 10 - 3      // 减法（未实现）
+```
 
-if x == 30 {
+当前已实现：
+
+- `+` 加法 / 字符串拼接
+- `==` 等于
+- `!=` 不等于
+- `>` 大于
+- `<` 小于
+- `!` 逻辑非（前缀）
+
+未实现：
+
+- `-` 减法
+- `*` 乘法
+- `/` 除法
+- `>=` 大于等于
+- `<=` 小于等于
+
+### 逻辑非 `!`
+
+```go
+x := true
+print !x          // false
+
+if !false {
     print "ok"
 }
 ```
@@ -222,6 +251,12 @@ if x == 30 {
 print 1 + 2
 print "hello " + "kami"
 print "count=" + 3
+```
+
+### 括号分组
+
+```go
+x := (10 + 20) * 3  // 注意：* 未实现
 ```
 
 ## 7. 控制结构
@@ -243,12 +278,45 @@ if x > 5 {
 - 块必须使用 `{ ... }`
 - `else` 可选
 
-### `for`
+### `switch` / `case`
 
-当前支持：
+```go
+x := 3
+switch x {
+case 1:
+    print "one"
+case 2:
+    print "two"
+case 3:
+    print "three"
+default:
+    print "other"
+}
+```
 
-- 条件循环
-- 无限循环
+特性：
+
+- 支持整数、字符串、布尔值比较
+- 整数 case 自动使用二分查找优化
+- 字符串 case 使用直接比较优化
+- 支持 `default` 分支
+- 支持无 tag 的 switch（类似 if-else 链）
+
+```go
+x := 15
+switch {
+case x > 10:
+    print "big"
+case x > 5:
+    print "medium"
+default:
+    print "small"
+}
+```
+
+### `for` 循环
+
+#### 条件循环（while 风格）
 
 ```go
 i := 0
@@ -258,13 +326,158 @@ for i < 3 {
 }
 ```
 
+#### 无限循环
+
 ```go
 for {
     print "loop"
 }
 ```
 
-## 8. 函数
+#### 三段式循环（C 风格）
+
+```go
+for i := 0; i < 10; i = i + 1 {
+    print i
+}
+```
+
+#### 数组 range
+
+```go
+arr := [10, 20, 30]
+
+// 仅索引
+for i := range arr {
+    print i
+}
+
+// 索引 + 值
+for i, v := range arr {
+    print i; print v
+}
+
+// 无变量
+for range arr {
+    print "tick"
+}
+```
+
+#### 迭代器 range（range-over-func）
+
+```go
+// 定义迭代器
+func countTo(n) {
+    return func(yield) {
+        i := 0
+        for i < n {
+            if !yield(i) { return }
+            i = i + 1
+        }
+    }
+}
+
+// 使用
+for v := range countTo(5) {
+    print v
+}
+
+// 双变量迭代器
+func enumerate(arr) {
+    return func(yield) {
+        for i := range arr {
+            if !yield(i, arr[i]) { return }
+        }
+    }
+}
+
+for i, v := range enumerate([10, 20, 30]) {
+    print i; print v
+}
+```
+
+### `break` / `continue`
+
+```go
+for i := 0; i < 10; i = i + 1 {
+    if i == 3 { continue }
+    if i == 7 { break }
+    print i
+}
+```
+
+## 8. 数组
+
+### 数组字面量
+
+```go
+arr := [1, 2, 3]
+names := ["alice", "bob", "charlie"]
+flags := [true, false, true]
+```
+
+数组是同构的——所有元素必须同一类型：
+
+```go
+[1, 2, 3]           // OK: ARRAY[INTEGER]
+["a", "b", "c"]     // OK: ARRAY[STRING]
+[1, "hello", true]  // 错误：mixed types
+```
+
+### 索引访问
+
+```go
+arr := [10, 20, 30]
+print arr[0]   // 10
+print arr[2]   // 30
+```
+
+### 索引赋值
+
+```go
+arr := [1, 2, 3]
+arr[0] = 99
+print arr      // [99, 2, 3]
+```
+
+### 值语义
+
+数组赋值是值拷贝：
+
+```go
+a := [1, 2, 3]
+b := a
+b[0] = 99
+print a   // [1, 2, 3] — a 不受影响
+```
+
+### 数组比较
+
+```go
+a := [1, 2, 3]
+b := [1, 2, 3]
+print a == b   // true
+
+c := [1, 2, 4]
+print a == c   // false
+```
+
+### 内置函数
+
+```go
+arr := [1, 2, 3]
+print len(arr)        // 3
+arr2 := push(arr, 4)  // [1, 2, 3, 4]
+```
+
+### 空数组
+
+```go
+arr := []
+print len(arr)   // 0
+```
+
+## 9. 函数
 
 ### `func` 定义函数
 
@@ -272,6 +485,13 @@ for {
 func greet(name) {
     print "hello " + name
 }
+```
+
+### 匿名函数
+
+```go
+add := func(a, b) { return a + b }
+print add(3, 4)   // 7
 ```
 
 ### 调用函数
@@ -305,7 +525,17 @@ update()
 print x
 ```
 
-## 9. 命令执行
+### `return`
+
+```go
+func add(a, b) {
+    return a + b
+}
+result := add(3, 4)
+print result   // 7
+```
+
+## 10. 命令执行
 
 ### 直接命令执行
 
@@ -321,9 +551,9 @@ go build
 
 当前大致按以下顺序解析：
 
-1. 原生函数
+1. 原生函数（`len`、`push` 等）
 2. 用户定义函数 / 环境中的可调用对象
-3. 内置命令
+3. 内置命令（`ls`、`cd`、`cat` 等）
 4. 系统 PATH 下的外部命令
 
 ### `exec`
@@ -334,7 +564,7 @@ go build
 exec "go run main.go"
 ```
 
-## 10. 管道、重定向与逻辑链
+## 11. 管道、重定向与逻辑链
 
 ### `|` 管道
 
@@ -366,7 +596,7 @@ mkdir build && cd build
 ls missing || print "not found"
 ```
 
-## 11. 并发与后台执行
+## 12. 并发与后台执行
 
 ### `&` 后台执行
 
@@ -384,13 +614,37 @@ sleep 10 &
 go {
     print "async"
 }
-```
 
-```go
 go sleep 5
 ```
 
-## 12. 错误处理
+### Task/Future
+
+```go
+t := go { return 42 }
+result := t.Wait()
+result := t.Wait(10)  // 带超时
+```
+
+### WaitGroup
+
+```go
+wg := sync.NewWaitGroup()
+wg.Go { task1() }
+wg.Go { task2() }
+wg.Wait()
+```
+
+### `wait` 命令
+
+```go
+go { task1() }
+go { task2() }
+wait           // 等待所有任务完成
+wait(10)       // 等待最多 10 秒
+```
+
+## 13. 错误处理
 
 运行时会维护一个特殊变量 `err`。
 
@@ -404,12 +658,7 @@ if err != nil {
 }
 ```
 
-注意：
-
-- 目前 `err` 作为变量可用
-- 但像 `err.Message` 这种通用对象字段访问，目前还不是完整对象系统的一部分，文档里不要把它当成稳定能力依赖
-
-## 13. 脚本内 `env` 包
+## 14. 脚本内 `env` 包
 
 当前内置了脚本级 `env` 包，用来保存脚本内部键值状态，不和普通变量混用。
 
@@ -425,13 +674,7 @@ print env.Get("GOOS")
 env.Unset("GOOS")
 ```
 
-这个作用域特别适合：
-
-- 构建变量
-- 脚本内部配置
-- `.km` 中的目标级参数传递
-
-## 14. `.km` / make DSL
+## 15. `.km` / make DSL
 
 Kamishell 内置了 `make` 构建系统，使用 `.km` 脚本。
 
@@ -464,7 +707,7 @@ target_env "app" "CGO_ENABLED=0"
 
 更详细的构建说明见 `docs/make.md`。
 
-## 15. Go 标准库导入
+## 16. Go 标准库导入
 
 Kami 支持通过 `import` 语法导入 Go 标准库函数。
 
@@ -479,8 +722,6 @@ import "Go/包名"
 - `fmt` - 格式化输出
 - `math` - 数学函数
 - `strings` - 字符串处理
-- `strconv` - 字符串转换
-- `os` - 操作系统功能
 
 ### 内置包（无需 import）
 
@@ -491,188 +732,51 @@ import "Go/包名"
 
 ```go
 import "Go/fmt"
-import "Go/math"
-import "Go/strings"
-
-// 使用 fmt 包
 fmt.Println("Hello, Kami!")
-fmt.Printf("Name: %s, Age: %d\n", "Kami", 1)
-
-// 使用 math 包
-x := math.Sqrt(16)
-print "sqrt(16) = $x"
-
-// 使用 strings 包
-s := "Hello, World!"
-contains := strings.Contains(s, "World")
-print "contains 'World': $contains"
 ```
 
-## 16. Go 协程支持
-
-Kami 支持使用 `go` 关键字启动协程。
-
-### 语法
-
-```go
-go {
-    // 协程代码块
-}
-
-go 函数名(参数)
-```
-
-### 示例
-
-```go
-import "Go/fmt"
-
-// 协程代码块
-go {
-    fmt.Println("Inside goroutine")
-    x := 10 + 20
-    fmt.Printf("Result: %d\n", x)
-}
-
-// 协程函数调用
-func backgroundJob() {
-    fmt.Println("Background job started")
-    // 模拟工作
-    i := 0
-    for i < 5 {
-        fmt.Printf("Working... %d\n", i)
-        i = i + 1
-    }
-    fmt.Println("Background job completed")
-}
-
-go backgroundJob()
-```
-
-## 17. WaitGroup 同步
-
-Kami 支持使用 `wg.Go { ... }` 语法进行并发任务同步。
-
-### 语法
-
-```go
-wg := sync.NewWaitGroup()
-wg.Go { 任务1 }
-wg.Go { 任务2 }
-wg.Wait()
-```
-
-### 示例
-
-```go
-import "Go/fmt"
-
-func processTask(id) {
-    fmt.Printf("Task %d started\n", id)
-    // 模拟工作
-    fmt.Printf("Task %d completed\n", id)
-}
-
-wg := sync.NewWaitGroup()
-wg.Go { processTask(1) }
-wg.Go { processTask(2) }
-wg.Go { processTask(3) }
-wg.Wait()
-print "All tasks completed"
-```
-
-### 说明
-
-- `wg.Go { ... }` 自动处理 `wg.Add(1)` 和 `wg.Done()`
-- `wg.Wait()` 等待所有任务完成
-- `wg.Wait(10)` 等待最多 10 秒，超时返回错误
-
-## 18. Task/Future 并发模型
-
-Kami 支持通过 `go { return val }` 创建带返回值的异步任务。
-
-### 语法
-
-```go
-t := go { return 表达式 }
-result := t.Wait()
-result := t.Wait(超时秒数)
-```
-
-### 示例
-
-```go
-import "Go/fmt"
-
-// 创建带返回值的任务
-t1 := go { return 42 }
-t2 := go { return 100 }
-
-// 等待结果
-r1 := t1.Wait()
-r2 := t2.Wait()
-fmt.Printf("r1=%d r2=%d\n", r1, r2)
-
-// 带超时等待
-t := go { return slowTask() }
-result := t.Wait(10)  // 最多等待 10 秒
-```
-
-### wait 命令
-
-```go
-go { task1() }
-go { task2() }
-go { task3() }
-wait           // 等待所有任务完成
-wait(10)       // 等待最多 10 秒
-```
-
-### 说明
-
-- `go { return val }` 返回 Task 对象
-- `t.Wait()` 等待任务完成并返回结果
-- `t.Wait(N)` 等待最多 N 秒，超时返回错误
-- `wait` 命令等待所有 goroutine 完成
-- `wait(N)` 带超时的全局等待
-- 任务在独立的 goroutine 中执行
-
-## 18. 当前关键字总览
+## 17. 关键字总览
 
 ### 已实现关键字
 
-- `if`
-- `else`
-- `for`
-- `func`
-- `go`
-- `var`
-- `print`
-- `exec`
-- `import`
-- `nil`
-- `true`
-- `false`
+| 关键字 | 用途 |
+|---|---|
+| `if` / `else` | 条件分支 |
+| `for` | 循环（含三段式、range） |
+| `range` | 数组/迭代器遍历 |
+| `func` | 函数定义 |
+| `return` | 函数返回 |
+| `go` | goroutine |
+| `var` | 显式类型声明 |
+| `print` | 输出 |
+| `exec` | 强制命令执行 |
+| `import` | Go 标准库导入 |
+| `nil` | 空值 |
+| `true` / `false` | 布尔字面量 |
+| `switch` / `case` / `default` | 分支匹配 |
+| `break` / `continue` | 循环控制 |
+| `wait` | 等待 goroutine |
 
 ### 已实现的重要符号/操作符
 
-- `:=`
-- `=`
-- `+`
-- `==`
-- `!=`
-- `>`
-- `<`
-- `|`
-- `>>`
-- `&&`
-- `||`
-- `&`
-- `$`
-- `.`
-- `,`
-- `;`
-- `(` `)` `{` `}`
+| 符号 | 用途 |
+|---|---|
+| `:=` | 短变量声明 |
+| `=` | 赋值 |
+| `+` | 加法 / 字符串拼接 |
+| `!` | 逻辑非 |
+| `==` / `!=` | 等于 / 不等于 |
+| `>` / `<` | 大于 / 小于 |
+| `\|` | 管道 |
+| `->` / `>>` | 输出重定向 |
+| `&&` / `\|\|` | 逻辑与 / 或 |
+| `&` | 后台执行 / 取地址 |
+| `*` | 指针解引用 |
+| `$` | 变量插值 |
+| `.` | 成员访问 |
+| `[` `]` | 数组索引 |
+| `(` `)` `{` `}` | 分组 / 块 |
+| `,` / `;` | 分隔符 |
 
 ### make 相关关键字
 
@@ -683,47 +787,57 @@ wait(10)       // 等待最多 10 秒
 - `target_link_libraries`
 - `target_env`
 
-## 16. 当前未实现或未完整实现
+## 18. 当前未实现或未完整实现
 
 下面这些名字可能出现在文档、帮助系统或规划里，但当前不能当成稳定能力使用：
 
-- `return`
-- `range`
 - `const`
-- `import`
-- `break`
-- `continue`
-- `>=`
-- `<=`
-- `-`
-- `*`
-- `/`
+- `>=` / `<=`
+- `-` 减法
+- `*` 乘法
+- `/` 除法
 - 通用对象字段访问
-- 完整集合类型（数组、map 等）
+- map 类型
+- 字符串 range（按字符迭代）
 
-## 17. 一个当前真实可用的例子
+## 19. 综合示例
 
 ```go
-var count int
-name := "kami"
+// 数组 + range + break/continue
+arr := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+for i, v := range arr {
+    if v == 3 { continue }
+    if v == 8 { break }
+    print v
+}
 
-env.Set("GOOS", "linux")
-
-func greet(user) {
-    if user == "kami" {
-        print "hello " + user
-    } else {
-        print "unknown"
+// 迭代器
+func countTo(n) {
+    return func(yield) {
+        i := 0
+        for i < n {
+            if !yield(i) { return }
+            i = i + 1
+        }
     }
 }
+for v := range countTo(5) { print v }
 
-greet(name)
-
-i := 0
-for i < 3 {
-    print i
-    i = i + 1
+// switch/case
+x := 3
+switch x {
+case 1: print "one"
+case 2: print "two"
+case 3: print "three"
+default: print "other"
 }
 
-print env.Get("GOOS")
+// 匿名函数
+add := func(a, b) { return a + b }
+print add(3, 4)
+
+// 并发
+t := go { return 42 }
+result := t.Wait()
+print result
 ```
