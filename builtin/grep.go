@@ -84,7 +84,7 @@ func Grep(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 	BoolFlagVar(fs, m, &opts.filesNoMatch, "files-without-match", "L", false, "list filenames without matches")
 	BoolFlagVar(fs, m, &opts.quiet, "quiet", "q", false, "quiet mode")
 	fs.BoolVar(&opts.quiet, "silent", false, "silent mode")
-	m.RegisterFlag("silent", "silent", "silent mode", FlagBool)
+	m.RegisterFlag("silent", "", "silent mode", FlagBool)
 	BoolFlagVar(fs, m, &opts.recursive, "recursive", "r", false, "recursive search")
 	fs.BoolVar(&opts.recursive, "R", false, "recursive search")
 	m.RegisterFlag("R", "R", "recursive search", FlagBool)

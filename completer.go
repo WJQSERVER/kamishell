@@ -161,36 +161,10 @@ func (c *KamiCompleter) completeEnvVars(token string, candidates *[][]rune, seen
 	}
 }
 
-// completeExternalCommands scans PATH for executable files matching the prefix.
+// completeExternalCommands adds external commands from PATH matching the prefix.
 func completeExternalCommands(prefix string, candidates *[][]rune, seen map[string]struct{}) {
-	pathEnv := os.Getenv("PATH")
-	if pathEnv == "" {
-		return
-	}
-
-	duplicateCheck := make(map[string]bool)
-	for _, dir := range filepath.SplitList(pathEnv) {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, entry := range entries {
-			name := entry.Name()
-			if duplicateCheck[name] {
-				continue
-			}
-			if !strings.HasPrefix(name, prefix) {
-				continue
-			}
-			info, err := entry.Info()
-			if err != nil {
-				continue
-			}
-			if info.Mode()&0111 != 0 && !info.IsDir() {
-				duplicateCheck[name] = true
-				appendUniqueCandidate(candidates, seen, name)
-			}
-		}
+	for _, name := range builtin.CompleteExternalCommands(prefix) {
+		appendUniqueCandidate(candidates, seen, name)
 	}
 }
 

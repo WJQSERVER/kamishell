@@ -29,7 +29,7 @@ func completeCommandNames(cmdName string, argIndex int, prefix string) []string 
 	}
 
 	// External commands from PATH
-	result = append(result, completeExternalCommands(prefix)...)
+	result = append(result, CompleteExternalCommands(prefix)...)
 
 	return result
 }
@@ -62,8 +62,8 @@ func completeDirectoryPaths(cmdName string, argIndex int, prefix string) []strin
 	return result
 }
 
-// completeExternalCommands scans PATH for executable files matching the prefix.
-func completeExternalCommands(prefix string) []string {
+// CompleteExternalCommands scans PATH for executable files matching the prefix.
+func CompleteExternalCommands(prefix string) []string {
 	pathEnv := os.Getenv("PATH")
 	if pathEnv == "" {
 		return nil
@@ -85,12 +85,8 @@ func completeExternalCommands(prefix string) []string {
 			if !strings.HasPrefix(name, prefix) {
 				continue
 			}
-			// Check if executable
-			info, err := entry.Info()
-			if err != nil {
-				continue
-			}
-			if info.Mode()&0111 != 0 && !info.IsDir() {
+			fullPath := filepath.Join(dir, name)
+			if isExecutable(fullPath) {
 				seen[name] = true
 				result = append(result, name)
 			}
