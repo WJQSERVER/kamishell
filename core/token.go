@@ -57,6 +57,8 @@ const (
 	SWITCH    TokenType = "SWITCH"
 	CASE      TokenType = "CASE"
 	DEFAULT   TokenType = "DEFAULT"
+	BREAK     TokenType = "BREAK"
+	CONTINUE  TokenType = "CONTINUE"
 	COLON     TokenType = ":"
 )
 
@@ -105,6 +107,10 @@ func LookupIdent(ident string) TokenType {
 		return CASE
 	case "default":
 		return DEFAULT
+	case "break":
+		return BREAK
+	case "continue":
+		return CONTINUE
 	default:
 		return IDENT
 	}

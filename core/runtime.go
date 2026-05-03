@@ -517,6 +517,10 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalSwitchStatement(node, env, stdin, stdout, stderr)
 	case *ReturnStatement:
 		return evalReturnStatement(node, env, stdin, stdout, stderr)
+	case *BreakStatement:
+		return BREAK_SIGNAL
+	case *ContinueStatement:
+		return CONTINUE_SIGNAL
 	case *InfixExpression:
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
@@ -668,6 +672,9 @@ func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout
 			env.SetObject("err", NULL)
 			return result
 		}
+		if result == BREAK_SIGNAL || result == CONTINUE_SIGNAL {
+			return result
+		}
 	}
 	env.SetObject("err", NULL)
 	return result
@@ -726,6 +733,19 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 		}
 
 		result = evalLoopBody(body, env, stdin, stdout, stderr)
+		if result == BREAK_SIGNAL {
+			result = NULL
+			break
+		}
+		if result == CONTINUE_SIGNAL {
+			if fs.Post != nil {
+				postResult := EvalWithIO(fs.Post, env, stdin, stdout, stderr)
+				if isError(postResult) {
+					return postResult
+				}
+			}
+			continue
+		}
 		if isError(result) {
 			return result
 		}
@@ -922,6 +942,9 @@ func evalLoopBody(body *BlockStatement, env *Environment, stdin io.Reader, stdou
 			return result
 		}
 		if _, ok := result.(*ReturnValue); ok {
+			return result
+		}
+		if result == BREAK_SIGNAL || result == CONTINUE_SIGNAL {
 			return result
 		}
 	}

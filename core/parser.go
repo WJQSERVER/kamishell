@@ -102,6 +102,10 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		stmt = p.parseWaitStatement()
 	case SWITCH:
 		stmt = p.parseSwitchStatement()
+	case BREAK:
+		stmt = &BreakStatement{Token: p.curToken}
+	case CONTINUE:
+		stmt = &ContinueStatement{Token: p.curToken}
 	case ASTERISK:
 		// *p = val (pointer dereference assignment)
 		if p.peekToken.Type == IDENT {

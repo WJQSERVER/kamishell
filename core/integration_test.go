@@ -272,6 +272,86 @@ func TestForThreeClauseWithReturn(t *testing.T) {
 	}
 }
 
+func TestBreakBasic(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i := 0; i < 10; i = i + 1 { if i == 5 { break }; print i }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "2", "3", "4"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestContinueBasic(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i := 0; i < 6; i = i + 1 { if i == 3 { continue }; print i }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "2", "4", "5"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestBreakWhileStyle(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`i := 0; for i < 100 { if i == 3 { break }; print i; i = i + 1 }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "2"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+}
+
+func TestContinueWhileStyle(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`i := 0; for i < 5 { i = i + 1; if i == 3 { continue }; print i }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"1", "2", "4", "5"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestBreakNestedLoops(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i := 0; i < 3; i = i + 1 { for j := 0; j < 5; j = j + 1 { if j == 2 { break }; print j }; print "next" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "next", "0", "1", "next", "0", "1", "next"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+}
+
 func TestForBuiltins(t *testing.T) {
 	env := NewEmptyEnvironment()
 	dirName := "test_dir_builtin"

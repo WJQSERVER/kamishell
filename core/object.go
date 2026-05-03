@@ -16,6 +16,13 @@ const (
 	PACKAGE_OBJ  ObjectType = "PACKAGE"
 	WAITGROUP_OBJ ObjectType = "WAITGROUP"
 	TASK_OBJ     ObjectType = "TASK"
+	BREAK_OBJ    ObjectType = "BREAK"
+	CONTINUE_OBJ ObjectType = "CONTINUE"
+)
+
+var (
+	BREAK_SIGNAL    = &BreakSignal{}
+	CONTINUE_SIGNAL = &ContinueSignal{}
 )
 
 type Object interface {
@@ -158,5 +165,15 @@ func (p *Pointer) Inspect() string {
 	if p.Ref == nil {
 		return "<nil pointer>"
 	}
-	return "&" + p.Ref.Value.Inspect()
+	return p.Ref.Value.Inspect()
 }
+
+type BreakSignal struct{}
+
+func (b *BreakSignal) Type() ObjectType { return BREAK_OBJ }
+func (b *BreakSignal) Inspect() string  { return "break" }
+
+type ContinueSignal struct{}
+
+func (c *ContinueSignal) Type() ObjectType { return CONTINUE_OBJ }
+func (c *ContinueSignal) Inspect() string  { return "continue" }
