@@ -30,8 +30,9 @@ func (c *KamiCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	ctx := parseCompletionContext(lineStr)
 
 	if ctx.isFirstWord {
-		// Command name position: complete builtins + env vars
+		// Command name position: complete builtins + external commands + env vars
 		c.completeCommandNames(ctx.currentToken, &candidates, seen, "")
+		completeExternalCommands(ctx.currentToken, &candidates, seen)
 		if c.env != nil {
 			for _, key := range c.env.Keys() {
 				if strings.HasPrefix(key, ctx.currentToken) {
@@ -101,6 +102,39 @@ func (c *KamiCompleter) completeArgs(cmdName string, token string, candidates *[
 		}
 	}
 	return len(completions) > 0
+}
+
+// completeExternalCommands scans PATH for executable files matching the prefix.
+func completeExternalCommands(prefix string, candidates *[][]rune, seen map[string]struct{}) {
+	pathEnv := os.Getenv("PATH")
+	if pathEnv == "" {
+		return
+	}
+
+	duplicateCheck := make(map[string]bool)
+	for _, dir := range filepath.SplitList(pathEnv) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if duplicateCheck[name] {
+				continue
+			}
+			if !strings.HasPrefix(name, prefix) {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.Mode()&0111 != 0 && !info.IsDir() {
+				duplicateCheck[name] = true
+				appendUniqueCandidate(candidates, seen, name)
+			}
+		}
+	}
 }
 
 // parseCompletionContext analyzes the input line to determine what kind of completion is needed.

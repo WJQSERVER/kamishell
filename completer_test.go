@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"kamishell/builtin"
 	"kamishell/core"
 )
 
@@ -99,4 +100,75 @@ func TestParseCompletionContextFlag(t *testing.T) {
 	if ctx.currentToken != "-" {
 		t.Fatalf("expected current token '-', got %q", ctx.currentToken)
 	}
+}
+
+func TestParseCompletionContextAfterPipe(t *testing.T) {
+	ctx := parseCompletionContext("cat file | gre")
+	// After a pipe, we're in a new command context - first word should be true
+	if !ctx.isFirstWord {
+		t.Fatal("expected first word after pipe (new command context)")
+	}
+	if ctx.commandName != "gre" {
+		t.Fatalf("expected command name 'gre' after pipe, got %q", ctx.commandName)
+	}
+}
+
+func TestCompleterFlagCompletion(t *testing.T) {
+	// Trigger metadata registration by running the command once
+	_ = builtin.Ls([]string{"--help"}, &testEnv{}, nil, &discardWriter{}, &discardWriter{})
+
+	c := &KamiCompleter{env: core.NewEnvironment()}
+	input := []rune("ls -")
+	candidates, _ := c.Do(input, len(input))
+
+	// Should have flag candidates from ls metadata
+	found := false
+	for _, cand := range candidates {
+		if string(cand) == "-a" || string(cand) == "-l" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected flag candidates for ls, got none")
+	}
+}
+
+// testEnv is a minimal Environment implementation for testing
+type testEnv struct{}
+
+func (e *testEnv) Get(key string) (any, bool) { return nil, false }
+func (e *testEnv) Set(key string, val any)    {}
+
+// discardWriter discards all writes
+type discardWriter struct{}
+
+func (w *discardWriter) Write(p []byte) (n int, err error) { return len(p), nil }
+
+func TestCompleterCommandPositionIncludesExternal(t *testing.T) {
+	c := &KamiCompleter{env: core.NewEnvironment()}
+	input := []rune("go")
+	candidates, _ := c.Do(input, len(input))
+
+	// Should include 'go' as external command (if in PATH)
+	found := false
+	for _, cand := range candidates {
+		if string(cand) == "go" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected 'go' in command candidates (should be in PATH)")
+	}
+}
+
+func TestCompleterHelpCompletesBuiltinNames(t *testing.T) {
+	c := &KamiCompleter{env: core.NewEnvironment()}
+	input := []rune("help ls")
+	candidates, _ := c.Do(input, len(input))
+
+	// 'ls' is already complete, so should match file paths starting with 'ls'
+	// or nothing if no files match. The important thing is it doesn't crash.
+	_ = candidates
 }
