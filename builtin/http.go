@@ -241,6 +241,13 @@ func parseHTTPCommand(args []string, stderr io.Writer) (httpCommandSpec, error) 
 	fs.Var(&headers, "H", "request header")
 	fs.Var(&headers, "header", "request header")
 	m.RegisterFlag("header", "H", "request header", FlagString)
+	m.SetFlagCompleter("header", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{
+			"Accept:", "Accept-Encoding:", "Accept-Language:", "Authorization:",
+			"Cache-Control:", "Content-Type:", "Cookie:", "Origin:",
+			"User-Agent:", "X-Requested-With:",
+		}
+	})
 	fs.Var(&queries, "q", "query parameter")
 	fs.Var(&queries, "query", "query parameter")
 	m.RegisterFlag("query", "q", "query parameter", FlagString)
@@ -254,6 +261,12 @@ func parseHTTPCommand(args []string, stderr io.Writer) (httpCommandSpec, error) 
 	fs.Var(&jsonFlag, "json", "json request body")
 	m.RegisterFlag("json", "j", "json request body", FlagString)
 	StringFlagVar(fs, m, &contentType, "content-type", "", "", "request content type")
+	m.SetFlagCompleter("content-type", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{
+			"application/json", "application/xml", "application/x-www-form-urlencoded",
+			"multipart/form-data", "text/plain", "text/html", "text/xml",
+		}
+	})
 	StringFlagVar(fs, m, &accept, "accept", "", "", "request accept header")
 	StringFlagVar(fs, m, &auth, "auth", "", "", "basic auth user:pass")
 	StringFlagVar(fs, m, &bearer, "bearer", "", "", "bearer token")

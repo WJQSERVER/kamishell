@@ -117,3 +117,16 @@ func splitPath(path string) (dir, base string) {
 	}
 	return path[:lastSlash+1], path[lastSlash+1:]
 }
+
+// completeEnvVarNames returns environment variable names matching the prefix.
+func completeEnvVarNames(cmdName string, argIndex int, prefix string) []string {
+	var result []string
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		name := parts[0]
+		if strings.HasPrefix(name, prefix) {
+			result = append(result, name)
+		}
+	}
+	return result
+}

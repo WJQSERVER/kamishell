@@ -15,6 +15,7 @@ func init() {
 		Help:        "设置环境变量；不带参数时等同于 env。",
 		Action:      Export,
 	})
+	SetArgCompleter("export", completeEnvVarNames)
 }
 
 func Export(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
