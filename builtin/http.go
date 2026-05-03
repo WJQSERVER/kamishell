@@ -268,6 +268,12 @@ func parseHTTPCommand(args []string, stderr io.Writer) (httpCommandSpec, error) 
 		}
 	})
 	StringFlagVar(fs, m, &accept, "accept", "", "", "request accept header")
+	m.SetFlagCompleter("accept", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{
+			"application/json", "application/xml", "text/plain", "text/html",
+			"text/xml", "application/octet-stream", "*/*",
+		}
+	})
 	StringFlagVar(fs, m, &auth, "auth", "", "", "basic auth user:pass")
 	StringFlagVar(fs, m, &bearer, "bearer", "", "", "bearer token")
 	StringFlagVar(fs, m, &outputPath, "output", "o", "", "write response body to file")
