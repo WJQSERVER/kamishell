@@ -1530,13 +1530,13 @@ func evalCommandArgsAsObjects(args []Expression, env *Environment, stdin io.Read
 	if len(args) == 0 {
 		return nil, nil
 	}
-	values := make([]Object, 0, len(args))
-	for _, arg := range args {
+	values := make([]Object, len(args))
+	for i, arg := range args {
 		value := EvalWithIO(arg, env, stdin, stdout, stderr)
 		if isError(value) {
 			return nil, value.(*Error)
 		}
-		values = append(values, value)
+		values[i] = value
 	}
 	return values, nil
 }
@@ -1545,13 +1545,13 @@ func evalCommandArgsAsStrings(args []Expression, env *Environment, stdin io.Read
 	if len(args) == 0 {
 		return nil, nil
 	}
-	values := make([]string, 0, len(args))
-	for _, arg := range args {
+	values := make([]string, len(args))
+	for i, arg := range args {
 		value, errObj := evalCommandArgString(arg, env, stdin, stdout, stderr)
 		if errObj != nil {
 			return nil, errObj
 		}
-		values = append(values, value)
+		values[i] = value
 	}
 	return values, nil
 }
@@ -1560,13 +1560,13 @@ func evalCommandArgsAsStringObjects(args []Expression, env *Environment, stdin i
 	if len(args) == 0 {
 		return nil, nil
 	}
-	values := make([]Object, 0, len(args))
-	for _, arg := range args {
+	values := make([]Object, len(args))
+	for i, arg := range args {
 		value, errObj := evalCommandArgString(arg, env, stdin, stdout, stderr)
 		if errObj != nil {
 			return nil, errObj
 		}
-		values = append(values, &String{Value: value})
+		values[i] = &String{Value: value}
 	}
 	return values, nil
 }
