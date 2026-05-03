@@ -537,6 +537,223 @@ func TestArrayReassignValueSemantics(t *testing.T) {
 	}
 }
 
+func TestRangeIndexOnly(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := [10, 20, 30]; for i := range arr { print i }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "2"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestRangeIndexAndValue(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := [10, 20, 30]; for i, v := range arr { print i; print v }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "10", "1", "20", "2", "30"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestRangeNoVars(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for range [1, 2, 3] { print "tick" }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d: %v", len(lines), lines)
+	}
+}
+
+func TestRangeWithBreak(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i, v := range [10, 20, 30, 40, 50] { if v == 30 { break }; print v }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"10", "20"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+}
+
+func TestRangeWithContinue(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i, v := range [10, 20, 30, 40, 50] { if i == 2 { continue }; print v }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"10", "20", "40", "50"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestRangeEmptyArray(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i, v := range [] { print i }; print "done"`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "done" {
+		t.Errorf("expected done, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestRangeStringArray(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`for i, v := range ["a", "b", "c"] { print v }`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"a", "b", "c"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+}
+
+func TestIterRangeSingleVar(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { print v }`
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "2", "3", "4"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestIterRangeDualVar(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `func enumerate(arr) { return func(yield) { for i := range arr { if !yield(i, arr[i]) { return } } } }; for k, v := range enumerate([10, 20, 30]) { print k; print v }`
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "10", "1", "20", "2", "30"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestIterRangeBreak(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(100) { if v == 5 { break }; print v }`
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "2", "3", "4"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+}
+
+func TestIterRangeContinue(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { if v == 2 { continue }; print v }`
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "1", "3", "4"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestIterRangeEmpty(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `func empty() { return func(yield) { } }; for v := range empty() { print v }; print "done"`
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "done" {
+		t.Errorf("expected done, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestIterRangeWithReturn(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; func find(target) { for v := range countTo(10) { if v == target { return v } }; return -1 }; print find(7)`
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "7" {
+		t.Errorf("expected 7, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestIterRangeNested(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(3) { for w := range countTo(2) { print v; print w } }`
+	stdout, stderr, _ := runKami(input, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"0", "0", "0", "1", "1", "0", "1", "1", "2", "0", "2", "1"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
 func TestForBuiltins(t *testing.T) {
 	env := NewEmptyEnvironment()
 	dirName := "test_dir_builtin"

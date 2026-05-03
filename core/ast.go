@@ -399,6 +399,10 @@ type ForStatement struct {
 	IncVarName string // variable name for i = i + N pattern
 	IncDelta   int64  // +1 or -1 for i = i +/- 1
 	HasInc     bool   // true if body is a single i = i +/- 1 assignment
+	// Iterator range (for v := range iter(args) { ... })
+	IsIterRange bool       // true if this is a range-over-function
+	IterCall    Expression // the iterator call expression (e.g. iter(args))
+	IterVars    []string   // variable names: ["v"] or ["k", "v"]
 }
 
 func (fs *ForStatement) statementNode()       {}
@@ -532,6 +536,23 @@ func (fs *FunctionStatement) String() string {
 	out.WriteString(strings.Join(fs.Parameters, ", "))
 	out.WriteString(") ")
 	out.WriteString(fs.Body.String())
+	return out.String()
+}
+
+type FunctionLiteral struct {
+	Token      Token // the func token
+	Parameters []string
+	Body       *BlockStatement
+}
+
+func (fl *FunctionLiteral) expressionNode()      {}
+func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Literal }
+func (fl *FunctionLiteral) String() string {
+	var out strings.Builder
+	out.WriteString("func(")
+	out.WriteString(strings.Join(fl.Parameters, ", "))
+	out.WriteString(") ")
+	out.WriteString(fl.Body.String())
 	return out.String()
 }
 

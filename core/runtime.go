@@ -727,6 +727,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return NULL
 	case *BooleanLiteral:
 		return nativeBoolToBooleanObject(node.Value)
+	case *FunctionLiteral:
+		return &Function{Parameters: node.Parameters, Body: node.Body, Env: env}
 	}
 	return NULL
 }
@@ -833,7 +835,82 @@ func evalIfStatement(is *IfStatement, env *Environment, stdin io.Reader, stdout 
 	}
 }
 
+func evalIterRangeStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	// 1. Evaluate iterator call: iterObj = iter(args)
+	iterObj := EvalWithIO(fs.IterCall, env, stdin, stdout, stderr)
+	if isError(iterObj) {
+		return iterObj
+	}
+
+	// 2. Build yield callback: wraps loop body, returns TRUE to continue, FALSE to stop
+	var iterResult Object
+	yield := &NativeFunction{
+		Fn: func(_ *Environment, args ...Object) Object {
+			expected := len(fs.IterVars)
+			if expected == 0 {
+				expected = 1
+			}
+			if len(args) != expected {
+				return &Error{Message: fmt.Sprintf("yield expects %d args, got %d", expected, len(args))}
+			}
+
+			// Bind variables
+			if len(fs.IterVars) >= 2 && len(args) >= 2 {
+				env.SetObject(fs.IterVars[0], args[0])
+				env.SetObject(fs.IterVars[1], args[1])
+			} else if len(fs.IterVars) >= 1 && len(args) >= 1 {
+				env.SetObject(fs.IterVars[0], args[0])
+			}
+
+			// Execute loop body
+			result := evalLoopBody(fs.Consequence, env, stdin, stdout, stderr)
+
+			if result == BREAK_SIGNAL {
+				return FALSE
+			}
+			if result == CONTINUE_SIGNAL {
+				return TRUE
+			}
+			if isError(result) {
+				iterResult = result
+				return FALSE
+			}
+			if _, ok := result.(*ReturnValue); ok {
+				iterResult = result
+				return FALSE
+			}
+
+			return TRUE
+		},
+	}
+
+	// 3. Call iterator with yield
+	switch fn := iterObj.(type) {
+	case *NativeFunction:
+		ret := fn.Fn(env, yield)
+		if isError(ret) {
+			return ret
+		}
+	case *Function:
+		ret := applyFunction(fn, []Object{yield}, env, stdin, stdout, stderr)
+		if isError(ret) {
+			return ret
+		}
+	default:
+		return &Error{Message: fmt.Sprintf("range target is not callable: %s", iterObj.Type())}
+	}
+
+	if iterResult != nil {
+		return iterResult
+	}
+	return NULL
+}
+
 func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if fs.IsIterRange {
+		return evalIterRangeStatement(fs, env, stdin, stdout, stderr)
+	}
+
 	var result Object = NULL
 	body := fs.Consequence
 	fastCondition, hasFastCondition := buildForConditionFastPath(fs.Condition)
@@ -1115,6 +1192,12 @@ func evalPrefixExpression(node *PrefixExpression, env *Environment, stdin io.Rea
 			return &Error{Message: "nil pointer dereference"}
 		}
 		return ptr.Ref.Value
+	case "!":
+		val := EvalWithIO(node.Right, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		return nativeBoolToBooleanObject(!isTruthy(val))
 	default:
 		return &Error{Message: "unknown prefix operator: " + node.Operator}
 	}
