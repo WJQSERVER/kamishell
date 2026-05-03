@@ -138,6 +138,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 				break
 			}
 			stmt = p.parseAssignStatement()
+		} else if p.peekToken.Type == LBRACKET {
+			stmt = p.parseIndexAssignOrCommand()
 		} else if p.peekToken.Type == DOT {
 			// Check for IDENT.IDENT { pattern (method call with block)
 			if p.isMethodCallWithBlock() {
@@ -219,7 +221,7 @@ func (p *Parser) parseExpressionStatement() *ExpressionStatement {
 func (p *Parser) parsePrintStatement() *PrintStatement {
 	stmt := &PrintStatement{Token: p.curToken}
 	p.nextToken()
-	stmt.Expression = p.parseExpression(LESSGREATER)
+	stmt.Expression = p.parseExpression(LOWEST)
 	if p.peekToken.Type == SEMICOLON {
 		p.nextToken()
 	}
@@ -664,6 +666,64 @@ func (p *Parser) parseIndexExpression(left Expression) Expression {
 		p.nextToken()
 	}
 	return exp
+}
+
+func (p *Parser) parseIndexAssignOrCommand() Statement {
+	// curToken = IDENT, peekToken = LBRACKET
+	// Look ahead: IDENT [ expr ] = val → index assignment
+	// Otherwise: fall back to command statement
+	savedCur := p.curToken
+	savedPeek := p.peekToken
+	savedLexer := p.l.GetPosition()
+
+	ident := p.curToken.Literal
+	p.nextToken() // move to [
+	p.nextToken() // move to expr
+	// Skip the index expression (could be complex)
+	// We just need to check if after ] there's an =
+	depth := 1
+	for depth > 0 && p.curToken.Type != EOF {
+		if p.curToken.Type == LBRACKET {
+			depth++
+		} else if p.curToken.Type == RBRACKET {
+			depth--
+		}
+		if depth > 0 {
+			p.nextToken()
+		}
+	}
+	// curToken should be ]
+	isAssign := p.peekToken.Type == ASSIGN
+
+	// Restore state
+	p.curToken = savedCur
+	p.peekToken = savedPeek
+	p.l.SetPosition(savedLexer)
+
+	if isAssign {
+		// Parse as: ident [ indexExpr ] = value
+		p.nextToken() // move to [
+		p.nextToken() // move to index
+		indexExpr := p.parseExpression(LOWEST)
+		if p.peekToken.Type == RBRACKET {
+			p.nextToken() // consume ]
+		}
+		p.nextToken() // move to =
+		p.nextToken() // move to value
+		val := p.parseExpression(LOWEST)
+		if p.peekToken.Type == SEMICOLON {
+			p.nextToken()
+		}
+		target := &IndexExpression{
+			Token: savedPeek,
+			Left:  &Identifier{Token: savedCur, Value: ident},
+			Index: indexExpr,
+		}
+		return &AssignStatement{Token: p.curToken, Target: target, Value: val}
+	}
+
+	// Not an assignment, fall back to command statement
+	return p.parseCommandStatement()
 }
 
 func (p *Parser) parseFunctionStatement() *FunctionStatement {

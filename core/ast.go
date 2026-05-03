@@ -86,9 +86,10 @@ func (ps *PrintStatement) String() string {
 }
 
 type AssignStatement struct {
-	Token Token // the := token
-	Name  string
-	Value Expression
+	Token  Token // the := or = token
+	Name   string       // variable name for simple assignment
+	Target Expression   // non-nil for index assignment: arr[i] = val
+	Value  Expression
 }
 
 func (as *AssignStatement) statementNode()       {}

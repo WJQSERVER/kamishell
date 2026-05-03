@@ -581,10 +581,49 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return val
 		}
 
+		// Index assignment: arr[i] = val
+		if node.Target != nil {
+			idxExpr, ok := node.Target.(*IndexExpression)
+			if !ok {
+				return &Error{Message: "invalid assignment target"}
+			}
+			left := EvalWithIO(idxExpr.Left, env, stdin, stdout, stderr)
+			if isError(left) {
+				return left
+			}
+			arr, ok := left.(*Array)
+			if !ok {
+				return &Error{Message: fmt.Sprintf("cannot index non-array type %s", left.Type())}
+			}
+			index := EvalWithIO(idxExpr.Index, env, stdin, stdout, stderr)
+			if isError(index) {
+				return index
+			}
+			idx, ok := index.(*Integer)
+			if !ok {
+				return &Error{Message: fmt.Sprintf("array index must be INTEGER, got %s", index.Type())}
+			}
+			i := idx.Value
+			if i < 0 || i >= int64(len(arr.Elements)) {
+				return &Error{Message: fmt.Sprintf("array index out of bounds: index %d, length %d", i, len(arr.Elements))}
+			}
+			if val.Type() != arr.ElemType {
+				return &Error{Message: fmt.Sprintf("cannot assign %s to ARRAY[%s] element", val.Type(), arr.ElemType)}
+			}
+			arr.Elements[i] = val
+			return val
+		}
+
 		if node.Token.Literal == ":=" {
 			// nil is untyped, cannot be used with :=
 			if val.Type() == NULL_OBJ {
 				return &Error{Message: "untyped nil cannot be used with :="}
+			}
+			// Array value semantics: copy on assignment
+			if arr, ok := val.(*Array); ok {
+				copied := make([]Object, len(arr.Elements))
+				copy(copied, arr.Elements)
+				val = &Array{ElemType: arr.ElemType, Elements: copied}
 			}
 			typeName := ""
 			if shouldTrackType(string(val.Type())) {
@@ -592,6 +631,12 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			}
 			env.SetWithType(node.Name, val, typeName)
 		} else {
+			// Array value semantics: copy on reassignment too
+			if arr, ok := val.(*Array); ok {
+				copied := make([]Object, len(arr.Elements))
+				copy(copied, arr.Elements)
+				val = &Array{ElemType: arr.ElemType, Elements: copied}
+			}
 			// Fast path: direct lookup in current scope
 			if _, hasIt := env.store[node.Name]; hasIt {
 				if typeName, hasType := env.types[node.Name]; hasType && typeName != "" {
@@ -1133,6 +1178,8 @@ func evalInfixExpression(operator string, left, right Object) Object {
 		return evalBooleanInfixExpression(operator, left.(*Boolean).Value, right.(*Boolean).Value)
 	case left.Type() == NULL_OBJ && right.Type() == NULL_OBJ:
 		return evalNullInfixExpression(operator)
+	case left.Type() == ARRAY_OBJ && right.Type() == ARRAY_OBJ:
+		return evalArrayInfixExpression(operator, left.(*Array), right.(*Array))
 	case operator == "==":
 		return nativeBoolToBooleanObject(inspectObject(left) == inspectObject(right))
 	case operator == "!=":
@@ -1218,6 +1265,33 @@ func evalNullInfixExpression(operator string) Object {
 		return FALSE
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", NULL_OBJ, operator, NULL_OBJ)}
+	}
+}
+
+func evalArrayInfixExpression(operator string, left, right *Array) Object {
+	switch operator {
+	case "==":
+		if left.ElemType != right.ElemType {
+			return FALSE
+		}
+		if len(left.Elements) != len(right.Elements) {
+			return FALSE
+		}
+		for i := range left.Elements {
+			eq := evalInfixExpression("==", left.Elements[i], right.Elements[i])
+			if eq != TRUE {
+				return FALSE
+			}
+		}
+		return TRUE
+	case "!=":
+		eq := evalArrayInfixExpression("==", left, right)
+		if eq == TRUE {
+			return FALSE
+		}
+		return TRUE
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", ARRAY_OBJ, operator, ARRAY_OBJ)}
 	}
 }
 
@@ -2236,6 +2310,8 @@ func mapTypeName(name string) ObjectType {
 		return FUNCTION_OBJ
 	case "error":
 		return ERROR_OBJ
+	case "array":
+		return ARRAY_OBJ
 	default:
 		return ObjectType(strings.ToUpper(name))
 	}
@@ -2249,6 +2325,8 @@ func zeroValueForType(typeName ObjectType) Object {
 		return &String{Value: ""}
 	case BOOLEAN_OBJ:
 		return FALSE
+	case ARRAY_OBJ:
+		return &Array{ElemType: NULL_OBJ, Elements: nil}
 	default:
 		return NULL
 	}

@@ -449,6 +449,94 @@ func TestArrayEmpty(t *testing.T) {
 	}
 }
 
+func TestArrayIndexAssign(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := [1, 2, 3]; arr[1] = 99; print arr`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "[1, 99, 3]" {
+		t.Errorf("expected [1, 99, 3], got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestArrayIndexAssignTypeMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`arr := [1, 2, 3]; arr[0] = "hello"`, env)
+	if !strings.Contains(stderr, "cannot assign") {
+		t.Errorf("expected type mismatch error, got %q", stderr)
+	}
+}
+
+func TestArrayValueSemantics(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`a := [1, 2, 3]; b := a; b[0] = 99; print a; print b`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	}
+	if strings.TrimSpace(lines[0]) != "[1, 2, 3]" {
+		t.Errorf("a should be unchanged, got %q", strings.TrimSpace(lines[0]))
+	}
+	if strings.TrimSpace(lines[1]) != "[99, 2, 3]" {
+		t.Errorf("b should be modified, got %q", strings.TrimSpace(lines[1]))
+	}
+}
+
+func TestArrayEqual(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`a := [1, 2, 3]; b := [1, 2, 3]; print a == b`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "true" {
+		t.Errorf("expected true, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestArrayNotEqual(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`a := [1, 2, 3]; b := [1, 2, 4]; print a == b`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "false" {
+		t.Errorf("expected false, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestVarArrayDeclaration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`var arr array; print len(arr)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "0" {
+		t.Errorf("expected 0, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestArrayReassignValueSemantics(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`a := [1, 2, 3]; b := [4, 5, 6]; a = b; b[0] = 99; print a; print b`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	}
+	if strings.TrimSpace(lines[0]) != "[4, 5, 6]" {
+		t.Errorf("a should be unchanged after b modified, got %q", strings.TrimSpace(lines[0]))
+	}
+	if strings.TrimSpace(lines[1]) != "[99, 5, 6]" {
+		t.Errorf("b should be modified, got %q", strings.TrimSpace(lines[1]))
+	}
+}
+
 func TestForBuiltins(t *testing.T) {
 	env := NewEmptyEnvironment()
 	dirName := "test_dir_builtin"
