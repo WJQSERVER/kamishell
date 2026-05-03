@@ -184,6 +184,10 @@ func (l *Lexer) NextToken() Token {
 		tok = Token{Type: LBRACE, Literal: "{", Start: l.position, End: l.position + 1}
 	case '}':
 		tok = Token{Type: RBRACE, Literal: "}", Start: l.position, End: l.position + 1}
+	case '[':
+		tok = Token{Type: LBRACKET, Literal: "[", Start: l.position, End: l.position + 1}
+	case ']':
+		tok = Token{Type: RBRACKET, Literal: "]", Start: l.position, End: l.position + 1}
 	case '$':
 		tok = Token{Type: DOLLAR, Literal: "$", Start: l.position, End: l.position + 1}
 	case '"':

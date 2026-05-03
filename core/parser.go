@@ -15,6 +15,7 @@ const (
 	PREFIX      // -X or !X
 	MEMBER      // obj.prop
 	CALL        // myFunction(X)
+	INDEX       // arr[i]
 )
 
 type Parser struct {
@@ -534,6 +535,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseAddressExpression()
 	case ASTERISK:
 		leftExp = p.parseDereferenceExpression()
+	case LBRACKET:
+		leftExp = p.parseArrayLiteral()
 	default:
 		return nil
 	}
@@ -547,6 +550,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			leftExp = p.parseMemberExpression(leftExp)
 		case LPAREN:
 			leftExp = p.parseCallExpression(leftExp)
+		case LBRACKET:
+			leftExp = p.parseIndexExpression(leftExp)
 		default:
 			return leftExp
 		}
@@ -638,9 +643,27 @@ func precedenceForToken(tokenType TokenType) int {
 		return MEMBER
 	case LPAREN:
 		return CALL
+	case LBRACKET:
+		return INDEX
 	default:
 		return LOWEST
 	}
+}
+
+func (p *Parser) parseArrayLiteral() Expression {
+	array := &ArrayLiteral{Token: p.curToken}
+	array.Elements = p.parseExpressionList(RBRACKET)
+	return array
+}
+
+func (p *Parser) parseIndexExpression(left Expression) Expression {
+	exp := &IndexExpression{Token: p.curToken, Left: left}
+	p.nextToken()
+	exp.Index = p.parseExpression(LOWEST)
+	if p.peekToken.Type == RBRACKET {
+		p.nextToken()
+	}
+	return exp
 }
 
 func (p *Parser) parseFunctionStatement() *FunctionStatement {

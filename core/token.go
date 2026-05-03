@@ -36,6 +36,8 @@ const (
 	RPAREN TokenType = ")"
 	LBRACE TokenType = "{"
 	RBRACE TokenType = "}"
+	LBRACKET TokenType = "["
+	RBRACKET TokenType = "]"
 	DOLLAR TokenType = "$"
 
 	// Keywords

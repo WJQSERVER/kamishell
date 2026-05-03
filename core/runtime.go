@@ -108,6 +108,42 @@ func init() {
 			return NULL
 		},
 	}
+
+	NativeFns["len"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 1 {
+				return &Error{Message: "len() expects exactly one argument"}
+			}
+			switch v := args[0].(type) {
+			case *Array:
+				return getIntegerObject(int64(len(v.Elements)))
+			case *String:
+				return getIntegerObject(int64(len(v.Value)))
+			default:
+				return &Error{Message: fmt.Sprintf("len() not supported for type %s", v.Type())}
+			}
+		},
+	}
+
+	NativeFns["push"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 2 {
+				return &Error{Message: "push() expects exactly two arguments (array, element)"}
+			}
+			arr, ok := args[0].(*Array)
+			if !ok {
+				return &Error{Message: "push() first argument must be an array"}
+			}
+			elem := args[1]
+			if elem.Type() != arr.ElemType {
+				return &Error{Message: fmt.Sprintf("push() type mismatch: cannot push %s into ARRAY[%s]", elem.Type(), arr.ElemType)}
+			}
+			newElems := make([]Object, len(arr.Elements)+1)
+			copy(newElems, arr.Elements)
+			newElems[len(arr.Elements)] = elem
+			return &Array{ElemType: arr.ElemType, Elements: newElems}
+		},
+	}
 }
 
 // Go标准库映射表
@@ -531,6 +567,10 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalMemberExpression(node, env)
 	case *CallExpression:
 		return evalCallExpression(node, env, stdin, stdout, stderr)
+	case *ArrayLiteral:
+		return evalArrayLiteral(node, env, stdin, stdout, stderr)
+	case *IndexExpression:
+		return evalIndexExpression(node, env, stdin, stdout, stderr)
 	case *VarStatement:
 		return evalVarStatement(node, env, stdin, stdout, stderr)
 	case *PointerAssignStatement:
@@ -655,6 +695,59 @@ func evalReturnStatement(rs *ReturnStatement, env *Environment, stdin io.Reader,
 		return val
 	}
 	return &ReturnValue{Value: val}
+}
+
+func evalArrayLiteral(al *ArrayLiteral, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if len(al.Elements) == 0 {
+		return &Array{ElemType: NULL_OBJ, Elements: nil}
+	}
+
+	first := EvalWithIO(al.Elements[0], env, stdin, stdout, stderr)
+	if isError(first) {
+		return first
+	}
+	elemType := first.Type()
+
+	elements := make([]Object, len(al.Elements))
+	elements[0] = first
+	for i := 1; i < len(al.Elements); i++ {
+		val := EvalWithIO(al.Elements[i], env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		if val.Type() != elemType {
+			return &Error{Message: fmt.Sprintf("array type mismatch: expected %s, got %s at index %d", elemType, val.Type(), i)}
+		}
+		elements[i] = val
+	}
+	return &Array{ElemType: elemType, Elements: elements}
+}
+
+func evalIndexExpression(ie *IndexExpression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	left := EvalWithIO(ie.Left, env, stdin, stdout, stderr)
+	if isError(left) {
+		return left
+	}
+	index := EvalWithIO(ie.Index, env, stdin, stdout, stderr)
+	if isError(index) {
+		return index
+	}
+
+	arr, ok := left.(*Array)
+	if !ok {
+		return &Error{Message: fmt.Sprintf("cannot index non-array type %s", left.Type())}
+	}
+
+	idx, ok := index.(*Integer)
+	if !ok {
+		return &Error{Message: fmt.Sprintf("array index must be INTEGER, got %s", index.Type())}
+	}
+
+	i := idx.Value
+	if i < 0 || i >= int64(len(arr.Elements)) {
+		return &Error{Message: fmt.Sprintf("array index out of bounds: index %d, length %d", i, len(arr.Elements))}
+	}
+	return arr.Elements[i]
 }
 
 func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {

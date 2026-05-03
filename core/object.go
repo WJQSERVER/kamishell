@@ -1,6 +1,9 @@
 package core
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 type ObjectType string
 
@@ -18,6 +21,7 @@ const (
 	TASK_OBJ     ObjectType = "TASK"
 	BREAK_OBJ    ObjectType = "BREAK"
 	CONTINUE_OBJ ObjectType = "CONTINUE"
+	ARRAY_OBJ    ObjectType = "ARRAY"
 )
 
 var (
@@ -177,3 +181,22 @@ type ContinueSignal struct{}
 
 func (c *ContinueSignal) Type() ObjectType { return CONTINUE_OBJ }
 func (c *ContinueSignal) Inspect() string  { return "continue" }
+
+type Array struct {
+	ElemType ObjectType
+	Elements []Object
+}
+
+func (a *Array) Type() ObjectType { return ARRAY_OBJ }
+func (a *Array) Inspect() string {
+	var out strings.Builder
+	out.WriteString("[")
+	for i, el := range a.Elements {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(el.Inspect())
+	}
+	out.WriteString("]")
+	return out.String()
+}

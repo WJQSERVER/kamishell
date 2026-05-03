@@ -352,6 +352,103 @@ func TestBreakNestedLoops(t *testing.T) {
 	}
 }
 
+func TestArrayLiteral(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := [1, 2, 3]; print arr`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "[1, 2, 3]" {
+		t.Errorf("expected [1, 2, 3], got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestArrayIndex(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := [10, 20, 30]; print arr[0]; print arr[1]; print arr[2]`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	expected := []string{"10", "20", "30"}
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d: %v", len(expected), len(lines), lines)
+	}
+	for i, val := range expected {
+		if strings.TrimSpace(lines[i]) != val {
+			t.Errorf("at line %d: expected %s, got %s", i, val, lines[i])
+		}
+	}
+}
+
+func TestArrayLen(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := [1, 2, 3, 4, 5]; print len(arr)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "5" {
+		t.Errorf("expected 5, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestArrayPush(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := [1, 2, 3]; arr2 := push(arr, 4); print arr2`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "[1, 2, 3, 4]" {
+		t.Errorf("expected [1, 2, 3, 4], got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestArrayPushTypeMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`arr := [1, 2, 3]; arr2 := push(arr, "hello")`, env)
+	if !strings.Contains(stderr, "type mismatch") {
+		t.Errorf("expected type mismatch error, got %q", stderr)
+	}
+}
+
+func TestArrayHomogeneousType(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`arr := [1, "hello", true]`, env)
+	if !strings.Contains(stderr, "type mismatch") {
+		t.Errorf("expected mixed type error, got %q", stderr)
+	}
+}
+
+func TestArrayOutOfBounds(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`arr := [1, 2, 3]; print arr[5]`, env)
+	if !strings.Contains(stderr, "out of bounds") {
+		t.Errorf("expected out of bounds error, got %q", stderr)
+	}
+}
+
+func TestArrayString(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := ["a", "b", "c"]; print arr[1]`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "b" {
+		t.Errorf("expected b, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestArrayEmpty(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`arr := []; print len(arr)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "0" {
+		t.Errorf("expected 0, got %q", strings.TrimSpace(stdout))
+	}
+}
+
 func TestForBuiltins(t *testing.T) {
 	env := NewEmptyEnvironment()
 	dirName := "test_dir_builtin"
