@@ -18,10 +18,11 @@ const (
 
 // FlagMeta stores completion-relevant metadata for a single flag.
 type FlagMeta struct {
-	Long    string   // long name, e.g. "recursive"
-	Short   string   // short name, e.g. "r" (without dash)
-	Desc    string   // description for completion display
-	Type    FlagType // bool, string, int, duration
+	Long           string       // long name, e.g. "recursive"
+	Short          string       // short name, e.g. "r" (without dash)
+	Desc           string       // description for completion display
+	Type           FlagType     // bool, string, int, duration
+	ValueCompleter ArgCompleter // optional: completes the value for this flag
 }
 
 // ArgCompleter provides dynamic completion for positional arguments.
@@ -86,6 +87,30 @@ func (m *CommandMeta) RegisterFlag(long, short string, desc string, typ FlagType
 			Type:  typ,
 		})
 	}
+}
+
+// SetFlagCompleter sets a value completer for the flag with the given long name.
+func (m *CommandMeta) SetFlagCompleter(long string, c ArgCompleter) {
+	for _, f := range m.Flags {
+		if f.Long == long {
+			f.ValueCompleter = c
+			return
+		}
+	}
+}
+
+// FindFlagByToken returns the FlagMeta matching the given token (with or without dashes).
+func (m *CommandMeta) FindFlagByToken(token string) *FlagMeta {
+	name := token
+	for len(name) > 0 && name[0] == '-' {
+		name = name[1:]
+	}
+	for _, f := range m.Flags {
+		if f.Long == name || f.Short == name {
+			return f
+		}
+	}
+	return nil
 }
 
 // BoolFlag registers a bool flag with both the FlagSet and metadata.

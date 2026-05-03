@@ -17,6 +17,7 @@ type KamiCompleter struct {
 type completionContext struct {
 	commandName  string // first token on the line (the command)
 	currentToken string // token currently being completed (unquoted)
+	prevToken    string // previous token (for flag value detection)
 	isFirstWord  bool   // true if completing the command name itself
 	rawToken     string // raw token as typed (may include quote prefix)
 	rawLength    int    // length of the raw token in runes (including quote prefix)
@@ -43,9 +44,13 @@ func (c *KamiCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	} else if strings.HasPrefix(ctx.currentToken, "-") && ctx.commandName != "" {
 		// Flag position: complete flags from command metadata
 		c.completeFlags(ctx.commandName, ctx.currentToken, &candidates, seen)
-	} else {
-		// Argument position: try arg completer, then fall back to file paths
-		completed := c.completeArgs(ctx.commandName, ctx.currentToken, &candidates, seen)
+	} else if ctx.commandName != "" {
+		// Argument position: check if previous token is a flag that takes a value
+		completed := c.completeFlagValue(ctx.commandName, ctx.prevToken, ctx.currentToken, &candidates, seen)
+		if !completed {
+			// Try arg completer, then fall back to file paths
+			completed = c.completeArgs(ctx.commandName, ctx.currentToken, &candidates, seen)
+		}
 		if !completed {
 			for _, candidate := range completePaths(ctx.rawToken, ctx.currentToken) {
 				appendUniqueCandidate(&candidates, seen, candidate)
@@ -96,6 +101,29 @@ func (c *KamiCompleter) completeArgs(cmdName string, token string, candidates *[
 	// Count positional arg index by checking how many non-flag tokens precede the current one
 	argIndex := 0 // simplified: always pass 0 for now
 	completions := m.Completer(cmdName, argIndex, token)
+	for _, comp := range completions {
+		if strings.HasPrefix(comp, token) {
+			appendUniqueCandidate(candidates, seen, comp)
+		}
+	}
+	return len(completions) > 0
+}
+
+// completeFlagValue checks if prevToken is a flag that takes a value, and if so,
+// uses the flag's ValueCompleter to generate candidates. Returns true if candidates were added.
+func (c *KamiCompleter) completeFlagValue(cmdName string, prevToken string, token string, candidates *[][]rune, seen map[string]struct{}) bool {
+	if prevToken == "" || !strings.HasPrefix(prevToken, "-") {
+		return false
+	}
+	m := builtin.GetMeta(cmdName)
+	if m == nil {
+		return false
+	}
+	f := m.FindFlagByToken(prevToken)
+	if f == nil || f.Type == builtin.FlagBool || f.ValueCompleter == nil {
+		return false
+	}
+	completions := f.ValueCompleter(cmdName, 0, token)
 	for _, comp := range completions {
 		if strings.HasPrefix(comp, token) {
 			appendUniqueCandidate(candidates, seen, comp)
@@ -177,6 +205,13 @@ func parseCompletionContext(line string) completionContext {
 
 	ctx.currentToken = currentToken
 	ctx.rawToken = currentToken
+
+	// Set prevToken for flag value detection
+	if !endsWithSpace && len(tokens) >= 2 {
+		ctx.prevToken = tokens[len(tokens)-2]
+	} else if endsWithSpace && len(tokens) >= 1 {
+		ctx.prevToken = tokens[len(tokens)-1]
+	}
 
 	// Calculate raw length including any quote prefix
 	ctx.rawLength = utf8.RuneCountInString(currentToken)

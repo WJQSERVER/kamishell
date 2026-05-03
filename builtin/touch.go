@@ -73,6 +73,9 @@ func Touch(args []string, env Environment, stdin io.Reader, stdout io.Writer, st
 	StringFlagVar(fs, m, &opts.reference, "reference", "r", "", "use this file's times instead of current time")
 	StringFlagVar(fs, m, &opts.timestamp, "t", "t", "", "use [[CC]YY]MMDDhhmm[.ss] instead of current time")
 	StringFlagVar(fs, m, &opts.timeSelector, "time", "", "", "change the specified time: access, atime, use, modify, mtime")
+	m.SetFlagCompleter("time", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{"access", "atime", "use", "modify", "mtime"}
+	})
 
 	if err := fs.Parse(args); err != nil {
 		return 1

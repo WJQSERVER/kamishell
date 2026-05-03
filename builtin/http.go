@@ -235,6 +235,9 @@ func parseHTTPCommand(args []string, stderr io.Writer) (httpCommandSpec, error) 
 	var noDefaultHeaders bool
 
 	StringFlagVar(fs, m, &methodFlag, "method", "X", "", "HTTP method")
+	m.SetFlagCompleter("method", func(cmdName string, argIndex int, prefix string) []string {
+		return []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+	})
 	fs.Var(&headers, "H", "request header")
 	fs.Var(&headers, "header", "request header")
 	m.RegisterFlag("header", "H", "request header", FlagString)
