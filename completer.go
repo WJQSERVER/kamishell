@@ -345,6 +345,27 @@ func appendUniqueCandidate(candidates *[][]rune, seen map[string]struct{}, candi
 }
 
 func completePaths(rawToken, token string) []string {
+	// Handle tilde expansion
+	tildePrefix := ""
+	if strings.HasPrefix(token, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil
+		}
+		tildePrefix = "~/"
+		token = strings.TrimPrefix(token, "~")
+		if strings.HasPrefix(token, "/") {
+			token = token[1:]
+		}
+		// Replace ~ with home dir for filesystem operations
+		rawToken = strings.TrimPrefix(rawToken, "~")
+		if strings.HasPrefix(rawToken, "/") {
+			rawToken = rawToken[1:]
+		}
+		// Prepend home to token for directory traversal
+		token = filepath.Join(home, token)
+	}
+
 	dirPart := filepath.Dir(token)
 	basePart := filepath.Base(token)
 	if dirPart == "." && !strings.ContainsAny(token, `/\`) {
@@ -374,7 +395,7 @@ func completePaths(rawToken, token string) []string {
 		if !strings.HasPrefix(entry.Name(), basePart) {
 			continue
 		}
-		candidate := prefix + entry.Name()
+		candidate := tildePrefix + prefix + entry.Name()
 		if entry.IsDir() {
 			candidate += "/"
 		}
