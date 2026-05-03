@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"github.com/WJQSERVER-STUDIO/go-utils/iox"
 	"os"
 	"path/filepath"
 	"strings"
@@ -163,7 +164,7 @@ func copyFileSimple(src, dst string) error {
 	}
 	defer d.Close()
 
-	_, err = io.Copy(d, s)
+	_, err = iox.Copy(d, s)
 	return err
 }
 

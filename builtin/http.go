@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"github.com/WJQSERVER-STUDIO/go-utils/iox"
 	stdhttp "net/http"
 	neturl "net/url"
 	"os"
@@ -814,7 +815,7 @@ func copyHTTPBody(stdout io.Writer, outputPath string, body io.Reader) error {
 		defer outputFile.Close()
 		bodyWriter = outputFile
 	}
-	if _, err := io.Copy(bodyWriter, body); err != nil {
+	if _, err := iox.Copy(bodyWriter, body); err != nil {
 		return fmt.Errorf("copy response body: %w", err)
 	}
 	return nil
@@ -824,7 +825,7 @@ func discardHTTPBody(body io.Reader) error {
 	if body == nil {
 		return nil
 	}
-	_, err := io.Copy(io.Discard, body)
+	_, err := iox.Copy(io.Discard, body)
 	return err
 }
 
