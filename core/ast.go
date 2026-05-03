@@ -86,9 +86,10 @@ func (ps *PrintStatement) String() string {
 }
 
 type AssignStatement struct {
-	Token Token // the := token
-	Name  string
-	Value Expression
+	Token  Token // the := or = token
+	Name   string       // variable name for simple assignment
+	Target Expression   // non-nil for index assignment: arr[i] = val
+	Value  Expression
 }
 
 func (as *AssignStatement) statementNode()       {}
@@ -172,6 +173,44 @@ type BooleanLiteral struct {
 func (bl *BooleanLiteral) expressionNode()      {}
 func (bl *BooleanLiteral) TokenLiteral() string { return bl.Token.Literal }
 func (bl *BooleanLiteral) String() string       { return bl.Token.Literal }
+
+type ArrayLiteral struct {
+	Token    Token // the [ token
+	Elements []Expression
+}
+
+func (al *ArrayLiteral) expressionNode()      {}
+func (al *ArrayLiteral) TokenLiteral() string { return al.Token.Literal }
+func (al *ArrayLiteral) String() string {
+	var out strings.Builder
+	out.WriteString("[")
+	for i, el := range al.Elements {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(el.String())
+	}
+	out.WriteString("]")
+	return out.String()
+}
+
+type IndexExpression struct {
+	Token Token // the [ token
+	Left  Expression
+	Index Expression
+}
+
+func (ie *IndexExpression) expressionNode()      {}
+func (ie *IndexExpression) TokenLiteral() string { return ie.Token.Literal }
+func (ie *IndexExpression) String() string {
+	var out strings.Builder
+	out.WriteString("(")
+	out.WriteString(ie.Left.String())
+	out.WriteString("[")
+	out.WriteString(ie.Index.String())
+	out.WriteString("])")
+	return out.String()
+}
 
 type BlockStatement struct {
 	Token      Token // the { token
@@ -352,8 +391,18 @@ func (rs *RedirectStatement) String() string {
 
 type ForStatement struct {
 	Token       Token // the for token
-	Condition   Expression
+	Init        Statement  // init statement (3-clause: i := 0), nil for while-style
+	Condition   Expression // condition expression, nil for infinite loop
+	Post        Statement  // post statement (3-clause: i = i + 1), nil for while-style
 	Consequence *BlockStatement
+	// Pre-analyzed increment pattern (Parser stage)
+	IncVarName string // variable name for i = i + N pattern
+	IncDelta   int64  // +1 or -1 for i = i +/- 1
+	HasInc     bool   // true if body is a single i = i +/- 1 assignment
+	// Iterator range (for v := range iter(args) { ... })
+	IsIterRange bool       // true if this is a range-over-function
+	IterCall    Expression // the iterator call expression (e.g. iter(args))
+	IterVars    []string   // variable names: ["v"] or ["k", "v"]
 }
 
 func (fs *ForStatement) statementNode()       {}
@@ -361,14 +410,94 @@ func (fs *ForStatement) TokenLiteral() string { return fs.Token.Literal }
 func (fs *ForStatement) String() string {
 	var out strings.Builder
 	out.WriteString("for ")
+	if fs.Init != nil {
+		out.WriteString(fs.Init.String())
+		out.WriteString(" ")
+	}
 	if fs.Condition != nil {
 		out.WriteString(fs.Condition.String())
 	}
+	if fs.Post != nil {
+		out.WriteString("; ")
+		out.WriteString(fs.Post.String())
+	}
 	out.WriteString(" { ")
-	out.WriteString(fs.Consequence.String())
+	if fs.Consequence != nil {
+		out.WriteString(fs.Consequence.String())
+	}
 	out.WriteString(" }")
 	return out.String()
 }
+
+type SwitchStatement struct {
+	Token        Token       // the switch token
+	Tag          Expression  // optional, nil for tagless switch
+	Cases        []CaseClause
+	IntSwitch    bool // true if all non-default case values are integer literals
+	StringSwitch bool // true if all non-default case values are string literals (no $)
+}
+
+func (ss *SwitchStatement) statementNode()       {}
+func (ss *SwitchStatement) TokenLiteral() string { return ss.Token.Literal }
+func (ss *SwitchStatement) String() string {
+	var out strings.Builder
+	out.WriteString("switch ")
+	if ss.Tag != nil {
+		out.WriteString(ss.Tag.String())
+	}
+	out.WriteString(" { ")
+	for _, c := range ss.Cases {
+		out.WriteString(c.String())
+	}
+	out.WriteString(" }")
+	return out.String()
+}
+
+type CaseClause struct {
+	Token  Token          // case or default keyword
+	Values []Expression   // case values; nil for default
+	Body   *BlockStatement
+	IntConsts    []int64  // pre-computed integer literal values (Parser stage)
+	StringConsts []string // pre-computed string literal values (Parser stage)
+	HasConstVals bool     // true when all Values are same-type literals
+}
+
+func (cc *CaseClause) String() string {
+	var out strings.Builder
+	if cc.Values == nil {
+		out.WriteString("default:")
+	} else {
+		out.WriteString("case ")
+		for i, v := range cc.Values {
+			if i > 0 {
+				out.WriteString(", ")
+			}
+			out.WriteString(v.String())
+		}
+		out.WriteString(":")
+	}
+	if cc.Body != nil {
+		out.WriteString(" ")
+		out.WriteString(cc.Body.String())
+	}
+	return out.String()
+}
+
+type BreakStatement struct {
+	Token Token
+}
+
+func (bs *BreakStatement) statementNode()       {}
+func (bs *BreakStatement) TokenLiteral() string { return bs.Token.Literal }
+func (bs *BreakStatement) String() string       { return "break" }
+
+type ContinueStatement struct {
+	Token Token
+}
+
+func (cs *ContinueStatement) statementNode()       {}
+func (cs *ContinueStatement) TokenLiteral() string { return cs.Token.Literal }
+func (cs *ContinueStatement) String() string       { return "continue" }
 
 type LogicalStatement struct {
 	Token    Token // && or ||
@@ -407,6 +536,23 @@ func (fs *FunctionStatement) String() string {
 	out.WriteString(strings.Join(fs.Parameters, ", "))
 	out.WriteString(") ")
 	out.WriteString(fs.Body.String())
+	return out.String()
+}
+
+type FunctionLiteral struct {
+	Token      Token // the func token
+	Parameters []string
+	Body       *BlockStatement
+}
+
+func (fl *FunctionLiteral) expressionNode()      {}
+func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Literal }
+func (fl *FunctionLiteral) String() string {
+	var out strings.Builder
+	out.WriteString("func(")
+	out.WriteString(strings.Join(fl.Parameters, ", "))
+	out.WriteString(") ")
+	out.WriteString(fl.Body.String())
 	return out.String()
 }
 

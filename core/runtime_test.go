@@ -184,10 +184,8 @@ func TestConcurrentEvalOfSharedProgramMutatesFunctionStatementCache(t *testing.T
 	var wg sync.WaitGroup
 	errCh := make(chan string, workers)
 
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range workers {
+		wg.Go(func() {
 			<-start
 
 			env := NewEmptyEnvironment()
@@ -195,7 +193,7 @@ func TestConcurrentEvalOfSharedProgramMutatesFunctionStatementCache(t *testing.T
 			if isError(result) {
 				errCh <- result.Inspect()
 			}
-		}()
+		})
 	}
 
 	close(start)

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"github.com/WJQSERVER-STUDIO/go-utils/iox"
 	"os"
 )
 
@@ -143,7 +144,7 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 
 func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions) int {
 	if !requiresFormattedCatOutput(opts) {
-		if _, err := io.Copy(stdout, r); err != nil {
+		if _, err := iox.Copy(stdout, r); err != nil {
 			fmt.Fprintf(stderr, "cat: %v\n", err)
 			return 1
 		}

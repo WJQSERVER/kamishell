@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	"github.com/WJQSERVER-STUDIO/go-utils/iox"
 	"os"
 	"regexp"
 	"sync"
@@ -129,7 +130,7 @@ func (l *streamedLine) WriteForGrep(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(w, reader)
+	_, err = iox.Copy(w, reader)
 	return err
 }
 
@@ -241,7 +242,7 @@ func (b *spillBuffer) WriteTo(w io.Writer, limit int64) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(w, reader)
+	_, err = iox.Copy(w, reader)
 	return err
 }
 

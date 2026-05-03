@@ -33,10 +33,7 @@ func NewScriptEnvironment(outer *Environment) *Environment {
 }
 
 func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environment {
-	storeCap := paramCapacity
-	if storeCap < 1 {
-		storeCap = 1
-	}
+	storeCap := max(paramCapacity, 1)
 	return &Environment{
 		store:        make(map[string]Object, storeCap),
 		outer:        outer,

@@ -297,8 +297,8 @@ func parseDateString(dateStr string) (time.Time, error) {
 	}
 
 	// 尝试解析 Unix 时间戳（以 @ 开头）
-	if strings.HasPrefix(dateStr, "@") {
-		tsStr := strings.TrimPrefix(dateStr, "@")
+	if after, ok := strings.CutPrefix(dateStr, "@"); ok {
+		tsStr := after
 		ts, err := strconv.ParseInt(tsStr, 10, 64)
 		if err == nil {
 			return time.Unix(ts, 0), nil

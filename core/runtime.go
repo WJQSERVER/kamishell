@@ -8,16 +8,18 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 var (
-	NULL   = &Null{}
-	TRUE   = &Boolean{Value: true}
-	FALSE  = &Boolean{Value: false}
-	ENVPKG = &Package{Name: "env"}
+	NULL    = &Null{}
+	TRUE    = &Boolean{Value: true}
+	FALSE   = &Boolean{Value: false}
+	ENVPKG  = &Package{Name: "env"}
 	SYNCPKG = &Package{Name: "sync"}
 )
 
@@ -107,6 +109,42 @@ func init() {
 			return NULL
 		},
 	}
+
+	NativeFns["len"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 1 {
+				return &Error{Message: "len() expects exactly one argument"}
+			}
+			switch v := args[0].(type) {
+			case *Array:
+				return getIntegerObject(int64(len(v.Elements)))
+			case *String:
+				return getIntegerObject(int64(len(v.Value)))
+			default:
+				return &Error{Message: fmt.Sprintf("len() not supported for type %s", v.Type())}
+			}
+		},
+	}
+
+	NativeFns["push"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 2 {
+				return &Error{Message: "push() expects exactly two arguments (array, element)"}
+			}
+			arr, ok := args[0].(*Array)
+			if !ok {
+				return &Error{Message: "push() first argument must be an array"}
+			}
+			elem := args[1]
+			if elem.Type() != arr.ElemType {
+				return &Error{Message: fmt.Sprintf("push() type mismatch: cannot push %s into ARRAY[%s]", elem.Type(), arr.ElemType)}
+			}
+			newElems := make([]Object, len(arr.Elements)+1)
+			copy(newElems, arr.Elements)
+			newElems[len(arr.Elements)] = elem
+			return &Array{ElemType: arr.ElemType, Elements: newElems}
+		},
+	}
 }
 
 // Go标准库映射表
@@ -115,7 +153,7 @@ var goStdlib = map[string]map[string]*NativeFunction{
 		"Println": &NativeFunction{
 			Fn: func(env *Environment, args ...Object) Object {
 				// 转换参数并调用fmt.Println
-				goArgs := make([]interface{}, len(args))
+				goArgs := make([]any, len(args))
 				for i, arg := range args {
 					switch v := arg.(type) {
 					case *Integer:
@@ -142,7 +180,7 @@ var goStdlib = map[string]map[string]*NativeFunction{
 					return &Error{Message: "Printf first argument must be a string"}
 				}
 				// 转换剩余参数
-				goArgs := make([]interface{}, len(args)-1)
+				goArgs := make([]any, len(args)-1)
 				for i := 1; i < len(args); i++ {
 					switch v := args[i].(type) {
 					case *Integer:
@@ -169,7 +207,7 @@ var goStdlib = map[string]map[string]*NativeFunction{
 					return &Error{Message: "Sprintf first argument must be a string"}
 				}
 				// 转换剩余参数
-				goArgs := make([]interface{}, len(args)-1)
+				goArgs := make([]any, len(args)-1)
 				for i := 1; i < len(args); i++ {
 					switch v := args[i].(type) {
 					case *Integer:
@@ -314,15 +352,16 @@ var goStdlib = map[string]map[string]*NativeFunction{
 				}
 				parts := strings.Split(s.Value, sep.Value)
 				// 返回字符串数组（暂时用字符串表示）
-				result := "["
+				var result strings.Builder
+				result.WriteString("[")
 				for i, part := range parts {
 					if i > 0 {
-						result += ", "
+						result.WriteString(", ")
 					}
-					result += "\"" + part + "\""
+					result.WriteString("\"" + part + "\"")
 				}
-				result += "]"
-				return &String{Value: result}
+				result.WriteString("]")
+				return &String{Value: result.String()}
 			},
 		},
 		"Join": &NativeFunction{
@@ -512,8 +551,14 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalMethodCallBlock(node, env, stdin, stdout, stderr)
 	case *WaitStatement:
 		return evalWaitStatement(node, env, stdin, stdout, stderr)
+	case *SwitchStatement:
+		return evalSwitchStatement(node, env, stdin, stdout, stderr)
 	case *ReturnStatement:
 		return evalReturnStatement(node, env, stdin, stdout, stderr)
+	case *BreakStatement:
+		return BREAK_SIGNAL
+	case *ContinueStatement:
+		return CONTINUE_SIGNAL
 	case *InfixExpression:
 		left := EvalWithIO(node.Left, env, stdin, stdout, stderr)
 		right := EvalWithIO(node.Right, env, stdin, stdout, stderr)
@@ -524,6 +569,10 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return evalMemberExpression(node, env)
 	case *CallExpression:
 		return evalCallExpression(node, env, stdin, stdout, stderr)
+	case *ArrayLiteral:
+		return evalArrayLiteral(node, env, stdin, stdout, stderr)
+	case *IndexExpression:
+		return evalIndexExpression(node, env, stdin, stdout, stderr)
 	case *VarStatement:
 		return evalVarStatement(node, env, stdin, stdout, stderr)
 	case *PointerAssignStatement:
@@ -534,10 +583,49 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return val
 		}
 
+		// Index assignment: arr[i] = val
+		if node.Target != nil {
+			idxExpr, ok := node.Target.(*IndexExpression)
+			if !ok {
+				return &Error{Message: "invalid assignment target"}
+			}
+			left := EvalWithIO(idxExpr.Left, env, stdin, stdout, stderr)
+			if isError(left) {
+				return left
+			}
+			arr, ok := left.(*Array)
+			if !ok {
+				return &Error{Message: fmt.Sprintf("cannot index non-array type %s", left.Type())}
+			}
+			index := EvalWithIO(idxExpr.Index, env, stdin, stdout, stderr)
+			if isError(index) {
+				return index
+			}
+			idx, ok := index.(*Integer)
+			if !ok {
+				return &Error{Message: fmt.Sprintf("array index must be INTEGER, got %s", index.Type())}
+			}
+			i := idx.Value
+			if i < 0 || i >= int64(len(arr.Elements)) {
+				return &Error{Message: fmt.Sprintf("array index out of bounds: index %d, length %d", i, len(arr.Elements))}
+			}
+			if val.Type() != arr.ElemType {
+				return &Error{Message: fmt.Sprintf("cannot assign %s to ARRAY[%s] element", val.Type(), arr.ElemType)}
+			}
+			arr.Elements[i] = val
+			return val
+		}
+
 		if node.Token.Literal == ":=" {
 			// nil is untyped, cannot be used with :=
 			if val.Type() == NULL_OBJ {
 				return &Error{Message: "untyped nil cannot be used with :="}
+			}
+			// Array value semantics: copy on assignment
+			if arr, ok := val.(*Array); ok {
+				copied := make([]Object, len(arr.Elements))
+				copy(copied, arr.Elements)
+				val = &Array{ElemType: arr.ElemType, Elements: copied}
 			}
 			typeName := ""
 			if shouldTrackType(string(val.Type())) {
@@ -545,6 +633,12 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			}
 			env.SetWithType(node.Name, val, typeName)
 		} else {
+			// Array value semantics: copy on reassignment too
+			if arr, ok := val.(*Array); ok {
+				copied := make([]Object, len(arr.Elements))
+				copy(copied, arr.Elements)
+				val = &Array{ElemType: arr.ElemType, Elements: copied}
+			}
 			// Fast path: direct lookup in current scope
 			if _, hasIt := env.store[node.Name]; hasIt {
 				if typeName, hasType := env.types[node.Name]; hasType && typeName != "" {
@@ -593,7 +687,13 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		if isError(val) {
 			return val
 		}
-		fmt.Fprintln(stdout, inspectObject(val))
+		if i, ok := val.(*Integer); ok {
+			fmt.Fprintln(stdout, strconv.FormatInt(i.Value, 10))
+		} else if s, ok := val.(*String); ok {
+			fmt.Fprintln(stdout, s.Value)
+		} else {
+			fmt.Fprintln(stdout, inspectObject(val))
+		}
 		return NULL
 	case *ExecStatement:
 		return evalExecStatement(node, env, stdin, stdout, stderr)
@@ -629,6 +729,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		return NULL
 	case *BooleanLiteral:
 		return nativeBoolToBooleanObject(node.Value)
+	case *FunctionLiteral:
+		return &Function{Parameters: node.Parameters, Body: node.Body, Env: env}
 	}
 	return NULL
 }
@@ -644,6 +746,59 @@ func evalReturnStatement(rs *ReturnStatement, env *Environment, stdin io.Reader,
 	return &ReturnValue{Value: val}
 }
 
+func evalArrayLiteral(al *ArrayLiteral, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if len(al.Elements) == 0 {
+		return &Array{ElemType: NULL_OBJ, Elements: nil}
+	}
+
+	first := EvalWithIO(al.Elements[0], env, stdin, stdout, stderr)
+	if isError(first) {
+		return first
+	}
+	elemType := first.Type()
+
+	elements := make([]Object, len(al.Elements))
+	elements[0] = first
+	for i := 1; i < len(al.Elements); i++ {
+		val := EvalWithIO(al.Elements[i], env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		if val.Type() != elemType {
+			return &Error{Message: fmt.Sprintf("array type mismatch: expected %s, got %s at index %d", elemType, val.Type(), i)}
+		}
+		elements[i] = val
+	}
+	return &Array{ElemType: elemType, Elements: elements}
+}
+
+func evalIndexExpression(ie *IndexExpression, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	left := EvalWithIO(ie.Left, env, stdin, stdout, stderr)
+	if isError(left) {
+		return left
+	}
+	index := EvalWithIO(ie.Index, env, stdin, stdout, stderr)
+	if isError(index) {
+		return index
+	}
+
+	arr, ok := left.(*Array)
+	if !ok {
+		return &Error{Message: fmt.Sprintf("cannot index non-array type %s", left.Type())}
+	}
+
+	idx, ok := index.(*Integer)
+	if !ok {
+		return &Error{Message: fmt.Sprintf("array index must be INTEGER, got %s", index.Type())}
+	}
+
+	i := idx.Value
+	if i < 0 || i >= int64(len(arr.Elements)) {
+		return &Error{Message: fmt.Sprintf("array index out of bounds: index %d, length %d", i, len(arr.Elements))}
+	}
+	return arr.Elements[i]
+}
+
 func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	var result Object
 	for _, statement := range stmts {
@@ -657,6 +812,9 @@ func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout
 		}
 		if _, ok := result.(*ReturnValue); ok {
 			env.SetObject("err", NULL)
+			return result
+		}
+		if result == BREAK_SIGNAL || result == CONTINUE_SIGNAL {
 			return result
 		}
 	}
@@ -679,10 +837,97 @@ func evalIfStatement(is *IfStatement, env *Environment, stdin io.Reader, stdout 
 	}
 }
 
+func evalIterRangeStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	// 1. Evaluate iterator call: iterObj = iter(args)
+	iterObj := EvalWithIO(fs.IterCall, env, stdin, stdout, stderr)
+	if isError(iterObj) {
+		return iterObj
+	}
+
+	// 2. Build yield callback: wraps loop body, returns TRUE to continue, FALSE to stop
+	var iterResult Object
+	yield := &NativeFunction{
+		Fn: func(_ *Environment, args ...Object) Object {
+			expected := len(fs.IterVars)
+			if expected == 0 {
+				expected = 1
+			}
+			if len(args) != expected {
+				return &Error{Message: fmt.Sprintf("yield expects %d args, got %d", expected, len(args))}
+			}
+
+			// Bind variables
+			if len(fs.IterVars) >= 2 && len(args) >= 2 {
+				env.SetObject(fs.IterVars[0], args[0])
+				env.SetObject(fs.IterVars[1], args[1])
+			} else if len(fs.IterVars) >= 1 && len(args) >= 1 {
+				env.SetObject(fs.IterVars[0], args[0])
+			}
+
+			// Execute loop body
+			result := evalLoopBody(fs.Consequence, env, stdin, stdout, stderr)
+
+			if result == BREAK_SIGNAL {
+				return FALSE
+			}
+			if result == CONTINUE_SIGNAL {
+				return TRUE
+			}
+			if isError(result) {
+				iterResult = result
+				return FALSE
+			}
+			if _, ok := result.(*ReturnValue); ok {
+				iterResult = result
+				return FALSE
+			}
+
+			return TRUE
+		},
+	}
+
+	// 3. Call iterator with yield
+	switch fn := iterObj.(type) {
+	case *NativeFunction:
+		ret := fn.Fn(env, yield)
+		if isError(ret) {
+			return ret
+		}
+	case *Function:
+		ret := applyFunction(fn, []Object{yield}, env, stdin, stdout, stderr)
+		if isError(ret) {
+			return ret
+		}
+	default:
+		return &Error{Message: fmt.Sprintf("range target is not callable: %s", iterObj.Type())}
+	}
+
+	if iterResult != nil {
+		return iterResult
+	}
+	return NULL
+}
+
 func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if fs.IsIterRange {
+		return evalIterRangeStatement(fs, env, stdin, stdout, stderr)
+	}
+
 	var result Object = NULL
 	body := fs.Consequence
 	fastCondition, hasFastCondition := buildForConditionFastPath(fs.Condition)
+
+	if fs.HasInc && hasFastCondition && body != nil && len(body.Statements) == 1 && fs.Init == nil && fs.Post == nil {
+		return evalForInlinedInc(fs, fastCondition, env, stdin, stdout, stderr)
+	}
+
+	if fs.Init != nil {
+		result = EvalWithIO(fs.Init, env, stdin, stdout, stderr)
+		if isError(result) {
+			return result
+		}
+	}
+
 	for {
 		if fs.Condition != nil {
 			if hasFastCondition {
@@ -702,13 +947,22 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 					break
 				}
 			}
-
-			if fs.Condition == nil {
-				break
-			}
 		}
 
 		result = evalLoopBody(body, env, stdin, stdout, stderr)
+		if result == BREAK_SIGNAL {
+			result = NULL
+			break
+		}
+		if result == CONTINUE_SIGNAL {
+			if fs.Post != nil {
+				postResult := EvalWithIO(fs.Post, env, stdin, stdout, stderr)
+				if isError(postResult) {
+					return postResult
+				}
+			}
+			continue
+		}
 		if isError(result) {
 			return result
 		}
@@ -716,9 +970,43 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 			return result
 		}
 
-		if fs.Condition == nil {
+		if fs.Post != nil {
+			postResult := EvalWithIO(fs.Post, env, stdin, stdout, stderr)
+			if isError(postResult) {
+				return postResult
+			}
+		}
+
+		if fs.Condition == nil && fs.Init == nil && fs.Post == nil {
 			break
 		}
+	}
+	return result
+}
+
+func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var result Object = NULL
+	incName := fs.IncVarName
+	delta := fs.IncDelta
+
+	for {
+		ok, errObj := evalFastForCondition(cond, env)
+		if errObj != nil {
+			return errObj
+		}
+		if !ok {
+			break
+		}
+
+		obj, found := env.GetObject(incName)
+		if !found {
+			return &Error{Message: "identifier not found: " + incName}
+		}
+		intObj, ok := obj.(*Integer)
+		if !ok {
+			return &Error{Message: "type mismatch: for increment requires INTEGER"}
+		}
+		env.SetObject(incName, getIntegerObject(intObj.Value+delta))
 	}
 	return result
 }
@@ -873,6 +1161,9 @@ func evalLoopBody(body *BlockStatement, env *Environment, stdin io.Reader, stdou
 		if _, ok := result.(*ReturnValue); ok {
 			return result
 		}
+		if result == BREAK_SIGNAL || result == CONTINUE_SIGNAL {
+			return result
+		}
 	}
 	return result
 }
@@ -903,6 +1194,12 @@ func evalPrefixExpression(node *PrefixExpression, env *Environment, stdin io.Rea
 			return &Error{Message: "nil pointer dereference"}
 		}
 		return ptr.Ref.Value
+	case "!":
+		val := EvalWithIO(node.Right, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		return nativeBoolToBooleanObject(!isTruthy(val))
 	default:
 		return &Error{Message: "unknown prefix operator: " + node.Operator}
 	}
@@ -914,22 +1211,22 @@ func evalPointerAssignStatement(node *PointerAssignStatement, env *Environment, 
 	if !ok || prefixExpr.Operator != "*" {
 		return &Error{Message: "invalid pointer assignment target"}
 	}
-	
+
 	// Evaluate p (the right side of *)
 	ptrVal := EvalWithIO(prefixExpr.Right, env, stdin, stdout, stderr)
 	if isError(ptrVal) {
 		return ptrVal
 	}
-	
+
 	ptr, ok := ptrVal.(*Pointer)
 	if !ok {
 		return &Error{Message: "cannot assign to non-pointer"}
 	}
-	
+
 	if ptr.Ref == nil {
 		return &Error{Message: "nil pointer dereference"}
 	}
-	
+
 	// Evaluate the value
 	if node.Value == nil {
 		return &Error{Message: "pointer assign: value expression is nil"}
@@ -938,7 +1235,7 @@ func evalPointerAssignStatement(node *PointerAssignStatement, env *Environment, 
 	if isError(val) {
 		return val
 	}
-	
+
 	// Assign through pointer - use the pointer's original env
 	ptr.Env.SetByPointer(ptr.Ref, val)
 	return val
@@ -966,6 +1263,8 @@ func evalInfixExpression(operator string, left, right Object) Object {
 		return evalBooleanInfixExpression(operator, left.(*Boolean).Value, right.(*Boolean).Value)
 	case left.Type() == NULL_OBJ && right.Type() == NULL_OBJ:
 		return evalNullInfixExpression(operator)
+	case left.Type() == ARRAY_OBJ && right.Type() == ARRAY_OBJ:
+		return evalArrayInfixExpression(operator, left.(*Array), right.(*Array))
 	case operator == "==":
 		return nativeBoolToBooleanObject(inspectObject(left) == inspectObject(right))
 	case operator == "!=":
@@ -1051,6 +1350,33 @@ func evalNullInfixExpression(operator string) Object {
 		return FALSE
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", NULL_OBJ, operator, NULL_OBJ)}
+	}
+}
+
+func evalArrayInfixExpression(operator string, left, right *Array) Object {
+	switch operator {
+	case "==":
+		if left.ElemType != right.ElemType {
+			return FALSE
+		}
+		if len(left.Elements) != len(right.Elements) {
+			return FALSE
+		}
+		for i := range left.Elements {
+			eq := evalInfixExpression("==", left.Elements[i], right.Elements[i])
+			if eq != TRUE {
+				return FALSE
+			}
+		}
+		return TRUE
+	case "!=":
+		eq := evalArrayInfixExpression("==", left, right)
+		if eq == TRUE {
+			return FALSE
+		}
+		return TRUE
+	default:
+		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", ARRAY_OBJ, operator, ARRAY_OBJ)}
 	}
 }
 
@@ -1528,13 +1854,13 @@ func evalCommandArgsAsObjects(args []Expression, env *Environment, stdin io.Read
 	if len(args) == 0 {
 		return nil, nil
 	}
-	values := make([]Object, 0, len(args))
-	for _, arg := range args {
+	values := make([]Object, len(args))
+	for i, arg := range args {
 		value := EvalWithIO(arg, env, stdin, stdout, stderr)
 		if isError(value) {
 			return nil, value.(*Error)
 		}
-		values = append(values, value)
+		values[i] = value
 	}
 	return values, nil
 }
@@ -1543,13 +1869,13 @@ func evalCommandArgsAsStrings(args []Expression, env *Environment, stdin io.Read
 	if len(args) == 0 {
 		return nil, nil
 	}
-	values := make([]string, 0, len(args))
-	for _, arg := range args {
+	values := make([]string, len(args))
+	for i, arg := range args {
 		value, errObj := evalCommandArgString(arg, env, stdin, stdout, stderr)
 		if errObj != nil {
 			return nil, errObj
 		}
-		values = append(values, value)
+		values[i] = value
 	}
 	return values, nil
 }
@@ -1558,13 +1884,13 @@ func evalCommandArgsAsStringObjects(args []Expression, env *Environment, stdin i
 	if len(args) == 0 {
 		return nil, nil
 	}
-	values := make([]Object, 0, len(args))
-	for _, arg := range args {
+	values := make([]Object, len(args))
+	for i, arg := range args {
 		value, errObj := evalCommandArgString(arg, env, stdin, stdout, stderr)
 		if errObj != nil {
 			return nil, errObj
 		}
-		values = append(values, &String{Value: value})
+		values[i] = &String{Value: value}
 	}
 	return values, nil
 }
@@ -1674,12 +2000,12 @@ func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 
 func evalImportStatement(is *ImportStatement, env *Environment) Object {
 	path := is.Path
-	
+
 	// 检查是否以"Go"开头
 	if !strings.HasPrefix(path, "Go") {
 		return &Error{Message: "import path must start with 'Go'"}
 	}
-	
+
 	// 移除"Go"前缀
 	goPath := strings.TrimPrefix(path, "Go")
 	if goPath == "" {
@@ -1687,22 +2013,22 @@ func evalImportStatement(is *ImportStatement, env *Environment) Object {
 		env.SetObject("Go", &Package{Name: "Go"})
 		return NULL
 	}
-	
+
 	// 移除开头的斜杠
 	goPath = strings.TrimPrefix(goPath, "/")
-	
+
 	// 检查是否是子包
 	if strings.Contains(goPath, "/") {
 		// 处理子包，如 "Go/net/http"
 		parts := strings.Split(goPath, "/")
 		pkgName := parts[len(parts)-1] // 使用最后一个部分作为包名
-		
+
 		// 检查是否有这个包的映射
 		if _, ok := goStdlib[pkgName]; ok {
 			// 创建包对象
 			pkg := &Package{Name: pkgName}
 			env.SetObject(pkgName, pkg)
-			
+
 			// 将包中的函数注册到环境中
 			for fnName, fn := range goStdlib[pkgName] {
 				env.SetObject(pkgName+"."+fnName, fn)
@@ -1711,23 +2037,23 @@ func evalImportStatement(is *ImportStatement, env *Environment) Object {
 		}
 		return &Error{Message: "package not found: " + goPath}
 	}
-	
+
 	// 处理直接包，如 "Go/fmt"
 	pkgName := goPath
-	
+
 	// 检查是否有这个包的映射
 	if _, ok := goStdlib[pkgName]; ok {
 		// 创建包对象
 		pkg := &Package{Name: pkgName}
 		env.SetObject(pkgName, pkg)
-		
+
 		// 将包中的函数注册到环境中
 		for fnName, fn := range goStdlib[pkgName] {
 			env.SetObject(pkgName+"."+fnName, fn)
 		}
 		return NULL
 	}
-	
+
 	return &Error{Message: "package not found: " + goPath}
 }
 
@@ -1828,6 +2154,184 @@ func allJobsDone() bool {
 	return true
 }
 
+func evalSwitchStatement(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	if ss.IntSwitch {
+		return evalIntSwitch(ss, env, stdin, stdout, stderr)
+	}
+	if ss.StringSwitch {
+		return evalStringSwitch(ss, env, stdin, stdout, stderr)
+	}
+	return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+}
+
+type intCasePair struct {
+	val     int64
+	caseIdx int
+}
+
+func evalIntSwitch(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var tagVal Object
+	if ss.Tag != nil {
+		tagVal = EvalWithIO(ss.Tag, env, stdin, stdout, stderr)
+		if isError(tagVal) {
+			return tagVal
+		}
+	}
+
+	var defaultClause *CaseClause
+	if tagVal == nil {
+		// tagless int switch: evaluate conditions as bool
+		return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+	}
+
+	tagInt, ok := tagVal.(*Integer)
+	if !ok {
+		return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+	}
+
+	// Build sorted (value, caseIndex) pairs for binary search
+	pairs := make([]intCasePair, 0, len(ss.Cases))
+	for i := range ss.Cases {
+		c := &ss.Cases[i]
+		if c.Values == nil {
+			defaultClause = c
+			continue
+		}
+		for _, v := range c.IntConsts {
+			pairs = append(pairs, intCasePair{val: v, caseIdx: i})
+		}
+	}
+
+	// Sort by value for binary search
+	sortIntCasePairs(pairs)
+
+	// Binary search for tag value
+	target := tagInt.Value
+	lo, hi := 0, len(pairs)-1
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		if pairs[mid].val == target {
+			return EvalWithIO(ss.Cases[pairs[mid].caseIdx].Body, env, stdin, stdout, stderr)
+		}
+		if pairs[mid].val < target {
+			lo = mid + 1
+		} else {
+			hi = mid - 1
+		}
+	}
+
+	if defaultClause != nil {
+		return EvalWithIO(defaultClause.Body, env, stdin, stdout, stderr)
+	}
+	return NULL
+}
+
+func sortIntCasePairs(p []intCasePair) {
+	for i := 1; i < len(p); i++ {
+		key := p[i]
+		j := i - 1
+		for j >= 0 && p[j].val > key.val {
+			p[j+1] = p[j]
+			j--
+		}
+		p[j+1] = key
+	}
+}
+
+func evalStringSwitch(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var tagVal Object
+	if ss.Tag != nil {
+		tagVal = EvalWithIO(ss.Tag, env, stdin, stdout, stderr)
+		if isError(tagVal) {
+			return tagVal
+		}
+	}
+
+	var defaultClause *CaseClause
+	if tagVal == nil {
+		return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+	}
+
+	tagStr, ok := tagVal.(*String)
+	if !ok {
+		return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+	}
+
+	for i := range ss.Cases {
+		c := &ss.Cases[i]
+		if c.Values == nil {
+			defaultClause = c
+			continue
+		}
+		if !c.HasConstVals {
+			return evalSwitchFallback(ss, env, stdin, stdout, stderr)
+		}
+		if slices.Contains(c.StringConsts, tagStr.Value) {
+			return EvalWithIO(c.Body, env, stdin, stdout, stderr)
+		}
+	}
+
+	if defaultClause != nil {
+		return EvalWithIO(defaultClause.Body, env, stdin, stdout, stderr)
+	}
+	return NULL
+}
+
+func evalSwitchFallback(ss *SwitchStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	var tagVal Object
+	if ss.Tag != nil {
+		tagVal = EvalWithIO(ss.Tag, env, stdin, stdout, stderr)
+		if isError(tagVal) {
+			return tagVal
+		}
+	}
+
+	var defaultClause *CaseClause
+	for i := range ss.Cases {
+		c := &ss.Cases[i]
+
+		if c.Values == nil {
+			defaultClause = c
+			continue
+		}
+
+		// tagless switch: case condition is a bool expression
+		if tagVal == nil {
+			for _, v := range c.Values {
+				result := EvalWithIO(v, env, stdin, stdout, stderr)
+				if isError(result) {
+					return result
+				}
+				if isTruthy(result) {
+					return EvalWithIO(c.Body, env, stdin, stdout, stderr)
+				}
+			}
+			continue
+		}
+
+		// tagged switch: compare tag == case value
+		for _, v := range c.Values {
+			caseVal := EvalWithIO(v, env, stdin, stdout, stderr)
+			if isError(caseVal) {
+				return caseVal
+			}
+			eq := evalInfixExpression("==", tagVal, caseVal)
+			if isError(eq) {
+				return eq
+			}
+			if eq == TRUE {
+				return EvalWithIO(c.Body, env, stdin, stdout, stderr)
+			}
+		}
+	}
+
+	if defaultClause != nil {
+		return EvalWithIO(defaultClause.Body, env, stdin, stdout, stderr)
+	}
+
+	return NULL
+}
+
 func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
 	if vs == nil {
 		return &Error{Message: "invalid var statement"}
@@ -1889,6 +2393,8 @@ func mapTypeName(name string) ObjectType {
 		return FUNCTION_OBJ
 	case "error":
 		return ERROR_OBJ
+	case "array":
+		return ARRAY_OBJ
 	default:
 		return ObjectType(strings.ToUpper(name))
 	}
@@ -1902,6 +2408,8 @@ func zeroValueForType(typeName ObjectType) Object {
 		return &String{Value: ""}
 	case BOOLEAN_OBJ:
 		return FALSE
+	case ARRAY_OBJ:
+		return &Array{ElemType: NULL_OBJ, Elements: nil}
 	default:
 		return NULL
 	}

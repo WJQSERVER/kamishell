@@ -19,6 +19,12 @@ var (
 	ErrEOF       = io.EOF
 )
 
+type searchMatch struct {
+	line     string
+	histIdx  int
+	matchPos int
+}
+
 type Instance struct {
 	cfg      *Config
 	terminal term.Terminal
@@ -37,6 +43,8 @@ type Instance struct {
 	searchResult         string
 	searchResultIdx      int
 	searchOriginalBuffer string
+	searchMatches        []searchMatch
+	searchSelected       int
 
 	completionMode       bool
 	completionCandidates [][]rune
@@ -114,7 +122,15 @@ func (i *Instance) Readline() (string, error) {
 
 		if !stop {
 			if i.searchMode {
-				i.renderer.RefreshSearch(i.searchQuery, i.searchResult)
+				matchStrings := make([]string, len(i.searchMatches))
+				matchPos := -1
+				for idx, m := range i.searchMatches {
+					matchStrings[idx] = m.line
+				}
+				if i.searchSelected >= 0 && i.searchSelected < len(i.searchMatches) {
+					matchPos = i.searchMatches[i.searchSelected].matchPos
+				}
+				i.renderer.RefreshSearchWithMatches(i.searchQuery.String(), matchStrings, i.searchSelected, matchPos)
 			} else if i.completionMode && len(i.completionCandidates) > 1 {
 				i.renderer.RefreshWithCompletion(i.buffer, i.completionCandidates, i.completionSelected)
 			} else {
@@ -258,6 +274,8 @@ func (i *Instance) startSearch() {
 	i.searchQuery.Clear()
 	i.searchResult = ""
 	i.searchResultIdx = -1
+	i.searchMatches = nil
+	i.searchSelected = 0
 }
 
 func (i *Instance) handleSearchMode(ev input.InputEvent) (bool, string, error) {
@@ -289,14 +307,14 @@ func (i *Instance) handleSearchMode(ev input.InputEvent) (bool, string, error) {
 		return i.handleNormalMode(ev)
 	case input.KeyBackspace:
 		i.searchQuery.Backspace()
-		i.updateSearchResult()
-	case input.KeyCtrlR:
+		i.rebuildSearchMatches()
+	case input.KeyCtrlR, input.KeyUp:
 		i.searchPrevMatch()
-	case input.KeyCtrlS:
+	case input.KeyCtrlS, input.KeyDown:
 		i.searchNextMatch()
 	case input.KeyRune:
 		i.searchQuery.Insert(ev.Rune)
-		i.updateSearchResult()
+		i.rebuildSearchMatches()
 	default:
 		if i.searchResult != "" {
 			i.buffer.SetContent(i.searchResult)
@@ -308,85 +326,63 @@ func (i *Instance) handleSearchMode(ev input.InputEvent) (bool, string, error) {
 	return stop, result, resultErr
 }
 
-func (i *Instance) updateSearchResult() {
+func (i *Instance) rebuildSearchMatches() {
 	query := i.searchQuery.String()
 	if query == "" {
+		i.searchMatches = nil
+		i.searchSelected = 0
 		i.searchResult = ""
 		i.searchResultIdx = -1
 		return
 	}
 
+	var matches []searchMatch
+	seen := map[string]bool{}
 	for idx := i.cfg.History.Len() - 1; idx >= 0; idx-- {
 		line, ok := i.cfg.History.Get(idx)
 		if !ok {
 			continue
 		}
-		if strings.Contains(line, query) {
-			i.searchResult = line
-			i.searchResultIdx = idx
-			return
+		pos := strings.Index(line, query)
+		if pos >= 0 && !seen[line] {
+			matches = append(matches, searchMatch{line: line, histIdx: idx, matchPos: pos})
+			seen[line] = true
 		}
 	}
-	i.searchResult = ""
-	i.searchResultIdx = -1
+
+	i.searchMatches = matches
+	if len(matches) > 0 {
+		if i.searchSelected >= len(matches) {
+			i.searchSelected = 0
+		}
+		i.searchResult = matches[i.searchSelected].line
+		i.searchResultIdx = matches[i.searchSelected].histIdx
+	} else {
+		i.searchSelected = 0
+		i.searchResult = ""
+		i.searchResultIdx = -1
+	}
 }
 
 func (i *Instance) searchPrevMatch() {
-	query := i.searchQuery.String()
-	if query == "" {
+	if len(i.searchMatches) == 0 {
 		return
 	}
-
-	histLen := i.cfg.History.Len()
-	if histLen == 0 {
-		return
-	}
-
-	startIdx := i.searchResultIdx - 1
-	if startIdx < 0 {
-		startIdx = histLen - 1
-	}
-
-	for idx := startIdx; idx >= 0; idx-- {
-		line, ok := i.cfg.History.Get(idx)
-		if !ok {
-			continue
-		}
-		if strings.Contains(line, query) {
-			i.searchResult = line
-			i.searchResultIdx = idx
-			return
-		}
-	}
+	i.searchSelected = (i.searchSelected + 1) % len(i.searchMatches)
+	i.searchResult = i.searchMatches[i.searchSelected].line
+	i.searchResultIdx = i.searchMatches[i.searchSelected].histIdx
 }
 
 func (i *Instance) searchNextMatch() {
-	query := i.searchQuery.String()
-	if query == "" {
+	if len(i.searchMatches) == 0 {
 		return
 	}
-
-	histLen := i.cfg.History.Len()
-	if histLen == 0 {
-		return
+	i.searchSelected--
+	if i.searchSelected < 0 {
+		i.searchSelected = len(i.searchMatches) - 1
 	}
-
-	startIdx := i.searchResultIdx + 1
-	if startIdx >= histLen {
-		startIdx = 0
-	}
-
-	for idx := startIdx; idx < histLen; idx++ {
-		line, ok := i.cfg.History.Get(idx)
-		if !ok {
-			continue
-		}
-		if strings.Contains(line, query) {
-			i.searchResult = line
-			i.searchResultIdx = idx
-			return
-		}
-	}
+	i.searchResult = i.searchMatches[i.searchSelected].line
+	i.searchResultIdx = i.searchMatches[i.searchSelected].histIdx
 }
 
 // Public methods for "Notifying" the library (External control)
