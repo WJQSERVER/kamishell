@@ -42,20 +42,21 @@ func (t goType) zero() string {
 }
 
 type compiler struct {
-	buf         strings.Builder
-	imports     map[string]string
-	symbols     map[string]goType
-	funcDefs    []string
-	knownFuncs  map[string]bool
-	funcReturns map[string]goType // function name -> return type
-	arrayTypes  map[string]goType // variable name -> element type (for typed arrays)
-	envSync     map[string]bool   // variable name -> needs kamiEnv.Set()
-	parentTypes map[string]goType // parent scope variable types (for closure capture)
-	loopDepth   int
-	indentLv    int
-	usesErr     bool // whether current function uses 'err' variable
-	err         error
-	hasErr      bool
+	buf            strings.Builder
+	imports        map[string]string
+	symbols        map[string]goType
+	funcDefs       []string
+	knownFuncs     map[string]bool
+	funcReturns    map[string]goType   // function name -> first return type (for type inference)
+	funcReturnList map[string][]goType // function name -> all return types (for multi-value unpack)
+	arrayTypes     map[string]goType
+	envSync        map[string]bool
+	parentTypes    map[string]goType
+	loopDepth      int
+	indentLv       int
+	usesErr        bool
+	err            error
+	hasErr         bool
 }
 
 func (c *compiler) indent()    { c.indentLv++ }
@@ -583,13 +584,22 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 					tmpVars[i] = fmt.Sprintf("kami_tmp_%s_%d", name, i)
 				}
 				c.line("%s := %s", strings.Join(tmpVars, ", "), callStr)
-				// Assign temp vars to named vars
+				// Assign temp vars to named vars with actual types
+				var returnTypes []goType
+				if c.funcReturnList != nil {
+					if rt, exists := c.funcReturnList[id.Value]; exists {
+						returnTypes = rt
+					}
+				}
 				for i, name := range s.Names {
-					c.declareVar(name, goAny)
-					c.line("var %s any = %s", name, tmpVars[i])
+					varType := goAny
+					if i < len(returnTypes) {
+						varType = returnTypes[i]
+					}
+					c.declareVar(name, varType)
+					c.line("var %s %s = %s", name, varType, tmpVars[i])
 					if c.envSync == nil || c.envSync[name] {
-						c.addImport("kamishell/recompiler", "")
-						c.line("kamiEnv.SetString(%q, recompiler.ToStr(%s))", name, name)
+						c.genEnvSync(name)
 					}
 				}
 				return
@@ -604,7 +614,14 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 		return
 	}
 
-	if _, ok := s.Value.(*core.FunctionLiteral); ok {
+	if fl, ok := s.Value.(*core.FunctionLiteral); ok {
+		// Generate closure with typed params based on Parameter.TypeName
+		var paramTypes []string
+		for _, p := range fl.Parameters {
+			paramTypes = append(paramTypes, string(c.kamiTypeToGo(p.TypeName)))
+		}
+		// Closure params are always 'any' for CallFunc compatibility
+		// but the variable type can be more specific
 		c.declareVar(s.Names[0], goAny)
 		c.line("var %s any = %s", s.Names[0], val)
 		if c.envSync == nil || c.envSync[s.Names[0]] {
@@ -1079,7 +1096,7 @@ func (c *compiler) compilePrefixExpression(e *core.PrefixExpression) string {
 	case "-":
 		return fmt.Sprintf("(-%s)", right)
 	case "&":
-		// Address-of: create a Ptr with getter/setter closures
+		// Address-of: create a Ptr with typed getter/setter closures
 		if ident, ok := e.Right.(*core.Identifier); ok {
 			c.addImport("kamishell/recompiler", "")
 			name := ident.Value
@@ -1087,13 +1104,19 @@ func (c *compiler) compilePrefixExpression(e *core.PrefixExpression) string {
 			if t, ok := c.getVarType(name); ok {
 				varType = t
 			}
-			if varType != goAny {
-				// Typed variable: use type assertion in setter
-				return fmt.Sprintf("recompiler.NewPtr(func() any { return %s }, func(v any) { %s = v.(%s) })", name, name, varType)
+			switch varType {
+			case goInt:
+				return fmt.Sprintf("recompiler.NewPtrInt64(func() int64 { return %s }, func(v int64) { %s = v })", name, name)
+			case goStr:
+				return fmt.Sprintf("recompiler.NewPtrString(func() string { return %s }, func(v string) { %s = v })", name, name)
+			case goFloat:
+				return fmt.Sprintf("recompiler.NewPtrFloat64(func() float64 { return %s }, func(v float64) { %s = v })", name, name)
+			case goBool:
+				return fmt.Sprintf("recompiler.NewPtrBool(func() bool { return %s }, func(v bool) { %s = v })", name, name)
+			default:
+				return fmt.Sprintf("recompiler.NewPtr(func() any { return %s }, func(v any) { %s = v })", name, name)
 			}
-			return fmt.Sprintf("recompiler.NewPtr(func() any { return %s }, func(v any) { %s = v })", name, name)
 		}
-		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.NewPtr(func() any { return %s }, func(v any) {})", right)
 	case "*":
 		// Dereference: call Deref on the Ptr
@@ -1211,13 +1234,14 @@ func (c *compiler) compileArrayLiteral(a *core.ArrayLiteral) string {
 func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 	// Build closure body with sub-compiler that inherits all context
 	sub := &compiler{
-		symbols:     make(map[string]goType),
-		imports:     c.imports,
-		knownFuncs:  c.knownFuncs,
-		funcReturns: c.funcReturns,
-		arrayTypes:  make(map[string]goType),
-		envSync:     c.envSync,
-		loopDepth:   c.loopDepth,
+		symbols:        make(map[string]goType),
+		imports:        c.imports,
+		knownFuncs:     c.knownFuncs,
+		funcReturns:    c.funcReturns,
+		funcReturnList: c.funcReturnList,
+		arrayTypes:     make(map[string]goType),
+		envSync:        c.envSync,
+		loopDepth:      c.loopDepth,
 	}
 
 	// Register parameters as known variables with 'any' type (matches closure signature)
@@ -1837,10 +1861,22 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	if c.funcReturns == nil {
 		c.funcReturns = make(map[string]goType)
 	}
+	if c.funcReturnList == nil {
+		c.funcReturnList = make(map[string][]goType)
+	}
 	if len(s.ReturnTypes) == 1 {
 		c.funcReturns[funcName] = c.kamiTypeToGo(s.ReturnTypes[0])
+		c.funcReturnList[funcName] = []goType{c.kamiTypeToGo(s.ReturnTypes[0])}
+	} else if len(s.ReturnTypes) > 1 {
+		c.funcReturns[funcName] = goAny
+		list := make([]goType, len(s.ReturnTypes))
+		for i, rt := range s.ReturnTypes {
+			list[i] = c.kamiTypeToGo(rt)
+		}
+		c.funcReturnList[funcName] = list
 	} else {
 		c.funcReturns[funcName] = goAny
+		c.funcReturnList[funcName] = []goType{goAny}
 	}
 
 	var params []string
@@ -1865,15 +1901,16 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 
 	// Generate function body with a sub-compiler
 	sub := &compiler{
-		symbols:     make(map[string]goType),
-		imports:     c.imports,
-		knownFuncs:  c.knownFuncs,
-		funcReturns: c.funcReturns,
-		arrayTypes:  make(map[string]goType),
-		envSync:     c.envSync,
-		parentTypes: c.symbols,  // pass parent's types for closure variable resolution
-		loopDepth:   0,
-		indentLv:    1,
+		symbols:        make(map[string]goType),
+		imports:        c.imports,
+		knownFuncs:     c.knownFuncs,
+		funcReturns:    c.funcReturns,
+		funcReturnList: c.funcReturnList,
+		arrayTypes:     make(map[string]goType),
+		envSync:        c.envSync,
+		parentTypes:    c.symbols,
+		loopDepth:      0,
+		indentLv:       1,
 	}
 	// Register parameters with their types so they won't be re-declared
 	for _, p := range s.Parameters {
