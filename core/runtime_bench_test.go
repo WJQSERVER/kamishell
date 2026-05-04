@@ -45,7 +45,7 @@ func BenchmarkEvalInterpolatedStringProgram(b *testing.B) {
 func BenchmarkExecuteCommandUserFunction(b *testing.B) {
 	env := NewEmptyEnvironment()
 	fn := &Function{
-		Parameters: []string{"value"},
+		Parameters: []Parameter{{Name: "value", TypeName: "any"}},
 		Body: &BlockStatement{Statements: []Statement{
 			&ExpressionStatement{Expression: &Identifier{Value: "value"}},
 		}},

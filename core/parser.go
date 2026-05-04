@@ -240,7 +240,7 @@ func (p *Parser) parseExecStatement() *ExecStatement {
 
 func (p *Parser) parseAssignStatement() *AssignStatement {
 	stmt := &AssignStatement{Token: p.peekToken}
-	stmt.Name = p.curToken.Literal
+	stmt.Names = []string{p.curToken.Literal}
 
 	p.nextToken() // cur is :=
 	p.nextToken() // cur is start of expression
@@ -387,7 +387,7 @@ func (p *Parser) parseForStatement() *ForStatement {
 			// Not range, normal three-clause: curToken is :=, parse value from peekToken
 			p.nextToken() // move to value
 			val := p.parseExpression(LOWEST)
-			stmt.Init = &AssignStatement{Token: Token{Type: COLON_ASSIGN, Literal: ":="}, Name: ident.Value, Value: val}
+			stmt.Init = &AssignStatement{Token: Token{Type: COLON_ASSIGN, Literal: ":="}, Names: []string{ident.Value}, Value: val}
 		} else {
 			stmt.Init = p.buildForClauseStatement(firstExpr)
 		}
@@ -466,7 +466,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	// i := 0
 	stmt.Init = &AssignStatement{
 		Token: Token{Type: COLON_ASSIGN, Literal: ":="},
-		Name:  initName,
+		Names:  []string{initName},
 		Value: &IntegerLiteral{Value: 0},
 	}
 
@@ -484,7 +484,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	// i = i + 1
 	stmt.Post = &AssignStatement{
 		Token: Token{Type: ASSIGN, Literal: "="},
-		Name:  initName,
+		Names:  []string{initName},
 		Value: &InfixExpression{
 			Left:     &Identifier{Value: initName},
 			Operator: "+",
@@ -496,7 +496,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	if len(vars) >= 2 {
 		valAssign := &AssignStatement{
 			Token: Token{Type: COLON_ASSIGN, Literal: ":="},
-			Name:  vars[1],
+			Names:  []string{vars[1]},
 			Value: &IndexExpression{
 				Left:  rangeExpr,
 				Index: &Identifier{Value: initName},
@@ -516,7 +516,7 @@ func (p *Parser) buildForClauseStatement(expr Expression) Statement {
 			p.nextToken()
 			p.nextToken()
 			val := p.parseExpression(LOWEST)
-			return &AssignStatement{Token: op, Name: ident.Value, Value: val}
+			return &AssignStatement{Token: op, Names: []string{ident.Value}, Value: val}
 		}
 	}
 	return &ExpressionStatement{Expression: expr}
@@ -536,7 +536,7 @@ func (p *Parser) classifyForIncrement(stmt *ForStatement) {
 		return
 	}
 	leftIdent, leftIsIdent := infix.Left.(*Identifier)
-	if !leftIsIdent || leftIdent.Value != assign.Name {
+	if !leftIsIdent || leftIdent.Value != assign.Names[0] {
 		return
 	}
 	rightLit, rightIsLit := infix.Right.(*IntegerLiteral)
@@ -548,11 +548,11 @@ func (p *Parser) classifyForIncrement(stmt *ForStatement) {
 	}
 	switch infix.Operator {
 	case "+":
-		stmt.IncVarName = assign.Name
+		stmt.IncVarName = assign.Names[0]
 		stmt.IncDelta = rightLit.Value
 		stmt.HasInc = true
 	case "-":
-		stmt.IncVarName = assign.Name
+		stmt.IncVarName = assign.Names[0]
 		stmt.IncDelta = -rightLit.Value
 		stmt.HasInc = true
 	}
@@ -792,15 +792,12 @@ func (p *Parser) parseArrayLiteral() Expression {
 
 func (p *Parser) parseAnonymousFunction() Expression {
 	// curToken = FUNC
-	// Parse as a function literal: func(params) { body }
 	stmt := &FunctionStatement{Token: p.curToken}
 
 	p.nextToken() // move to name or (
 	if p.curToken.Type == LPAREN {
-		// Anonymous function with no name
 		stmt.Parameters = p.parseFunctionParameters()
 	} else {
-		// func name(params) — treat name as part of the function
 		stmt.Name = p.curToken.Literal
 		if p.peekToken.Type == LPAREN {
 			p.nextToken()
@@ -808,16 +805,18 @@ func (p *Parser) parseAnonymousFunction() Expression {
 		}
 	}
 
+	stmt.ReturnTypes = p.parseFunctionReturnTypes()
+
 	if p.peekToken.Type == LBRACE {
 		p.nextToken()
 		stmt.Body = p.parseBlockStatement()
 	}
 
-	// Return as FunctionLiteral expression
 	return &FunctionLiteral{
-		Token:      stmt.Token,
-		Parameters: stmt.Parameters,
-		Body:       stmt.Body,
+		Token:       stmt.Token,
+		Parameters:  stmt.Parameters,
+		ReturnTypes: stmt.ReturnTypes,
+		Body:        stmt.Body,
 	}
 }
 
@@ -900,6 +899,8 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 		stmt.Parameters = p.parseFunctionParameters()
 	}
 
+	stmt.ReturnTypes = p.parseFunctionReturnTypes()
+
 	if p.peekToken.Type == LBRACE {
 		p.nextToken() // move to {
 		stmt.Body = p.parseBlockStatement()
@@ -908,28 +909,75 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 	return stmt
 }
 
-func (p *Parser) parseFunctionParameters() []string {
+func (p *Parser) parseFunctionParameters() []Parameter {
 	if p.peekToken.Type == RPAREN {
 		p.nextToken()
 		return nil
 	}
 
-	identifiers := make([]string, 0, 4)
+	params := make([]Parameter, 0, 4)
 
-	p.nextToken()
-	identifiers = append(identifiers, p.curToken.Literal)
+	p.nextToken() // move to first param name
+	name := p.curToken.Literal
+
+	// Mandatory type annotation
+	if p.peekToken.Type != IDENT {
+		// Error: parameter must have type
+		return params
+	}
+	p.nextToken() // move to type
+	params = append(params, Parameter{Name: name, TypeName: p.curToken.Literal})
 
 	for p.peekToken.Type == COMMA {
-		p.nextToken()
-		p.nextToken()
-		identifiers = append(identifiers, p.curToken.Literal)
+		p.nextToken() // skip comma
+		p.nextToken() // move to next param name
+		paramName := p.curToken.Literal
+		if p.peekToken.Type != IDENT {
+			// Error: parameter must have type
+			return params
+		}
+		p.nextToken() // move to type
+		params = append(params, Parameter{Name: paramName, TypeName: p.curToken.Literal})
 	}
 
 	if p.peekToken.Type == RPAREN {
 		p.nextToken()
 	}
 
-	return identifiers
+	return params
+}
+
+func (p *Parser) parseFunctionReturnTypes() []string {
+	// Called after ) has been consumed
+	// peek is either LBRACE (no return type) or IDENT/type (return types)
+	if p.peekToken.Type == LBRACE || p.peekToken.Type == SEMICOLON || p.peekToken.Type == EOF {
+		return nil
+	}
+
+	// Single return type: func foo() int {
+	if p.peekToken.Type == IDENT {
+		p.nextToken()
+		return []string{p.curToken.Literal}
+	}
+
+	// Multi return types: func foo() (int, error) {
+	if p.peekToken.Type == LPAREN {
+		p.nextToken() // skip (
+		types := make([]string, 0, 2)
+		p.nextToken() // move to first type
+		types = append(types, p.curToken.Literal)
+		for p.peekToken.Type == COMMA {
+			p.nextToken() // skip comma
+			p.nextToken() // move to next type
+			types = append(types, p.curToken.Literal)
+		}
+		if p.peekToken.Type == RPAREN {
+			p.nextToken() // skip )
+		}
+		return types
+	}
+
+	return nil
 }
 
 func (p *Parser) parseReturnStatement() *ReturnStatement {
@@ -937,7 +985,12 @@ func (p *Parser) parseReturnStatement() *ReturnStatement {
 
 	if p.peekToken.Type != SEMICOLON && p.peekToken.Type != RBRACE && p.peekToken.Type != EOF {
 		p.nextToken()
-		stmt.ReturnValue = p.parseExpression(LOWEST)
+		stmt.ReturnValues = []Expression{p.parseExpression(LOWEST)}
+		for p.peekToken.Type == COMMA {
+			p.nextToken() // skip comma
+			p.nextToken() // move to next expression
+			stmt.ReturnValues = append(stmt.ReturnValues, p.parseExpression(LOWEST))
+		}
 		if p.peekToken.Type == SEMICOLON {
 			p.nextToken()
 		}

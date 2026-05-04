@@ -616,6 +616,32 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			return val
 		}
 
+		// Multi-value assignment: val, err := div(10, 0)
+		if len(node.Names) > 1 {
+			tuple, ok := val.(*Tuple)
+			if !ok {
+				return &Error{Message: "cannot unpack non-tuple value into multiple variables"}
+			}
+			if len(tuple.Elements) != len(node.Names) {
+				return &Error{Message: fmt.Sprintf("expected %d return values, got %d", len(node.Names), len(tuple.Elements))}
+			}
+			for i, name := range node.Names {
+				elem := tuple.Elements[i]
+				if node.Token.Literal == ":=" {
+					typeName := ""
+					if shouldTrackType(string(elem.Type())) {
+						typeName = string(elem.Type())
+					}
+					env.SetWithType(name, elem, typeName)
+				} else {
+					env.Assign(name, elem)
+				}
+			}
+			return val
+		}
+
+		// Single-value assignment
+		name := node.Names[0]
 		if node.Token.Literal == ":=" {
 			// nil is untyped, cannot be used with :=
 			if val.Type() == NULL_OBJ {
@@ -631,7 +657,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			if shouldTrackType(string(val.Type())) {
 				typeName = string(val.Type())
 			}
-			env.SetWithType(node.Name, val, typeName)
+			env.SetWithType(name, val, typeName)
 		} else {
 			// Array value semantics: copy on reassignment too
 			if arr, ok := val.(*Array); ok {
@@ -640,8 +666,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 				val = &Array{ElemType: arr.ElemType, Elements: copied}
 			}
 			// Fast path: direct lookup in current scope
-			if _, hasIt := env.store[node.Name]; hasIt {
-				if typeName, hasType := env.types[node.Name]; hasType && typeName != "" {
+			if _, hasIt := env.store[name]; hasIt {
+				if typeName, hasType := env.types[name]; hasType && typeName != "" {
 					// nil can only be assigned to reference types (FUNCTION, ERROR)
 					if val.Type() == NULL_OBJ {
 						if typeName != string(FUNCTION_OBJ) && typeName != string(ERROR_OBJ) {
@@ -651,13 +677,13 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), typeName)}
 					}
 				}
-				env.store[node.Name] = val
-				if _, hasType := env.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
+				env.store[name] = val
+				if _, hasType := env.types[name]; !hasType && shouldTrackType(string(val.Type())) {
 					env.ensureTypes()
-					env.types[node.Name] = string(val.Type())
+					env.types[name] = string(val.Type())
 				}
 			} else {
-				scope, expectedType, ok := env.ResolveForAssign(node.Name)
+				scope, expectedType, ok := env.ResolveForAssign(name)
 				if ok && expectedType != "" {
 					// nil can only be assigned to reference types (FUNCTION, ERROR)
 					if val.Type() == NULL_OBJ {
@@ -669,13 +695,13 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 					}
 				}
 				if scope != nil {
-					scope.store[node.Name] = val
-					if _, hasType := scope.types[node.Name]; !hasType && shouldTrackType(string(val.Type())) {
+					scope.store[name] = val
+					if _, hasType := scope.types[name]; !hasType && shouldTrackType(string(val.Type())) {
 						scope.ensureTypes()
-						scope.types[node.Name] = string(val.Type())
+						scope.types[name] = string(val.Type())
 					}
 				} else {
-					env.Set(node.Name, val)
+					env.Set(name, val)
 				}
 			}
 		}
@@ -730,20 +756,32 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *BooleanLiteral:
 		return nativeBoolToBooleanObject(node.Value)
 	case *FunctionLiteral:
-		return &Function{Parameters: node.Parameters, Body: node.Body, Env: env}
+		return &Function{Parameters: node.Parameters, ReturnTypes: node.ReturnTypes, Body: node.Body, Env: env}
 	}
 	return NULL
 }
 
 func evalReturnStatement(rs *ReturnStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	var val Object = NULL
-	if rs.ReturnValue != nil {
-		val = EvalWithIO(rs.ReturnValue, env, stdin, stdout, stderr)
+	if len(rs.ReturnValues) == 0 {
+		return &ReturnValue{Value: NULL}
 	}
-	if isError(val) {
-		return val
+	if len(rs.ReturnValues) == 1 {
+		val := EvalWithIO(rs.ReturnValues[0], env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		return &ReturnValue{Value: val}
 	}
-	return &ReturnValue{Value: val}
+	// Multi-return: pack into Tuple
+	elements := make([]Object, len(rs.ReturnValues))
+	for i, rv := range rs.ReturnValues {
+		val := EvalWithIO(rv, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		elements[i] = val
+	}
+	return &ReturnValue{Value: &Tuple{Elements: elements}}
 }
 
 func evalArrayLiteral(al *ArrayLiteral, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
@@ -2062,7 +2100,7 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 
 	for i, param := range fn.Parameters {
 		if i < len(args) {
-			extendEnv.SetObject(param, args[i])
+			extendEnv.SetObject(param.Name, args[i])
 		}
 	}
 

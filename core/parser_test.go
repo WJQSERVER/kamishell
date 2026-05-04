@@ -32,8 +32,8 @@ func TestParseAssignStatement(t *testing.T) {
 			t.Fatalf("test[%d] - stmt is not *AssignStatement. got=%T", i, stmt)
 		}
 
-		if assignStmt.Name != tt.expectedIdentifier {
-			t.Errorf("test[%d] - assignStmt.Name not %s. got=%s", i, tt.expectedIdentifier, assignStmt.Name)
+		if assignStmt.Names[0] != tt.expectedIdentifier {
+			t.Errorf("test[%d] - assignStmt.Names[0] not %s. got=%s", i, tt.expectedIdentifier, assignStmt.Names[0])
 		}
 
 		if assignStmt.Value.String() != tt.expectedValue {

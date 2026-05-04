@@ -22,6 +22,7 @@ const (
 	BREAK_OBJ        ObjectType = "BREAK"
 	CONTINUE_OBJ     ObjectType = "CONTINUE"
 	ARRAY_OBJ        ObjectType = "ARRAY"
+	TUPLE_OBJ        ObjectType = "TUPLE"
 )
 
 var (
@@ -121,13 +122,32 @@ func (e *Error) Inspect() string {
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
 
 type Function struct {
-	Parameters []string
-	Body       *BlockStatement
-	Env        *Environment
+	Parameters  []Parameter
+	ReturnTypes []string
+	Body        *BlockStatement
+	Env         *Environment
 }
 
 func (f *Function) Inspect() string  { return "func" }
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
+
+type Tuple struct {
+	Elements []Object
+}
+
+func (t *Tuple) Type() ObjectType { return TUPLE_OBJ }
+func (t *Tuple) Inspect() string {
+	var out strings.Builder
+	out.WriteString("(")
+	for i, el := range t.Elements {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(el.Inspect())
+	}
+	out.WriteString(")")
+	return out.String()
+}
 
 type NativeFunction struct {
 	Fn func(env *Environment, args ...Object) Object

@@ -85,9 +85,21 @@ func (ps *PrintStatement) String() string {
 	return out.String()
 }
 
+type Parameter struct {
+	Name     string
+	TypeName string
+}
+
+func (p Parameter) String() string {
+	if p.TypeName != "" {
+		return p.Name + " " + p.TypeName
+	}
+	return p.Name
+}
+
 type AssignStatement struct {
 	Token  Token // the := or = token
-	Name   string       // variable name for simple assignment
+	Names  []string     // variable names: [x] for single, [x, y] for multi-assign
 	Target Expression   // non-nil for index assignment: arr[i] = val
 	Value  Expression
 }
@@ -96,7 +108,7 @@ func (as *AssignStatement) statementNode()       {}
 func (as *AssignStatement) TokenLiteral() string { return as.Token.Literal }
 func (as *AssignStatement) String() string {
 	var out strings.Builder
-	out.WriteString(as.Name)
+	out.WriteString(strings.Join(as.Names, ", "))
 	out.WriteString(" := ")
 	if as.Value != nil {
 		out.WriteString(as.Value.String())
@@ -519,11 +531,12 @@ func (ls *LogicalStatement) String() string {
 }
 
 type FunctionStatement struct {
-	Token      Token // the func token
-	Name       string
-	Parameters []string
-	Body       *BlockStatement
-	Obj        *Function
+	Token       Token // the func token
+	Name        string
+	Parameters  []Parameter
+	ReturnTypes []string // empty = void, len=1 single, len>1 multi-return
+	Body        *BlockStatement
+	Obj         *Function
 }
 
 func (fs *FunctionStatement) statementNode()       {}
@@ -533,16 +546,25 @@ func (fs *FunctionStatement) String() string {
 	out.WriteString(fs.TokenLiteral() + " ")
 	out.WriteString(fs.Name)
 	out.WriteString("(")
-	out.WriteString(strings.Join(fs.Parameters, ", "))
-	out.WriteString(") ")
+	params := make([]string, len(fs.Parameters))
+	for i, p := range fs.Parameters {
+		params[i] = p.String()
+	}
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(")")
+	if len(fs.ReturnTypes) > 0 {
+		out.WriteString(" " + strings.Join(fs.ReturnTypes, ", "))
+	}
+	out.WriteString(" ")
 	out.WriteString(fs.Body.String())
 	return out.String()
 }
 
 type FunctionLiteral struct {
-	Token      Token // the func token
-	Parameters []string
-	Body       *BlockStatement
+	Token       Token // the func token
+	Parameters  []Parameter
+	ReturnTypes []string
+	Body        *BlockStatement
 }
 
 func (fl *FunctionLiteral) expressionNode()      {}
@@ -550,8 +572,16 @@ func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Literal }
 func (fl *FunctionLiteral) String() string {
 	var out strings.Builder
 	out.WriteString("func(")
-	out.WriteString(strings.Join(fl.Parameters, ", "))
-	out.WriteString(") ")
+	params := make([]string, len(fl.Parameters))
+	for i, p := range fl.Parameters {
+		params[i] = p.String()
+	}
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(")")
+	if len(fl.ReturnTypes) > 0 {
+		out.WriteString(" " + strings.Join(fl.ReturnTypes, ", "))
+	}
+	out.WriteString(" ")
 	out.WriteString(fl.Body.String())
 	return out.String()
 }
@@ -607,8 +637,8 @@ func (ge *GoExpression) String() string {
 }
 
 type ReturnStatement struct {
-	Token       Token // the return token
-	ReturnValue Expression
+	Token        Token // the return token
+	ReturnValues []Expression
 }
 
 func (rs *ReturnStatement) statementNode()       {}
@@ -616,9 +646,11 @@ func (rs *ReturnStatement) TokenLiteral() string { return rs.Token.Literal }
 func (rs *ReturnStatement) String() string {
 	var out strings.Builder
 	out.WriteString(rs.TokenLiteral() + " ")
-	if rs.ReturnValue != nil {
-		out.WriteString(rs.ReturnValue.String())
+	vals := make([]string, len(rs.ReturnValues))
+	for i, v := range rs.ReturnValues {
+		vals[i] = v.String()
 	}
+	out.WriteString(strings.Join(vals, ", "))
 	out.WriteString(";")
 	return out.String()
 }
