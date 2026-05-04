@@ -509,36 +509,9 @@ func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 }
 
 func (c *compiler) compilePrintStatement(s *core.PrintStatement) {
-	c.addImport("fmt", "")
+	c.addImport("kamishell/kamilib", "")
 	val := c.compileExpression(s.Expression)
-
-	// Direct output for simple string literals (no interpolation)
-	if strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"") {
-		raw, _ := strconv.Unquote(val)
-		if !strings.Contains(raw, "$") {
-			c.line("fmt.Println(%s)", val)
-			return
-		}
-	}
-
-	// Direct strconv for known types — skip recompiler.ToStr(any) overhead
-	expr := s.Expression
-	switch {
-	case c.isType(expr, goStr):
-		c.line("fmt.Println(%s)", val)
-	case c.isType(expr, goInt):
-		c.addImport("strconv", "")
-		c.line("fmt.Println(strconv.FormatInt(%s, 10))", val)
-	case c.isType(expr, goBool):
-		c.addImport("strconv", "")
-		c.line("fmt.Println(strconv.FormatBool(%s))", val)
-	case c.isType(expr, goFloat):
-		c.addImport("strconv", "")
-		c.line("fmt.Println(strconv.FormatFloat(%s, 'f', -1, 64))", val)
-	default:
-		c.addImport("kamishell/recompiler", "")
-		c.line("fmt.Println(recompiler.ToStr(%s))", val)
-	}
+	c.line("kamilib.KamiPrint(%s)", val)
 }
 
 func (c *compiler) compileAssignStatement(s *core.AssignStatement) {

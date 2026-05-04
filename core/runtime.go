@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"kamishell/builtin"
+	"kamishell/kamilib"
 	"math"
 	"os"
 	"os/exec"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -729,12 +729,8 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		if isError(val) {
 			return val
 		}
-		if i, ok := val.(*Integer); ok {
-			fmt.Fprintln(stdout, strconv.FormatInt(i.Value, 10))
-		} else if s, ok := val.(*String); ok {
-			fmt.Fprintln(stdout, s.Value)
-		} else {
-			fmt.Fprintln(stdout, inspectObject(val))
+		if _, err := kamilib.WritePrint(stdout, inspectObject(val)); err != nil {
+			return &Error{Message: err.Error()}
 		}
 		return NULL
 	case *ExecStatement:

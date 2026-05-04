@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"kamishell/builtin"
+	"kamishell/kamilib"
+
+	"github.com/valyala/bytebufferpool"
 )
 
 type Env struct {
@@ -166,7 +169,7 @@ func waitAllTimeout(secs int64) {
 func ExpandStr(s string, env *Env) string {
 	return os.Expand(s, func(name string) string {
 		if v, ok := env.Get(name); ok {
-			return fmt.Sprint(v)
+			return ToStr(v)
 		}
 		return os.Getenv(name)
 	})
@@ -196,7 +199,12 @@ func Add(a, b any) any {
 	if aIsInt && bIsInt {
 		return ai + bi
 	}
-	return fmt.Sprint(a) + fmt.Sprint(b)
+	bb := bytebufferpool.Get()
+	bb.B = kamilib.AppendAny(bb.B, a)
+	bb.B = kamilib.AppendAny(bb.B, b)
+	s := string(bb.B)
+	bytebufferpool.Put(bb)
+	return s
 }
 
 func Sub(a, b any) any {
@@ -248,7 +256,7 @@ func Eq(a, b any) bool {
 			return x == y
 		}
 	}
-	return fmt.Sprint(a) == fmt.Sprint(b)
+	return ToStr(a) == ToStr(b)
 }
 
 func NotEq(a, b any) bool { return !Eq(a, b) }
@@ -329,7 +337,11 @@ func ToStr(v any) string {
 	case fmt.Stringer:
 		return x.String()
 	}
-	return fmt.Sprint(v)
+	bb := bytebufferpool.Get()
+	bb.B = kamilib.AppendAny(bb.B, v)
+	s := string(bb.B)
+	bytebufferpool.Put(bb)
+	return s
 }
 
 // Array helpers.
