@@ -1403,3 +1403,52 @@ func TestBoolParamTypeCheck(t *testing.T) {
 		t.Errorf("expected yes, got %q", stdout)
 	}
 }
+
+func TestMultiParamShorthand(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func add(a, b int) int { return a + b }; print add(3, 4)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "7" {
+		t.Errorf("expected 7, got %q", stdout)
+	}
+}
+
+func TestMultiParamShorthandTypeCheck(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func add(a, b int) int { return a + b }; add("x", 2)`, env)
+	if !strings.Contains(stderr, "expected INTEGER") {
+		t.Errorf("expected type check error, got %q", stderr)
+	}
+}
+
+func TestMultiParamShorthandThreeParams(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func sum(a, b, c int) int { return a + b + c }; print sum(1, 2, 3)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "6" {
+		t.Errorf("expected 6, got %q", stdout)
+	}
+}
+
+func TestMultiParamShorthandMixedTypes(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func greet(name string, age int) { print name + " is " }; greet("alice", 30)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if !strings.Contains(stdout, "alice") {
+		t.Errorf("expected alice in output, got %q", stdout)
+	}
+}
+
+func TestMultiParamShorthandArityCheck(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func add(a, b int) int { return a + b }; add(1)`, env)
+	if !strings.Contains(stderr, "expected 2 arguments, got 1") {
+		t.Errorf("expected arity error, got %q", stderr)
+	}
+}

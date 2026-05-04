@@ -953,28 +953,50 @@ func (p *Parser) parseFunctionParameters() []Parameter {
 	}
 
 	params := make([]Parameter, 0, 4)
+	names := make([]string, 0, 2)
 
-	p.nextToken() // move to first param name
-	name := p.curToken.Literal
+	p.nextToken() // move to first token
+	names = append(names, p.curToken.Literal)
 
-	// Mandatory type annotation
-	if p.peekToken.Type != IDENT {
-		// Error: parameter must have type
-		return params
-	}
-	p.nextToken() // move to type
-	params = append(params, Parameter{Name: name, TypeName: p.curToken.Literal})
-
-	for p.peekToken.Type == COMMA {
-		p.nextToken() // skip comma
-		p.nextToken() // move to next param name
-		paramName := p.curToken.Literal
-		if p.peekToken.Type != IDENT {
-			// Error: parameter must have type
-			return params
+	for {
+		if p.peekToken.Type == RPAREN || p.peekToken.Type == LBRACE {
+			// End of params — type must have been provided
+			if len(names) > 0 {
+				// Names without type — error
+				return params
+			}
+			break
 		}
-		p.nextToken() // move to type
-		params = append(params, Parameter{Name: paramName, TypeName: p.curToken.Literal})
+
+		if p.peekToken.Type == COMMA {
+			// Another name in the same group
+			p.nextToken() // skip comma
+			p.nextToken() // move to next name
+			names = append(names, p.curToken.Literal)
+			continue
+		}
+
+		if p.peekToken.Type == IDENT {
+			// Type annotation — apply to all collected names
+			p.nextToken() // move to type
+			typeName := p.curToken.Literal
+			for _, n := range names {
+				params = append(params, Parameter{Name: n, TypeName: typeName})
+			}
+			names = names[:0] // reset names
+
+			// Check for comma (more params) or rparen/lbrace (end)
+			if p.peekToken.Type == COMMA {
+				p.nextToken() // skip comma
+				p.nextToken() // move to next param name
+				names = append(names, p.curToken.Literal)
+				continue
+			}
+			break
+		}
+
+		// Unexpected token
+		break
 	}
 
 	if p.peekToken.Type == RPAREN {
