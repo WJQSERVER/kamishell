@@ -578,11 +578,20 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 				return
 			}
 		}
-		// Fallback: single value unpacked into multiple names
+		// Fallback: single value unpacked into multiple names.
+		// The function is not known at compile time, so the generated Go
+		// function only returns a single value ('any'). Assign the result
+		// to the first variable and zero-initialize the rest.
 		for i, name := range s.Names {
 			c.declareVar(name, goAny)
-			c.line("var %s any", name)
-			c.line("_ = %s // unpack[%d] TODO", val, i)
+			if i == 0 {
+				c.line("var %s any = %s", name, val)
+			} else {
+				c.line("var %s any", name)
+			}
+			if c.envSync == nil || c.envSync[name] {
+				c.genEnvSync(name)
+			}
 		}
 		return
 	}
