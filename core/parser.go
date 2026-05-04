@@ -132,6 +132,43 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 			stmt = p.parseExpressionStatement()
 		}
 	case IDENT:
+		// Multi-value assignment: x, y := expr
+		if p.peekToken.Type == COMMA {
+			savedCur := p.curToken
+			savedPeek := p.peekToken
+			savedLexer := p.l.GetPosition()
+			// Scan ahead: IDENT, IDENT [, IDENT ...] := 
+			names := []string{p.curToken.Literal}
+			p.nextToken() // move to ,
+			for p.peekToken.Type == COMMA || p.peekToken.Type == IDENT {
+				if p.curToken.Type == COMMA && p.peekToken.Type == IDENT {
+					p.nextToken() // move to IDENT
+					names = append(names, p.curToken.Literal)
+					if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
+						// Found multi-assign pattern
+						op := p.peekToken
+						p.nextToken() // move to :=
+						p.nextToken() // move to expression
+						val := p.parseExpression(LOWEST)
+						if p.peekToken.Type == SEMICOLON {
+							p.nextToken()
+						}
+						stmt = &AssignStatement{Token: op, Names: names, Value: val}
+						break
+					}
+					continue
+				}
+				p.nextToken()
+			}
+			if stmt == nil {
+				// Not a multi-assign, restore and parse as expression
+				p.curToken = savedCur
+				p.peekToken = savedPeek
+				p.l.SetPosition(savedLexer)
+				stmt = p.parseExpressionStatement()
+			}
+			break
+		}
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			if p.peekToken.Type == ASSIGN && p.curToken.End == p.peekToken.Start {
 				stmt = p.parseInvalidTightAssignStatement()
@@ -676,7 +713,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND && precedence < p.peekPrecedence() {
 		p.nextToken()
 		switch p.curToken.Type {
-		case EQ, NEQ, GREATER, LESS, PLUS, MINUS, ASTERISK:
+		case EQ, NEQ, GREATER, LESS, PLUS, MINUS, ASTERISK, SLASH:
 			leftExp = p.parseInfixExpression(leftExp)
 		case DOT:
 			leftExp = p.parseMemberExpression(leftExp)
@@ -771,7 +808,7 @@ func precedenceForToken(tokenType TokenType) int {
 		return LESSGREATER
 	case PLUS, MINUS:
 		return SUM
-	case ASTERISK:
+	case ASTERISK, SLASH:
 		return PRODUCT
 	case DOT:
 		return MEMBER

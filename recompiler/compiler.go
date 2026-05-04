@@ -41,15 +41,16 @@ func (t goType) zero() string {
 }
 
 type compiler struct {
-	buf        strings.Builder
-	imports    map[string]string
-	symbols    map[string]goType
-	funcDefs   []string
-	knownFuncs map[string]bool
-	loopDepth  int
-	indentLv   int
-	err        error
-	hasErr     bool
+	buf         strings.Builder
+	imports     map[string]string
+	symbols     map[string]goType
+	funcDefs    []string
+	knownFuncs  map[string]bool
+	funcReturns map[string]goType // function name -> return type
+	loopDepth   int
+	indentLv    int
+	err         error
+	hasErr      bool
 }
 
 func (c *compiler) indent()    { c.indentLv++ }
@@ -1394,6 +1395,16 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	}
 	c.knownFuncs[funcName] = true
 
+	// Track return type for type inference
+	if c.funcReturns == nil {
+		c.funcReturns = make(map[string]goType)
+	}
+	if len(s.ReturnTypes) == 1 {
+		c.funcReturns[funcName] = c.kamiTypeToGo(s.ReturnTypes[0])
+	} else {
+		c.funcReturns[funcName] = goAny
+	}
+
 	var params []string
 	params = append(params, "kamiEnv *recompiler.Env")
 	for _, p := range s.Parameters {
@@ -1416,11 +1427,12 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 
 	// Generate function body with a sub-compiler
 	sub := &compiler{
-		symbols:    make(map[string]goType),
-		imports:    c.imports,
-		knownFuncs: c.knownFuncs,
-		loopDepth:  0,
-		indentLv:   1,
+		symbols:     make(map[string]goType),
+		imports:     c.imports,
+		knownFuncs:  c.knownFuncs,
+		funcReturns: c.funcReturns,
+		loopDepth:   0,
+		indentLv:    1,
 	}
 	// Register parameters with their types so they won't be re-declared
 	for _, p := range s.Parameters {
@@ -1522,6 +1534,12 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 			return goBool
 		}
 	case *core.CallExpression:
+		// Look up return type of known functions
+		if id, ok := e.Function.(*core.Identifier); ok && c.funcReturns != nil {
+			if retType, exists := c.funcReturns[id.Value]; exists {
+				return retType
+			}
+		}
 		return goAny
 	case *core.Identifier:
 		if e.Value == "nil" || e.Value == "true" || e.Value == "false" {
@@ -1556,6 +1574,10 @@ func (c *compiler) isType(expr core.Expression, t goType) bool {
 			return vt == t
 		}
 		return false
+	case *core.CallExpression:
+		return c.inferGoType(expr) == t
+	case *core.InfixExpression:
+		return c.inferGoType(expr) == t
 	}
 	return false
 }

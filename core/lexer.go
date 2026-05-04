@@ -161,6 +161,8 @@ func (l *Lexer) NextToken() Token {
 		}
 	case '*':
 		tok = Token{Type: ASTERISK, Literal: "*", Start: l.position, End: l.position + 1}
+	case '/':
+		tok = Token{Type: SLASH, Literal: "/", Start: l.position, End: l.position + 1}
 	case ';':
 		tok = Token{Type: SEMICOLON, Literal: ";", Start: l.position, End: l.position + 1}
 	case ',':

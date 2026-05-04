@@ -29,6 +29,7 @@ const (
 	PLUS TokenType = "+"
 	MINUS TokenType = "-"
 	ASTERISK TokenType = "*"
+	SLASH TokenType = "/"
 	SEMICOLON TokenType = ";"
 	COMMA TokenType = ","
 	DOT TokenType = "."
