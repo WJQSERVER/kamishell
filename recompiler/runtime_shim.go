@@ -3,6 +3,7 @@ package recompiler
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -518,6 +519,21 @@ func CallFunc(fn any, env *Env, args ...any) any {
 		}
 	case func() any:
 		return f()
+	default:
+		// Reflect fallback for typed closure signatures (e.g., func(int64, int64) any)
+		v := reflect.ValueOf(fn)
+		if v.Kind() == reflect.Func {
+			in := make([]reflect.Value, len(args))
+			for i, arg := range args {
+				in[i] = reflect.ValueOf(arg)
+			}
+			results := v.Call(in)
+			if len(results) > 0 {
+				return results[0].Interface()
+			}
+			return nil
+		}
+		return nil
 	}
 	return nil
 }

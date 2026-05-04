@@ -1328,9 +1328,9 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		funcNeedsEnv:   c.funcNeedsEnv,
 	}
 
-	// Register parameters as known variables with 'any' type (matches closure signature)
+	// Register parameters with their declared types
 	for _, p := range f.Parameters {
-		sub.declareVar(p.Name, goAny)
+		sub.declareVar(p.Name, c.kamiTypeToGo(p.TypeName))
 	}
 
 	// Compile body
@@ -1338,11 +1338,10 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		sub.compileStatement(st)
 	}
 
-	// Generate inline function literal (not hoisted) so it can access kamiEnv
-	// Use func(any...) any signature with named params to match CallFunc expectations
+	// Generate inline function literal with typed parameters
 	var inlineParams []string
 	for _, p := range f.Parameters {
-		inlineParams = append(inlineParams, p.Name+" any")
+		inlineParams = append(inlineParams, fmt.Sprintf("%s %s", p.Name, c.kamiTypeToGo(p.TypeName)))
 	}
 	inlineParamStr := strings.Join(inlineParams, ", ")
 
