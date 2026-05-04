@@ -176,6 +176,39 @@ print x`
 	}
 }
 
+func TestPointerPassToFunction(t *testing.T) {
+	source := `func inc(p any) {
+    *p = *p + 1
+}
+x := 0
+p := &x
+inc(p)
+inc(p)
+inc(p)
+print x`
+
+	src := compileSource(t, source)
+	assertSourceContains(t, src, "recompiler.NewPtr")
+
+	out := compileRun(t, "ptr_pass", source)
+	if strings.TrimSpace(out) != "3" {
+		t.Fatalf("expected '3', got %q", out)
+	}
+}
+
+func TestPointerDerefReadWrite(t *testing.T) {
+	source := `x := 10
+p := &x
+*p = *p + 5
+print x
+print *p`
+
+	out := compileRun(t, "ptr_deref", source)
+	if !strings.Contains(out, "15") {
+		t.Fatalf("expected output containing '15', got %q", out)
+	}
+}
+
 // ============================================================
 // Bug #6: MethodCallBlockStatement not handled
 // Location: compiler.go compileStatement switch (no *core.MethodCallBlockStatement case)

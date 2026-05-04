@@ -1026,17 +1026,34 @@ func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
 }
 
 func (c *compiler) compilePrefixExpression(e *core.PrefixExpression) string {
-	c.addImport("kamishell/recompiler", "")
 	right := c.compileExpression(e.Right)
 	switch e.Operator {
 	case "!":
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("!recompiler.IsTruthy(%s)", right)
 	case "-":
 		return fmt.Sprintf("(-%s)", right)
 	case "&":
-		return fmt.Sprintf("recompiler.ToStr(%s)", right)
+		// Address-of: create a Ptr with getter/setter closures
+		if ident, ok := e.Right.(*core.Identifier); ok {
+			c.addImport("kamishell/recompiler", "")
+			name := ident.Value
+			varType := goAny
+			if t, ok := c.getVarType(name); ok {
+				varType = t
+			}
+			if varType != goAny {
+				// Typed variable: use type assertion in setter
+				return fmt.Sprintf("recompiler.NewPtr(func() any { return %s }, func(v any) { %s = v.(%s) })", name, name, varType)
+			}
+			return fmt.Sprintf("recompiler.NewPtr(func() any { return %s }, func(v any) { %s = v })", name, name)
+		}
+		c.addImport("kamishell/recompiler", "")
+		return fmt.Sprintf("recompiler.NewPtr(func() any { return %s }, func(v any) {})", right)
 	case "*":
-		return right
+		// Dereference: call Deref on the Ptr
+		c.addImport("kamishell/recompiler", "")
+		return fmt.Sprintf("recompiler.Deref(%s)", right)
 	default:
 		c.errorf("unknown prefix operator: %s", e.Operator)
 		return "nil"
@@ -1704,12 +1721,15 @@ func (c *compiler) compileWaitStatement(s *core.WaitStatement) {
 
 func (c *compiler) compilePointerAssignStatement(s *core.PointerAssignStatement) {
 	// *p = val — dereference pointer and assign
-	// In Kami, pointers are &x (address-of) and *p (dereference)
-	// For the recompiler, we generate: kamiRefSet(p, val, kamiEnv)
-	c.addImport("kamishell/recompiler", "")
-	target := c.compileExpression(s.Target)
-	val := c.compileExpression(s.Value)
-	c.line("recompiler.PointerSet(%s, %s, kamiEnv)", target, val)
+	// The target is *p (PrefixExpression with Operator="*")
+	if prefix, ok := s.Target.(*core.PrefixExpression); ok && prefix.Operator == "*" {
+		ptr := c.compileExpression(prefix.Right)
+		val := c.compileExpression(s.Value)
+		c.addImport("kamishell/recompiler", "")
+		c.line("recompiler.SetPtr(%s, %s)", ptr, val)
+		return
+	}
+	c.errorf("invalid pointer assignment target: %T", s.Target)
 }
 
 func (c *compiler) compileMethodCallBlockStatement(s *core.MethodCallBlockStatement) {
@@ -1816,6 +1836,9 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	}
 
 	// Compile body statements
+	if s.Body == nil {
+		return
+	}
 	for _, st := range s.Body.Statements {
 		sub.compileStatement(st)
 	}
