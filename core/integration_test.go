@@ -263,7 +263,7 @@ func TestForThreeClauseCountDown(t *testing.T) {
 
 func TestForThreeClauseWithReturn(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami(`func find(n) { for i := 0; i < n; i = i + 1 { if i == 3 { return i } }; return -1 }; print find(10)`, env)
+	stdout, stderr, _ := runKami(`func find(n any) { for i := 0; i < n; i = i + 1 { if i == 3 { return i } }; return -1 }; print find(10)`, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -642,7 +642,7 @@ func TestRangeStringArray(t *testing.T) {
 
 func TestIterRangeSingleVar(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { print v }`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { print v }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -661,7 +661,7 @@ func TestIterRangeSingleVar(t *testing.T) {
 
 func TestIterRangeDualVar(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func enumerate(arr) { return func(yield) { for i := range arr { if !yield(i, arr[i]) { return } } } }; for k, v := range enumerate([10, 20, 30]) { print k; print v }`
+	input := `func enumerate(arr any) { return func(yield any) { for i := range arr { if !yield(i, arr[i]) { return } } } }; for k, v := range enumerate([10, 20, 30]) { print k; print v }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -680,7 +680,7 @@ func TestIterRangeDualVar(t *testing.T) {
 
 func TestIterRangeBreak(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(100) { if v == 5 { break }; print v }`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(100) { if v == 5 { break }; print v }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -694,7 +694,7 @@ func TestIterRangeBreak(t *testing.T) {
 
 func TestIterRangeContinue(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { if v == 2 { continue }; print v }`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { if v == 2 { continue }; print v }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -713,7 +713,7 @@ func TestIterRangeContinue(t *testing.T) {
 
 func TestIterRangeEmpty(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func empty() { return func(yield) { } }; for v := range empty() { print v }; print "done"`
+	input := `func empty() { return func(yield any) { } }; for v := range empty() { print v }; print "done"`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -725,7 +725,7 @@ func TestIterRangeEmpty(t *testing.T) {
 
 func TestIterRangeWithReturn(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; func find(target) { for v := range countTo(10) { if v == target { return v } }; return -1 }; print find(7)`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; func find(target any) { for v := range countTo(10) { if v == target { return v } }; return -1 }; print find(7)`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -737,7 +737,7 @@ func TestIterRangeWithReturn(t *testing.T) {
 
 func TestIterRangeNested(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(3) { for w := range countTo(2) { print v; print w } }`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(3) { for w := range countTo(2) { print v; print w } }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -978,7 +978,7 @@ func TestAssignmentWithoutSpacesReportsSyntaxError(t *testing.T) {
 
 func TestUserFunctionKeepsIntegerArguments(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("func add(a, b) { print a + b }; add(1, 2)", env)
+	stdout, stderr, _ := runKami("func add(a any, b any) { print a + b }; add(1, 2)", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -989,7 +989,7 @@ func TestUserFunctionKeepsIntegerArguments(t *testing.T) {
 
 func TestUserFunctionKeepsBooleanArguments(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("func pick(flag) { if flag == true { print \"yes\" } else { print \"no\" } }; pick(true)", env)
+	stdout, stderr, _ := runKami("func pick(flag any) { if flag == true { print \"yes\" } else { print \"no\" } }; pick(true)", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -1000,7 +1000,7 @@ func TestUserFunctionKeepsBooleanArguments(t *testing.T) {
 
 func TestCommandAndExecUserFunctionUseStringArguments(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("func describe(v) { print v }; describe 7; exec \"describe 7\"", env)
+	stdout, stderr, _ := runKami("func describe(v any) { print v }; describe 7; exec \"describe 7\"", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -1084,7 +1084,7 @@ func TestPointerAssignComplexExpression(t *testing.T) {
 
 func TestPointerAssignWithFunction(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("func inc(p) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x", env)
+	stdout, stderr, _ := runKami("func inc(p any) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -1172,7 +1172,7 @@ func TestSwitchNested(t *testing.T) {
 
 func TestSwitchWithReturn(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami(`func pick(x) { switch x { case 1: return "one" case 2: return "two" default: return "other" } }; print pick(2)`, env)
+	stdout, stderr, _ := runKami(`func pick(x any) { switch x { case 1: return "one" case 2: return "two" default: return "other" } }; print pick(2)`, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
