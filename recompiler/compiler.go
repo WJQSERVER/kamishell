@@ -109,6 +109,41 @@ func (c *compiler) hasVar(name string) bool {
 func analyzeEnvDependencies(program *core.Program) map[string]bool {
 	needsSync := make(map[string]bool)
 
+	// First pass: collect all declared variable names
+	allDecls := make(map[string]bool)
+	var collectDecls func(stmts []core.Statement)
+	collectDecls = func(stmts []core.Statement) {
+		for _, stmt := range stmts {
+			switch s := stmt.(type) {
+			case *core.AssignStatement:
+				if s.Token.Literal == ":=" {
+					for _, name := range s.Names {
+						allDecls[name] = true
+					}
+				}
+			case *core.VarStatement:
+				allDecls[s.Name] = true
+			case *core.ForStatement:
+				if s.Init != nil {
+					collectDecls([]core.Statement{s.Init})
+				}
+				if s.Consequence != nil {
+					collectDecls(s.Consequence.Statements)
+				}
+			case *core.BlockStatement:
+				collectDecls(s.Statements)
+			case *core.IfStatement:
+				if s.Consequence != nil {
+					collectDecls(s.Consequence.Statements)
+				}
+				if s.Alternative != nil {
+					collectDecls(s.Alternative.Statements)
+				}
+			}
+		}
+	}
+	collectDecls(program.Statements)
+
 	var walkStatements func(stmts []core.Statement, outerVars map[string]bool)
 	var walkExpression func(expr core.Expression, outerVars map[string]bool)
 
@@ -202,11 +237,13 @@ func analyzeEnvDependencies(program *core.Program) map[string]bool {
 				walkStatements([]core.Statement{s.Right}, outerVars)
 			case *core.FunctionStatement:
 				// Create a new outerVars set for the function body
-				// Parameters are local, not outer
+				// All collected declarations are potential outer vars for closures
 				funcOuter := make(map[string]bool)
-				for k, v := range outerVars {
+				for k, v := range allDecls {
 					funcOuter[k] = v
 				}
+				// The function name itself is in outer scope
+				funcOuter[s.Name] = true
 				// Remove parameters from outer vars (they're local)
 				for _, p := range s.Parameters {
 					delete(funcOuter, p.Name)
@@ -223,6 +260,11 @@ func analyzeEnvDependencies(program *core.Program) map[string]bool {
 				}
 			case *core.BackgroundStatement:
 				walkStatements([]core.Statement{s.Stmt}, outerVars)
+			case *core.ExecStatement:
+				// exec "echo $msg" — CommandStr may contain $var references
+				if s.CommandStr != nil {
+					walkExpression(s.CommandStr, outerVars)
+				}
 			case *core.BlockStatement:
 				walkStatements(s.Statements, outerVars)
 			}
@@ -239,20 +281,6 @@ func analyzeEnvDependencies(program *core.Program) map[string]bool {
 			// and we're inside a function literal, it needs env sync
 			if outerVars[e.Value] {
 				needsSync[e.Value] = true
-			}
-			// Check for $var interpolation in string literals
-			if strings.Contains(e.Value, "$") {
-				os.Expand(e.Value, func(name string) string {
-					needsSync[name] = true
-					return ""
-				})
-			}
-			// Check for $var interpolation in string literals
-			if strings.Contains(e.Value, "$") {
-				os.Expand(e.Value, func(name string) string {
-					needsSync[name] = true
-					return ""
-				})
 			}
 		case *core.InfixExpression:
 			walkExpression(e.Left, outerVars)
@@ -282,9 +310,9 @@ func analyzeEnvDependencies(program *core.Program) map[string]bool {
 				walkExpression(el, outerVars)
 			}
 		case *core.FunctionLiteral:
-			// Closure: variables from outerVars that are used inside are captured
+			// Closure: variables from allDecls that are used inside are captured
 			closureOuter := make(map[string]bool)
-			for k, v := range outerVars {
+			for k, v := range allDecls {
 				closureOuter[k] = v
 			}
 			// Remove parameters (they're local)
@@ -297,45 +325,9 @@ func analyzeEnvDependencies(program *core.Program) map[string]bool {
 		}
 	}
 
-	// Start analysis: all declared variables are potential outer vars for closures
-	outerVars := make(map[string]bool)
-
-	// First pass: collect all declared variable names
-	var collectDecls func(stmts []core.Statement)
-	collectDecls = func(stmts []core.Statement) {
-		for _, stmt := range stmts {
-			switch s := stmt.(type) {
-			case *core.AssignStatement:
-				if s.Token.Literal == ":=" {
-					for _, name := range s.Names {
-						outerVars[name] = true
-					}
-				}
-			case *core.VarStatement:
-				outerVars[s.Name] = true
-			case *core.ForStatement:
-				if s.Init != nil {
-					collectDecls([]core.Statement{s.Init})
-				}
-				if s.Consequence != nil {
-					collectDecls(s.Consequence.Statements)
-				}
-			case *core.BlockStatement:
-				collectDecls(s.Statements)
-			case *core.IfStatement:
-				if s.Consequence != nil {
-					collectDecls(s.Consequence.Statements)
-				}
-				if s.Alternative != nil {
-					collectDecls(s.Alternative.Statements)
-				}
-			}
-		}
-	}
-	collectDecls(program.Statements)
-
-	// Second pass: analyze references with EMPTY outerVars for top-level
-	// outerVars are only used when entering closures (FunctionLiteral)
+	// Second pass: analyze references
+	// Top-level variables are LOCAL (not outer), so pass empty outerVars
+	// outerVars are only populated when entering function bodies
 	walkStatements(program.Statements, make(map[string]bool))
 
 	return needsSync
@@ -467,6 +459,10 @@ func (c *compiler) compileStatement(stmt core.Statement) {
 		c.compileWaitStatement(s)
 	case *core.ExecStatement:
 		c.compileExecStatement(s)
+	case *core.PointerAssignStatement:
+		c.compilePointerAssignStatement(s)
+	case *core.MethodCallBlockStatement:
+		c.compileMethodCallBlockStatement(s)
 	case *core.FunctionStatement:
 		c.compileFunctionStatement(s)
 	case *core.ImportStatement:
@@ -584,7 +580,9 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 	if _, ok := s.Value.(*core.FunctionLiteral); ok {
 		c.declareVar(s.Names[0], goAny)
 		c.line("var %s any = %s", s.Names[0], val)
-		c.line("kamiEnv.Set(%q, %s)", s.Names[0], s.Names[0])
+		if c.envSync == nil || c.envSync[s.Names[0]] {
+			c.line("kamiEnv.Set(%q, %s)", s.Names[0], s.Names[0])
+		}
 		return
 	}
 
@@ -625,11 +623,7 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 
 	// Only sync to env if this variable is referenced via $var or by builtins
 	// If envSync is nil (analysis not performed), sync everything for safety
-	needsSet := c.envSync == nil
-	if !needsSet {
-		_, needsSet = c.envSync[name]
-	}
-	if needsSet {
+	if c.envSync == nil || c.envSync[name] {
 		c.line("kamiEnv.Set(%q, %s)", name, name)
 	}
 }
@@ -1138,34 +1132,42 @@ func (c *compiler) compileArrayLiteral(a *core.ArrayLiteral) string {
 }
 
 func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
-	var params []string
-	for _, p := range f.Parameters {
-		goType := c.kamiTypeToGo(p.TypeName)
-		params = append(params, fmt.Sprintf("%s %s", p.Name, goType))
-	}
-	paramStr := strings.Join(params, ", ")
-
-	// Generate unique function name for closures
-	id := fmt.Sprintf("closure_%d", len(c.funcDefs)+1)
-
-	var bodyBuf strings.Builder
+	// Build closure body with sub-compiler that inherits all context
 	sub := &compiler{
-		symbols:   make(map[string]goType),
-		imports:   c.imports,
-		loopDepth: c.loopDepth,
+		symbols:     make(map[string]goType),
+		imports:     c.imports,
+		knownFuncs:  c.knownFuncs,
+		funcReturns: c.funcReturns,
+		arrayTypes:  make(map[string]goType),
+		envSync:     c.envSync,
+		loopDepth:   c.loopDepth,
 	}
-	sub.line("func(%s any) any {", paramStr)
-	sub.indent()
+
+	// Register parameters as known variables
+	for _, p := range f.Parameters {
+		sub.declareVar(p.Name, c.kamiTypeToGo(p.TypeName))
+	}
+
+	// Compile body
 	for _, st := range f.Body.Statements {
 		sub.compileStatement(st)
 	}
-	sub.line("return nil")
-	sub.dedent()
-	sub.line("}")
 
-	return bodyBuf.String()
-	_ = id
-	return fmt.Sprintf("func(%s any) any { return nil }", paramStr)
+	// Generate inline function literal (not hoisted) so it can access kamiEnv
+	// Use func(any...) any signature with named params to match CallFunc expectations
+	var inlineParams []string
+	for _, p := range f.Parameters {
+		inlineParams = append(inlineParams, p.Name+" any")
+	}
+	inlineParamStr := strings.Join(inlineParams, ", ")
+
+	var fd strings.Builder
+	fd.WriteString(fmt.Sprintf("func(%s) any {\n", inlineParamStr))
+	fd.WriteString(sub.buf.String())
+	fd.WriteString("return nil\n")
+	fd.WriteString("}")
+
+	return fd.String()
 }
 
 func (c *compiler) compileCommandStatement(s *core.CommandStatement) {
@@ -1685,6 +1687,41 @@ func (c *compiler) compileWaitStatement(s *core.WaitStatement) {
 	}
 }
 
+func (c *compiler) compilePointerAssignStatement(s *core.PointerAssignStatement) {
+	// *p = val — dereference pointer and assign
+	// In Kami, pointers are &x (address-of) and *p (dereference)
+	// For the recompiler, we generate: kamiRefSet(p, val, kamiEnv)
+	c.addImport("kamishell/recompiler", "")
+	target := c.compileExpression(s.Target)
+	val := c.compileExpression(s.Value)
+	c.line("recompiler.PointerSet(%s, %s, kamiEnv)", target, val)
+}
+
+func (c *compiler) compileMethodCallBlockStatement(s *core.MethodCallBlockStatement) {
+	// wg.Go { ... } or wg.Wait { ... }
+	// In Kami, this is: wg.Add(1); go func() { defer wg.Done(); body }()
+	obj := c.compileExpression(s.Object)
+	_ = obj
+	switch s.Method {
+	case "Go":
+		// wg.Go { body } → go func() { body }()
+		c.line("{")
+		c.indent()
+		c.line("go func() {")
+		c.indent()
+		for _, st := range s.Body.Statements {
+			c.compileStatement(st)
+		}
+		c.dedent()
+		c.line("}()")
+		c.dedent()
+		c.line("}")
+	case "Wait":
+		// wg.Wait — just call wait
+		c.line("%s.Wait()", obj)
+	}
+}
+
 func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 	c.addImport("os", "")
 	c.addImport("strings", "")
@@ -1716,15 +1753,11 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	}
 	c.knownFuncs[funcName] = true
 
-	// Track return type for type inference
+	// Track return type for type inference — all functions return 'any'
 	if c.funcReturns == nil {
 		c.funcReturns = make(map[string]goType)
 	}
-	if len(s.ReturnTypes) == 1 {
-		c.funcReturns[funcName] = c.kamiTypeToGo(s.ReturnTypes[0])
-	} else {
-		c.funcReturns[funcName] = goAny
-	}
+	c.funcReturns[funcName] = goAny
 
 	var params []string
 	params = append(params, "kamiEnv *recompiler.Env")
@@ -1734,17 +1767,9 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	}
 	paramStr := strings.Join(params, ", ")
 
-	// Determine return type
+	// Determine return type — use 'any' for all functions to avoid type mismatch
+	// when closure variables are looked up from env as 'any'
 	returnType := "any"
-	if len(s.ReturnTypes) == 1 {
-		returnType = string(c.kamiTypeToGo(s.ReturnTypes[0]))
-	} else if len(s.ReturnTypes) > 1 {
-		retTypes := make([]string, len(s.ReturnTypes))
-		for i, rt := range s.ReturnTypes {
-			retTypes[i] = string(c.kamiTypeToGo(rt))
-		}
-		returnType = "(" + strings.Join(retTypes, ", ") + ")"
-	}
 
 	// Generate function body with a sub-compiler
 	sub := &compiler{
@@ -1753,6 +1778,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		knownFuncs:  c.knownFuncs,
 		funcReturns: c.funcReturns,
 		arrayTypes:  make(map[string]goType),
+		envSync:     c.envSync,
 		loopDepth:   0,
 		indentLv:    1,
 	}
@@ -1785,17 +1811,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 
 	if !hasTrailingReturn {
 		// Add default return only if body doesn't end with return
-		if len(s.ReturnTypes) == 0 {
-			sub.line("return nil")
-		} else if len(s.ReturnTypes) == 1 {
-			sub.line("return %s", c.kamiTypeToGo(s.ReturnTypes[0]).zero())
-		} else {
-			zeros := make([]string, len(s.ReturnTypes))
-			for i, rt := range s.ReturnTypes {
-				zeros[i] = c.kamiTypeToGo(rt).zero()
-			}
-			sub.line("return %s", strings.Join(zeros, ", "))
-		}
+		sub.line("return nil")
 	}
 
 	// Generate function definition

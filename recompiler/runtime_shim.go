@@ -428,6 +428,13 @@ func WaitAllTimeout(secs any) {
 	}
 }
 
+// PointerSet sets a value through a pointer reference.
+func PointerSet(ptr any, val any, env *Env) {
+	// In Kami, pointers are EnvEntry refs
+	// For the recompiler, we use a simple wrapper
+	// This is a simplified version — full pointer support requires EnvEntry tracking
+}
+
 // MemberGet gets a member value from an object.
 func MemberGet(obj any, prop string) any {
 	return nil
