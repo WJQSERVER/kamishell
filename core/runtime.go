@@ -867,14 +867,12 @@ func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout
 			return result
 		}
 		if _, ok := result.(*ReturnValue); ok {
-			env.SetObject("err", NULL)
 			return result
 		}
 		if result == BREAK_SIGNAL || result == CONTINUE_SIGNAL {
 			return result
 		}
 	}
-	env.SetObject("err", NULL)
 	return result
 }
 

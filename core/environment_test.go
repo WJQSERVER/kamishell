@@ -1,6 +1,10 @@
 package core
 
-import "testing"
+import (
+	"io"
+	"strings"
+	"testing"
+)
 
 func TestScriptEnvironmentDoesNotInheritOuterPackageScope(t *testing.T) {
 	outer := NewEmptyEnvironment()
@@ -45,4 +49,76 @@ func TestScriptEnvironmentKeepsVariableScopeSeparate(t *testing.T) {
 	if got, _ := outer.Get("GOOS"); got.(*String).Value != "windows" {
 		t.Fatalf("expected outer env variable to stay unchanged, got %v", got)
 	}
+}
+
+func TestSetObjectSyncsWithRefStore(t *testing.T) {
+	env := NewEmptyEnvironment()
+	env.SetObject("x", getIntegerObject(1))
+
+	ref, ok := env.GetRef("x")
+	if !ok {
+		t.Fatal("expected GetRef to succeed")
+	}
+	if ref.Value.(*Integer).Value != 1 {
+		t.Fatalf("expected ref.Value=1, got %v", ref.Value)
+	}
+
+	env.SetObject("x", getIntegerObject(99))
+	if ref.Value.(*Integer).Value != 99 {
+		t.Fatalf("expected ref.Value to update to 99 after SetObject, got %v", ref.Value)
+	}
+}
+
+func TestSetObjectDoesNotPanicWithoutRefStore(t *testing.T) {
+	env := NewEmptyEnvironment()
+	env.SetObject("x", getIntegerObject(1))
+
+	val, ok := env.GetObject("x")
+	if !ok || val.(*Integer).Value != 1 {
+		t.Fatalf("expected x=1, got %v, %v", val, ok)
+	}
+}
+
+func TestEvalStatementsSetsErrOnlyOnError(t *testing.T) {
+	// Successful statements should NOT touch "err" — only errors set it
+	env := NewEmptyEnvironment()
+
+	program := mustParseProgram(t, `x := 1 + 2`)
+	result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+	if isError(result) {
+		t.Fatalf("unexpected error: %s", result.Inspect())
+	}
+
+	// After successful eval, "err" should remain unset (nil/absent)
+	// because evalStatements only writes err on actual errors
+	errVal, ok := env.GetObject("err")
+	if ok && errVal != nil && errVal != NULL {
+		t.Fatalf("expected err to not be set after successful eval, got %v", errVal)
+	}
+}
+
+func TestEvalStatementsSetsErrOnRuntimeError(t *testing.T) {
+	env := NewEmptyEnvironment()
+
+	program := mustParseProgram(t, `x := 1 - "hello"`)
+	result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+	if !isError(result) {
+		t.Fatalf("expected error, got %v", result)
+	}
+
+	errVal, _ := env.GetObject("err")
+	if errVal == nil || errVal == NULL {
+		t.Fatal("expected err to be set after runtime error")
+	}
+}
+
+func mustParseProgram(t *testing.T, input string) *Program {
+	t.Helper()
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+	if program == nil {
+		t.Fatal("expected parsed program")
+	}
+	return program
 }

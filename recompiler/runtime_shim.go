@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"kamishell/builtin"
@@ -111,15 +112,14 @@ func (t *Task) WaitTimeout(secs int64) (any, error) {
 var (
 	jobsMu    sync.Mutex
 	jobs      = make(map[int]*builtin.Job)
-	nextJobID = 1
+	nextJobID atomic.Int64
 )
 
 func registerJob(cmd string) int {
+	id := int(nextJobID.Add(1))
 	jobsMu.Lock()
-	defer jobsMu.Unlock()
-	id := nextJobID
 	jobs[id] = &builtin.Job{ID: id, Command: cmd, Status: "Running"}
-	nextJobID++
+	jobsMu.Unlock()
 	return id
 }
 
