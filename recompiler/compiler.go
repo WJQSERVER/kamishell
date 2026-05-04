@@ -841,9 +841,37 @@ func (c *compiler) compileIterRangeStatement(s *core.ForStatement) {
 }
 
 func (c *compiler) compileSwitchStatement(s *core.SwitchStatement) {
-	c.addImport("kamishell/recompiler", "")
 	if s.Tag != nil {
 		tag := c.compileExpression(s.Tag)
+
+		// Check if all case values share a concrete type for native Go switch,
+		// avoiding recompiler.ToStr overhead and enabling O(1) dispatch.
+		if nativeType, ok := c.canUseNativeSwitch(s.Cases); ok && nativeType != "" {
+			c.line("switch %s {", tag)
+			c.indent()
+			for _, cas := range s.Cases {
+				if cas.Values == nil {
+					c.line("default:")
+				} else {
+					var vals []string
+					for _, v := range cas.Values {
+						vals = append(vals, c.compileExpression(v))
+					}
+					c.line("case %s:", strings.Join(vals, ", "))
+				}
+				c.indent()
+				for _, st := range cas.Body.Statements {
+					c.compileStatement(st)
+				}
+				c.dedent()
+			}
+			c.dedent()
+			c.line("}")
+			return
+		}
+
+		// Fallback: string comparison via ToStr
+		c.addImport("kamishell/recompiler", "")
 		c.line("switch recompiler.ToStr(%s) {", tag)
 	} else {
 		c.line("switch {")
@@ -851,14 +879,12 @@ func (c *compiler) compileSwitchStatement(s *core.SwitchStatement) {
 	c.indent()
 	for _, cas := range s.Cases {
 		if cas.Values == nil {
-			// default
 			c.line("default:")
 		} else {
 			var vals []string
 			for _, v := range cas.Values {
 				vals = append(vals, c.compileExpression(v))
 			}
-			// Use string comparison in generated code
 			valStrs := make([]string, len(vals))
 			for i, v := range vals {
 				valStrs[i] = fmt.Sprintf("recompiler.ToStr(%s)", v)
@@ -873,6 +899,29 @@ func (c *compiler) compileSwitchStatement(s *core.SwitchStatement) {
 	}
 	c.dedent()
 	c.line("}")
+}
+
+// canUseNativeSwitch checks whether all case values share a concrete type
+// (int64, string, bool) that supports a native Go switch, avoiding ToStr overhead.
+func (c *compiler) canUseNativeSwitch(cases []core.CaseClause) (goType, bool) {
+	var common goType
+	for _, cas := range cases {
+		if cas.Values == nil {
+			continue
+		}
+		for _, v := range cas.Values {
+			vt := c.inferGoType(v)
+			if vt != goInt && vt != goStr && vt != goBool {
+				return "", false
+			}
+			if common == "" {
+				common = vt
+			} else if common != vt {
+				return "", false
+			}
+		}
+	}
+	return common, common != ""
 }
 
 func (c *compiler) compileExpression(expr core.Expression) string {
