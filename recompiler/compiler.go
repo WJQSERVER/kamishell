@@ -1221,7 +1221,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		knownFuncs:     c.knownFuncs,
 		funcReturns:    c.funcReturns,
 		funcReturnList: c.funcReturnList,
-		arrayTypes:     make(map[string]goType),
+		arrayTypes:     copyMap(c.arrayTypes),
 		envSync:        c.envSync,
 		loopDepth:      c.loopDepth,
 	}
@@ -1888,7 +1888,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		knownFuncs:     c.knownFuncs,
 		funcReturns:    c.funcReturns,
 		funcReturnList: c.funcReturnList,
-		arrayTypes:     make(map[string]goType),
+		arrayTypes:     copyMap(c.arrayTypes),
 		envSync:        c.envSync,
 		parentTypes:    c.symbols,
 		loopDepth:      0,
@@ -2177,4 +2177,15 @@ func (c *compiler) builtinFuncName(name string) string {
 	default:
 		return "Unknown"
 	}
+}
+
+func copyMap(src map[string]goType) map[string]goType {
+	if src == nil {
+		return make(map[string]goType)
+	}
+	dst := make(map[string]goType, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }

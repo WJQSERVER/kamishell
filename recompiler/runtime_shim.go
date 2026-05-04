@@ -353,6 +353,10 @@ func ArrayLen(arr any) int64 {
 		return int64(len(x))
 	case []string:
 		return int64(len(x))
+	case []float64:
+		return int64(len(x))
+	case []bool:
+		return int64(len(x))
 	case string:
 		return int64(len(x))
 	}
@@ -373,6 +377,14 @@ func ArrayGet(arr any, idx int64) any {
 		if idx >= 0 && idx < int64(len(x)) {
 			return x[idx]
 		}
+	case []float64:
+		if idx >= 0 && idx < int64(len(x)) {
+			return x[idx]
+		}
+	case []bool:
+		if idx >= 0 && idx < int64(len(x)) {
+			return x[idx]
+		}
 	}
 	return nil
 }
@@ -383,6 +395,34 @@ func ArraySet(arr any, idx int64, val any) any {
 		if idx >= 0 && idx < int64(len(x)) {
 			x[idx] = val
 			return x
+		}
+	case []int64:
+		if idx >= 0 && idx < int64(len(x)) {
+			if v, ok := val.(int64); ok {
+				x[idx] = v
+				return x
+			}
+		}
+	case []string:
+		if idx >= 0 && idx < int64(len(x)) {
+			if v, ok := val.(string); ok {
+				x[idx] = v
+				return x
+			}
+		}
+	case []float64:
+		if idx >= 0 && idx < int64(len(x)) {
+			if v, ok := val.(float64); ok {
+				x[idx] = v
+				return x
+			}
+		}
+	case []bool:
+		if idx >= 0 && idx < int64(len(x)) {
+			if v, ok := val.(bool); ok {
+				x[idx] = v
+				return x
+			}
 		}
 	}
 	return arr
@@ -398,6 +438,14 @@ func ArrayPush(arr any, val any) any {
 		}
 	case []string:
 		if v, ok := val.(string); ok {
+			return append(x, v)
+		}
+	case []float64:
+		if v, ok := val.(float64); ok {
+			return append(x, v)
+		}
+	case []bool:
+		if v, ok := val.(bool); ok {
 			return append(x, v)
 		}
 	}
