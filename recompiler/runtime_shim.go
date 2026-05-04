@@ -452,13 +452,22 @@ func NewError(msg string) error {
 }
 
 // CallFunc calls a function value with the given arguments.
-// Supports func(*Env, ...any) any (the recompiler function signature).
 func CallFunc(fn any, env *Env, args ...any) any {
 	switch f := fn.(type) {
 	case func(*Env, ...any) any:
 		return f(env, args...)
 	case func(...any) any:
 		return f(args...)
+	case func(any, any) any:
+		if len(args) >= 2 {
+			return f(args[0], args[1])
+		}
+	case func(any) any:
+		if len(args) >= 1 {
+			return f(args[0])
+		}
+	case func() any:
+		return f()
 	}
 	return nil
 }

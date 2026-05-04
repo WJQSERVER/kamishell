@@ -50,6 +50,7 @@ type compiler struct {
 	funcReturns map[string]goType // function name -> return type
 	arrayTypes  map[string]goType // variable name -> element type (for typed arrays)
 	envSync     map[string]bool   // variable name -> needs kamiEnv.Set()
+	parentTypes map[string]goType // parent scope variable types (for closure capture)
 	loopDepth   int
 	indentLv    int
 	usesErr     bool // whether current function uses 'err' variable
@@ -927,10 +928,24 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 	if c.knownFuncs != nil && c.knownFuncs[name] {
 		return fmt.Sprintf("kamiFunc_%s", name)
 	}
+	// Auto-declare from env lookup — use parent types if available for closure capture
 	c.addImport("kamishell/recompiler", "")
-	c.declareVar(name, goAny)
-	c.line("var %s any", name)
-	c.line("if v, ok := kamiEnv.Get(%q); ok { %s = v }", name, name)
+	varType := goAny
+	if c.parentTypes != nil {
+		if parentType, ok := c.parentTypes[name]; ok {
+			varType = parentType
+		}
+	}
+	c.declareVar(name, varType)
+	if varType != goAny {
+		// Typed closure variable — use type assertion
+		c.line("var %s %s", name, varType)
+		c.line("if v, ok := kamiEnv.Get(%q); ok { %s = v.(%s) }", name, name, varType)
+	} else {
+		// Untyped — assign directly
+		c.line("var %s any", name)
+		c.line("if v, ok := kamiEnv.Get(%q); ok { %s = v }", name, name)
+	}
 	return name
 }
 
@@ -1143,9 +1158,9 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		loopDepth:   c.loopDepth,
 	}
 
-	// Register parameters as known variables
+	// Register parameters as known variables with 'any' type (matches closure signature)
 	for _, p := range f.Parameters {
-		sub.declareVar(p.Name, c.kamiTypeToGo(p.TypeName))
+		sub.declareVar(p.Name, goAny)
 	}
 
 	// Compile body
@@ -1753,11 +1768,15 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	}
 	c.knownFuncs[funcName] = true
 
-	// Track return type for type inference — all functions return 'any'
+	// Track return type for type inference
 	if c.funcReturns == nil {
 		c.funcReturns = make(map[string]goType)
 	}
-	c.funcReturns[funcName] = goAny
+	if len(s.ReturnTypes) == 1 {
+		c.funcReturns[funcName] = c.kamiTypeToGo(s.ReturnTypes[0])
+	} else {
+		c.funcReturns[funcName] = goAny
+	}
 
 	var params []string
 	params = append(params, "kamiEnv *recompiler.Env")
@@ -1767,9 +1786,17 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	}
 	paramStr := strings.Join(params, ", ")
 
-	// Determine return type — use 'any' for all functions to avoid type mismatch
-	// when closure variables are looked up from env as 'any'
+	// Determine return type from declaration
 	returnType := "any"
+	if len(s.ReturnTypes) == 1 {
+		returnType = string(c.kamiTypeToGo(s.ReturnTypes[0]))
+	} else if len(s.ReturnTypes) > 1 {
+		retTypes := make([]string, len(s.ReturnTypes))
+		for i, rt := range s.ReturnTypes {
+			retTypes[i] = string(c.kamiTypeToGo(rt))
+		}
+		returnType = "(" + strings.Join(retTypes, ", ") + ")"
+	}
 
 	// Generate function body with a sub-compiler
 	sub := &compiler{
@@ -1779,6 +1806,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		funcReturns: c.funcReturns,
 		arrayTypes:  make(map[string]goType),
 		envSync:     c.envSync,
+		parentTypes: c.symbols,  // pass parent's types for closure variable resolution
 		loopDepth:   0,
 		indentLv:    1,
 	}
@@ -1811,7 +1839,17 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 
 	if !hasTrailingReturn {
 		// Add default return only if body doesn't end with return
-		sub.line("return nil")
+		if len(s.ReturnTypes) == 0 {
+			sub.line("return nil")
+		} else if len(s.ReturnTypes) == 1 {
+			sub.line("return %s", c.kamiTypeToGo(s.ReturnTypes[0]).zero())
+		} else {
+			zeros := make([]string, len(s.ReturnTypes))
+			for i, rt := range s.ReturnTypes {
+				zeros[i] = c.kamiTypeToGo(rt).zero()
+			}
+			sub.line("return %s", strings.Join(zeros, ", "))
+		}
 	}
 
 	// Generate function definition
