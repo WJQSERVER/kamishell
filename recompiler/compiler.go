@@ -3,6 +3,7 @@ package recompiler
 import (
 	"fmt"
 	"go/format"
+	"os"
 	"strconv"
 	"strings"
 
@@ -48,6 +49,7 @@ type compiler struct {
 	knownFuncs  map[string]bool
 	funcReturns map[string]goType // function name -> return type
 	arrayTypes  map[string]goType // variable name -> element type (for typed arrays)
+	envSync     map[string]bool   // variable name -> needs kamiEnv.Set()
 	loopDepth   int
 	indentLv    int
 	usesErr     bool // whether current function uses 'err' variable
@@ -99,9 +101,253 @@ func (c *compiler) hasVar(name string) bool {
 	return ok
 }
 
+// analyzeEnvDependencies walks the AST and determines which variables need 
+// environment synchronization (kamiEnv.Set). Variables need sync if they are:
+// 1. Referenced via $var in string interpolation
+// 2. Referenced via $var in command arguments (for builtin env.Get access)
+// 3. Captured by closures
+func analyzeEnvDependencies(program *core.Program) map[string]bool {
+	needsSync := make(map[string]bool)
+
+	var walkStatements func(stmts []core.Statement, outerVars map[string]bool)
+	var walkExpression func(expr core.Expression, outerVars map[string]bool)
+
+	walkStatements = func(stmts []core.Statement, outerVars map[string]bool) {
+		for _, stmt := range stmts {
+			if stmt == nil {
+				continue
+			}
+			switch s := stmt.(type) {
+			case *core.ExpressionStatement:
+				if s.Expression != nil {
+					walkExpression(s.Expression, outerVars)
+				}
+			case *core.PrintStatement:
+				if s.Expression != nil {
+					walkExpression(s.Expression, outerVars)
+				}
+			case *core.AssignStatement:
+				if s.Value != nil {
+					walkExpression(s.Value, outerVars)
+				}
+				if s.Target != nil {
+					walkExpression(s.Target, outerVars)
+				}
+			case *core.VarStatement:
+				if s.Value != nil {
+					walkExpression(s.Value, outerVars)
+				}
+			case *core.IfStatement:
+				if s.Condition != nil {
+					walkExpression(s.Condition, outerVars)
+				}
+				if s.Consequence != nil {
+					walkStatements(s.Consequence.Statements, outerVars)
+				}
+				if s.Alternative != nil {
+					walkStatements(s.Alternative.Statements, outerVars)
+				}
+			case *core.ForStatement:
+				if s.Init != nil {
+					walkStatements([]core.Statement{s.Init}, outerVars)
+				}
+				if s.Condition != nil {
+					walkExpression(s.Condition, outerVars)
+				}
+				if s.Post != nil {
+					walkStatements([]core.Statement{s.Post}, outerVars)
+				}
+				if s.Consequence != nil {
+					walkStatements(s.Consequence.Statements, outerVars)
+				}
+			case *core.SwitchStatement:
+				if s.Tag != nil {
+					walkExpression(s.Tag, outerVars)
+				}
+				for _, c := range s.Cases {
+					for _, v := range c.Values {
+						walkExpression(v, outerVars)
+					}
+					if c.Body != nil {
+						walkStatements(c.Body.Statements, outerVars)
+					}
+				}
+			case *core.ReturnStatement:
+				for _, rv := range s.ReturnValues {
+					walkExpression(rv, outerVars)
+				}
+			case *core.CommandStatement:
+				// Command arguments with $var reference — mark those vars as needing sync
+				for _, arg := range s.Arguments {
+					if sl, ok := arg.(*core.StringLiteral); ok && strings.Contains(sl.Value, "$") {
+						// Extract $var names from the string
+						os.Expand(sl.Value, func(name string) string {
+							needsSync[name] = true
+							return ""
+						})
+					}
+					walkExpression(arg, outerVars)
+				}
+			case *core.PipeStatement:
+				for _, cmd := range s.Commands {
+					walkStatements([]core.Statement{cmd}, outerVars)
+				}
+			case *core.RedirectStatement:
+				walkStatements([]core.Statement{s.Source}, outerVars)
+				if s.Target != nil {
+					walkExpression(s.Target, outerVars)
+				}
+			case *core.LogicalStatement:
+				walkStatements([]core.Statement{s.Left}, outerVars)
+				walkStatements([]core.Statement{s.Right}, outerVars)
+			case *core.FunctionStatement:
+				// Create a new outerVars set for the function body
+				// Parameters are local, not outer
+				funcOuter := make(map[string]bool)
+				for k, v := range outerVars {
+					funcOuter[k] = v
+				}
+				// Remove parameters from outer vars (they're local)
+				for _, p := range s.Parameters {
+					delete(funcOuter, p.Name)
+				}
+				if s.Body != nil {
+					walkStatements(s.Body.Statements, funcOuter)
+				}
+			case *core.GoStatement:
+				if block, ok := s.Node.(*core.BlockStatement); ok {
+					walkStatements(block.Statements, outerVars)
+				}
+				if cmd, ok := s.Node.(*core.CommandStatement); ok {
+					walkStatements([]core.Statement{cmd}, outerVars)
+				}
+			case *core.BackgroundStatement:
+				walkStatements([]core.Statement{s.Stmt}, outerVars)
+			case *core.BlockStatement:
+				walkStatements(s.Statements, outerVars)
+			}
+		}
+	}
+
+	walkExpression = func(expr core.Expression, outerVars map[string]bool) {
+		if expr == nil {
+			return
+		}
+		switch e := expr.(type) {
+		case *core.Identifier:
+			// Closure capture: if this identifier is defined in an outer scope
+			// and we're inside a function literal, it needs env sync
+			if outerVars[e.Value] {
+				needsSync[e.Value] = true
+			}
+			// Check for $var interpolation in string literals
+			if strings.Contains(e.Value, "$") {
+				os.Expand(e.Value, func(name string) string {
+					needsSync[name] = true
+					return ""
+				})
+			}
+			// Check for $var interpolation in string literals
+			if strings.Contains(e.Value, "$") {
+				os.Expand(e.Value, func(name string) string {
+					needsSync[name] = true
+					return ""
+				})
+			}
+		case *core.InfixExpression:
+			walkExpression(e.Left, outerVars)
+			walkExpression(e.Right, outerVars)
+		case *core.PrefixExpression:
+			walkExpression(e.Right, outerVars)
+		case *core.CallExpression:
+			walkExpression(e.Function, outerVars)
+			for _, arg := range e.Arguments {
+				walkExpression(arg, outerVars)
+			}
+		case *core.MemberExpression:
+			walkExpression(e.Object, outerVars)
+		case *core.IndexExpression:
+			walkExpression(e.Left, outerVars)
+			walkExpression(e.Index, outerVars)
+		case *core.StringLiteral:
+			// Check for $var interpolation
+			if strings.Contains(e.Value, "$") {
+				os.Expand(e.Value, func(name string) string {
+					needsSync[name] = true
+					return ""
+				})
+			}
+		case *core.ArrayLiteral:
+			for _, el := range e.Elements {
+				walkExpression(el, outerVars)
+			}
+		case *core.FunctionLiteral:
+			// Closure: variables from outerVars that are used inside are captured
+			closureOuter := make(map[string]bool)
+			for k, v := range outerVars {
+				closureOuter[k] = v
+			}
+			// Remove parameters (they're local)
+			for _, p := range e.Parameters {
+				delete(closureOuter, p.Name)
+			}
+			if e.Body != nil {
+				walkStatements(e.Body.Statements, closureOuter)
+			}
+		}
+	}
+
+	// Start analysis: all declared variables are potential outer vars for closures
+	outerVars := make(map[string]bool)
+
+	// First pass: collect all declared variable names
+	var collectDecls func(stmts []core.Statement)
+	collectDecls = func(stmts []core.Statement) {
+		for _, stmt := range stmts {
+			switch s := stmt.(type) {
+			case *core.AssignStatement:
+				if s.Token.Literal == ":=" {
+					for _, name := range s.Names {
+						outerVars[name] = true
+					}
+				}
+			case *core.VarStatement:
+				outerVars[s.Name] = true
+			case *core.ForStatement:
+				if s.Init != nil {
+					collectDecls([]core.Statement{s.Init})
+				}
+				if s.Consequence != nil {
+					collectDecls(s.Consequence.Statements)
+				}
+			case *core.BlockStatement:
+				collectDecls(s.Statements)
+			case *core.IfStatement:
+				if s.Consequence != nil {
+					collectDecls(s.Consequence.Statements)
+				}
+				if s.Alternative != nil {
+					collectDecls(s.Alternative.Statements)
+				}
+			}
+		}
+	}
+	collectDecls(program.Statements)
+
+	// Second pass: analyze references with EMPTY outerVars for top-level
+	// outerVars are only used when entering closures (FunctionLiteral)
+	walkStatements(program.Statements, make(map[string]bool))
+
+	return needsSync
+}
+
 func Compile(program *core.Program) (*CompiledScript, error) {
+	// First pass: analyze which variables need environment synchronization
+	envSync := analyzeEnvDependencies(program)
+
 	comp := &compiler{
 		symbols: make(map[string]goType),
+		envSync: envSync,
 	}
 
 	// Track whether kamiErr/kamiEnv are actually used
@@ -319,7 +565,9 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 				for i, name := range s.Names {
 					c.declareVar(name, goAny)
 					c.line("var %s any = %s", name, tmpVars[i])
-					c.line("kamiEnv.Set(%q, %s)", name, name)
+					if c.envSync == nil || c.envSync[name] {
+						c.line("kamiEnv.Set(%q, %s)", name, name)
+					}
 				}
 				return
 			}
@@ -374,7 +622,16 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 		}
 		c.line("%s = %s", name, val)
 	}
-	c.line("kamiEnv.Set(%q, %s)", name, name)
+
+	// Only sync to env if this variable is referenced via $var or by builtins
+	// If envSync is nil (analysis not performed), sync everything for safety
+	needsSet := c.envSync == nil
+	if !needsSet {
+		_, needsSet = c.envSync[name]
+	}
+	if needsSet {
+		c.line("kamiEnv.Set(%q, %s)", name, name)
+	}
 }
 
 func (c *compiler) compileVarStatement(s *core.VarStatement) {
@@ -386,7 +643,9 @@ func (c *compiler) compileVarStatement(s *core.VarStatement) {
 	} else {
 		c.line("var %s %s", s.Name, typ)
 	}
-	c.line("kamiEnv.Set(%q, %s)", s.Name, s.Name)
+	if c.envSync == nil || c.envSync[s.Name] {
+		c.line("kamiEnv.Set(%q, %s)", s.Name, s.Name)
+	}
 }
 
 func (c *compiler) compileIfStatement(s *core.IfStatement) {
@@ -525,7 +784,7 @@ func (c *compiler) capturePost(s core.Statement) string {
 	case *core.AssignStatement:
 		val := c.compileExpression(a.Value)
 		buf.WriteString(fmt.Sprintf("%s = %s", a.Names[0], val))
-		if c.hasVar(a.Names[0]) {
+		if c.hasVar(a.Names[0]) && (c.envSync == nil || c.envSync[a.Names[0]]) {
 			buf.WriteString(fmt.Sprintf("; kamiEnv.Set(%q, %s)", a.Names[0], a.Names[0]))
 		}
 	}
