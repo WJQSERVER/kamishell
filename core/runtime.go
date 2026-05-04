@@ -145,6 +145,22 @@ func init() {
 			return &Array{ElemType: arr.ElemType, Elements: newElems}
 		},
 	}
+
+	// error() — create an Error object
+	NativeFns["error"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) == 0 {
+				return &Error{Message: ""}
+			}
+			msg := ""
+			if s, ok := args[0].(*String); ok {
+				msg = s.Value
+			} else {
+				msg = args[0].Inspect()
+			}
+			return &Error{Message: msg}
+		},
+	}
 }
 
 // Go标准库映射表

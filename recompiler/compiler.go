@@ -187,11 +187,17 @@ func (c *compiler) compileStatement(stmt core.Statement) {
 		c.dedent()
 		c.line("}")
 	case *core.ReturnStatement:
-		if s.ReturnValue != nil {
-			val := c.compileExpression(s.ReturnValue)
+		if len(s.ReturnValues) == 0 {
+			c.line("return")
+		} else if len(s.ReturnValues) == 1 {
+			val := c.compileExpression(s.ReturnValues[0])
 			c.line("return %s", val)
 		} else {
-			c.line("return")
+			vals := make([]string, len(s.ReturnValues))
+			for i, rv := range s.ReturnValues {
+				vals[i] = c.compileExpression(rv)
+			}
+			c.line("return %s", strings.Join(vals, ", "))
 		}
 	case *core.BreakStatement:
 		c.line("break")
@@ -280,26 +286,56 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 	}
 
 	val := c.compileExpression(s.Value)
+
+	// Multi-value assignment: val, err := div(10, 0)
+	if len(s.Names) > 1 {
+		// Call the function and unpack the tuple
+		if ce, ok := s.Value.(*core.CallExpression); ok {
+			if id, ok := ce.Function.(*core.Identifier); ok && c.knownFuncs != nil && c.knownFuncs[id.Value] {
+				// Direct call to known function - generate multi-return unpacking
+				var args []string
+				args = append(args, "kamiEnv")
+				for _, a := range ce.Arguments {
+					args = append(args, c.compileExpression(a))
+				}
+				callStr := fmt.Sprintf("kamiFunc_%s(%s)", id.Value, strings.Join(args, ", "))
+				c.line("_ = %s // multi-return unpacking TODO", callStr)
+				for _, name := range s.Names {
+					c.declareVar(name, goAny)
+					c.line("var %s any", name)
+				}
+				return
+			}
+		}
+		// Fallback: single value unpacked into multiple names
+		for i, name := range s.Names {
+			c.declareVar(name, goAny)
+			c.line("var %s any", name)
+			c.line("_ = %s // unpack[%d] TODO", val, i)
+		}
+		return
+	}
+
 	if _, ok := s.Value.(*core.FunctionLiteral); ok {
-		c.declareVar(s.Name, goAny)
-		c.line("var %s any = %s", s.Name, val)
-		c.line("kamiEnv.Set(%q, %s)", s.Name, s.Name)
+		c.declareVar(s.Names[0], goAny)
+		c.line("var %s any = %s", s.Names[0], val)
+		c.line("kamiEnv.Set(%q, %s)", s.Names[0], s.Names[0])
 		return
 	}
 
 	if s.Token.Literal == ":=" {
 		// Variable declaration: infer type from expr
 		typ := c.inferGoType(s.Value)
-		c.declareVar(s.Name, typ)
-		c.line("var %s %s = %s", s.Name, typ, val)
-		c.line("kamiEnv.Set(%q, %s)", s.Name, s.Name)
+		c.declareVar(s.Names[0], typ)
+		c.line("var %s %s = %s", s.Names[0], typ, val)
+		c.line("kamiEnv.Set(%q, %s)", s.Names[0], s.Names[0])
 	} else {
 		// Reassignment
-		if !c.hasVar(s.Name) {
-			c.declareVar(s.Name, goAny)
+		if !c.hasVar(s.Names[0]) {
+			c.declareVar(s.Names[0], goAny)
 		}
-		c.line("%s = %s", s.Name, val)
-		c.line("kamiEnv.Set(%q, %s)", s.Name, s.Name)
+		c.line("%s = %s", s.Names[0], val)
+		c.line("kamiEnv.Set(%q, %s)", s.Names[0], s.Names[0])
 	}
 }
 
@@ -450,9 +486,9 @@ func (c *compiler) capturePost(s core.Statement) string {
 	switch a := s.(type) {
 	case *core.AssignStatement:
 		val := c.compileExpression(a.Value)
-		buf.WriteString(fmt.Sprintf("%s = %s", a.Name, val))
-		if c.hasVar(a.Name) {
-			buf.WriteString(fmt.Sprintf("; kamiEnv.Set(%q, %s)", a.Name, a.Name))
+		buf.WriteString(fmt.Sprintf("%s = %s", a.Names[0], val))
+		if c.hasVar(a.Names[0]) {
+			buf.WriteString(fmt.Sprintf("; kamiEnv.Set(%q, %s)", a.Names[0], a.Names[0]))
 		}
 	}
 	return buf.String()
@@ -766,7 +802,8 @@ func (c *compiler) compileArrayLiteral(a *core.ArrayLiteral) string {
 func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 	var params []string
 	for _, p := range f.Parameters {
-		params = append(params, p)
+		goType := c.kamiTypeToGo(p.TypeName)
+		params = append(params, fmt.Sprintf("%s %s", p.Name, goType))
 	}
 	paramStr := strings.Join(params, ", ")
 
@@ -1344,9 +1381,22 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	var params []string
 	params = append(params, "kamiEnv *recompiler.Env")
 	for _, p := range s.Parameters {
-		params = append(params, fmt.Sprintf("%s any", p))
+		goType := c.kamiTypeToGo(p.TypeName)
+		params = append(params, fmt.Sprintf("%s %s", p.Name, goType))
 	}
 	paramStr := strings.Join(params, ", ")
+
+	// Determine return type
+	returnType := "any"
+	if len(s.ReturnTypes) == 1 {
+		returnType = string(c.kamiTypeToGo(s.ReturnTypes[0]))
+	} else if len(s.ReturnTypes) > 1 {
+		retTypes := make([]string, len(s.ReturnTypes))
+		for i, rt := range s.ReturnTypes {
+			retTypes[i] = string(c.kamiTypeToGo(rt))
+		}
+		returnType = "(" + strings.Join(retTypes, ", ") + ")"
+	}
 
 	// Generate function body with a sub-compiler
 	sub := &compiler{
@@ -1356,20 +1406,30 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		loopDepth:  0,
 		indentLv:   1,
 	}
-	// Register parameters as known variables so they won't be re-declared
+	// Register parameters with their types so they won't be re-declared
 	for _, p := range s.Parameters {
-		sub.declareVar(p, goAny)
+		sub.declareVar(p.Name, c.kamiTypeToGo(p.TypeName))
 	}
 
 	// Compile body statements
 	for _, st := range s.Body.Statements {
 		sub.compileStatement(st)
 	}
-	sub.line("return nil")
+	if len(s.ReturnTypes) == 0 {
+		sub.line("return nil")
+	} else if len(s.ReturnTypes) == 1 {
+		sub.line("return %s", c.kamiTypeToGo(s.ReturnTypes[0]).zero())
+	} else {
+		zeros := make([]string, len(s.ReturnTypes))
+		for i, rt := range s.ReturnTypes {
+			zeros[i] = c.kamiTypeToGo(rt).zero()
+		}
+		sub.line("return %s", strings.Join(zeros, ", "))
+	}
 
 	// Generate function definition
 	var fd strings.Builder
-	fd.WriteString(fmt.Sprintf("func kamiFunc_%s(%s) any {\n", funcName, paramStr))
+	fd.WriteString(fmt.Sprintf("func kamiFunc_%s(%s) %s {\n", funcName, paramStr, returnType))
 	fd.WriteString(sub.buf.String())
 	fd.WriteString("}\n")
 
