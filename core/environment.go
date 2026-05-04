@@ -109,6 +109,25 @@ func (e *Environment) Set(name string, val any) {
 	}
 }
 
+func (e *Environment) SetString(name string, val string) {
+	e.store[name] = &String{Value: val}
+	if e.types != nil {
+		e.types[name] = string(STRING_OBJ)
+	}
+}
+
+func (e *Environment) GetString(name string) (string, bool) {
+	for scope := e; scope != nil; scope = scope.outer {
+		if obj, ok := scope.store[name]; ok {
+			if s, ok := obj.(*String); ok {
+				return s.Value, true
+			}
+			return obj.Inspect(), true
+		}
+	}
+	return "", false
+}
+
 func (e *Environment) SetWithType(name string, val Object, typeName string) {
 	e.store[name] = val
 	if shouldTrackType(typeName) {

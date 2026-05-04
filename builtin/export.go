@@ -33,11 +33,7 @@ func Export(args []string, env Environment, stdin io.Reader, stdout io.Writer, s
 			return 1
 		}
 		os.Setenv(pair[0], pair[1])
-		if se, isStr := env.(StringEnvironment); isStr {
-			se.SetString(pair[0], pair[1])
-		} else {
-			env.Set(pair[0], pair[1])
-		}
+		env.SetString(pair[0], pair[1])
 	}
 	return 0
 }

@@ -58,17 +58,7 @@ func Pwd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 	}
 
 	// Logical path
-	var pwdStr string
-	var pwdOk bool
-	if se, isStr := env.(StringEnvironment); isStr {
-		pwdStr, pwdOk = se.GetString("PWD")
-	} else {
-		var raw any
-		raw, pwdOk = env.Get("PWD")
-		if pwdOk {
-			pwdStr = fmt.Sprint(raw)
-		}
-	}
+	pwdStr, pwdOk := env.GetString("PWD")
 	if pwdOk {
 		if pwdStr != "" && filepath.IsAbs(pwdStr) {
 			fi1, err1 := os.Stat(pwdStr)

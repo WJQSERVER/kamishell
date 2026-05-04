@@ -54,17 +54,7 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	}
 
 	if dir == "-" {
-		var oldpwd string
-		var ok bool
-		if se, isStr := env.(StringEnvironment); isStr {
-			oldpwd, ok = se.GetString("OLDPWD")
-		} else {
-			var raw any
-			raw, ok = env.Get("OLDPWD")
-			if ok {
-				oldpwd = fmt.Sprint(raw)
-			}
-		}
+		oldpwd, ok := env.GetString("OLDPWD")
 		if !ok {
 			fmt.Fprintln(stderr, "cd: OLDPWD not set")
 			return 1
@@ -76,11 +66,7 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	// Calculate new PWD
 	curDir, err := os.Getwd()
 	if err == nil {
-		if se, isStr := env.(StringEnvironment); isStr {
-			se.SetString("OLDPWD", curDir)
-		} else {
-			env.Set("OLDPWD", curDir)
-		}
+		env.SetString("OLDPWD", curDir)
 	}
 
 	err = os.Chdir(dir)
