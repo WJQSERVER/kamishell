@@ -55,6 +55,8 @@ type compiler struct {
 	loopDepth      int
 	indentLv       int
 	usesErr        bool
+	usesEnv        bool
+	funcNeedsEnv   map[string]bool
 	err            error
 	hasErr         bool
 }
@@ -106,6 +108,7 @@ func (c *compiler) hasVar(name string) bool {
 // genEnvSync generates a SetString call to sync a variable to kamiEnv.
 // Converts the Go value to string based on its type.
 func (c *compiler) genEnvSync(name string) {
+	c.usesEnv = true
 	varType, ok := c.symbols[name]
 	if !ok {
 		varType = goAny
@@ -373,11 +376,8 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 	comp.buf.WriteString("func kami_main() {\n")
 	comp.indentLv = 1
 
-	comp.line("var kamiErr error")
-	comp.line("kamiEnv := recompiler.NewEnv()")
-	comp.addImport("kamishell/recompiler", "")
-	comp.line("_ = kamiErr")
-	comp.line("_ = kamiEnv")
+	// Placeholder for conditional declarations — replaced after compilation loop
+	comp.line("__KAMI_DECL_MARKER__")
 
 	for _, stmt := range program.Statements {
 		comp.compileStatement(stmt)
@@ -389,6 +389,36 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 	comp.line("")
 	comp.dedent()
 	comp.buf.WriteString("}\n")
+
+	// Replace placeholder with actual declarations based on usage analysis
+	bodyStr := comp.buf.String()
+	kamiErrReferenced := strings.Contains(bodyStr, "kamiErr")
+
+	var decls string
+	if comp.usesEnv || comp.usesErr || kamiErrReferenced {
+		decls += "\tvar kamiErr error\n"
+		if !kamiErrReferenced && !comp.usesErr {
+			// kamiErr is declared but never referenced in any expression
+			decls += "\t_ = kamiErr\n"
+		}
+	}
+	if comp.usesEnv {
+		decls += "\tkamiEnv := recompiler.NewEnv()\n"
+		comp.addImport("kamishell/recompiler", "")
+	}
+	if decls != "" {
+		body := strings.ReplaceAll(bodyStr, "\t__KAMI_DECL_MARKER__\n", decls)
+		comp.buf.Reset()
+		comp.buf.WriteString(body)
+	} else {
+		// Remove marker line entirely — no declarations needed
+		body := strings.ReplaceAll(bodyStr, "\t__KAMI_DECL_MARKER__\n", "")
+		comp.buf.Reset()
+		comp.buf.WriteString(body)
+	}
+
+	// Always need recompiler import: main() calls recompiler.ResetImports()
+	comp.addImport("kamishell/recompiler", "")
 
 	funcDefs := strings.Join(comp.funcDefs, "\n")
 
@@ -546,7 +576,16 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 			if id, ok := ce.Function.(*core.Identifier); ok && c.knownFuncs != nil && c.knownFuncs[id.Value] {
 				// Direct call to known function - generate multi-return unpacking
 				var args []string
-				args = append(args, "kamiEnv")
+				needsEnv := true
+				if c.funcNeedsEnv != nil {
+					if val, exists := c.funcNeedsEnv[id.Value]; exists {
+						needsEnv = val
+					}
+				}
+				if needsEnv {
+					c.usesEnv = true
+					args = append(args, "kamiEnv")
+				}
 				for _, a := range ce.Arguments {
 					args = append(args, c.compileExpression(a))
 				}
@@ -978,6 +1017,7 @@ func (c *compiler) compileExpression(expr core.Expression) string {
 
 func (c *compiler) compileStringLiteral(s *core.StringLiteral) string {
 	if strings.Contains(s.Value, "$") {
+		c.usesEnv = true
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.ExpandStr(%q, kamiEnv)", s.Value)
 	}
@@ -1011,6 +1051,7 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 		return fmt.Sprintf("kamiFunc_%s", name)
 	}
 	// Auto-declare from env lookup — use parent types if available for closure capture
+	c.usesEnv = true
 	c.addImport("kamishell/recompiler", "")
 	varType := goAny
 	if c.parentTypes != nil {
@@ -1192,7 +1233,16 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 		if c.knownFuncs != nil && c.knownFuncs[name] {
 			c.addImport("kamishell/recompiler", "")
 			var args []string
-			args = append(args, "kamiEnv")
+			needsEnv := true
+			if c.funcNeedsEnv != nil {
+				if val, exists := c.funcNeedsEnv[name]; exists {
+					needsEnv = val
+				}
+			}
+			if needsEnv {
+				c.usesEnv = true
+				args = append(args, "kamiEnv")
+			}
 			for _, a := range e.Arguments {
 				args = append(args, c.compileExpression(a))
 			}
@@ -1207,6 +1257,7 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 	for _, a := range e.Arguments {
 		args = append(args, c.compileExpression(a))
 	}
+	c.usesEnv = true
 	return fmt.Sprintf("recompiler.CallFunc(%s, kamiEnv, %s)", fn, strings.Join(args, ", "))
 }
 
@@ -1218,6 +1269,7 @@ func (c *compiler) compileMemberExpression(e *core.MemberExpression) string {
 	if id, ok := e.Object.(*core.Identifier); ok {
 		switch id.Value {
 		case "env":
+			c.usesEnv = true
 			return fmt.Sprintf("kamiEnv.GetStr(%q)", prop)
 		case "param":
 			return fmt.Sprintf("recompiler.ToStr(paramGet(%q))", prop)
@@ -1273,6 +1325,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		arrayTypes:     copyMap(c.arrayTypes),
 		envSync:        c.envSync,
 		loopDepth:      c.loopDepth,
+		funcNeedsEnv:   c.funcNeedsEnv,
 	}
 
 	// Register parameters as known variables with 'any' type (matches closure signature)
@@ -1303,6 +1356,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 }
 
 func (c *compiler) compileCommandStatement(s *core.CommandStatement) {
+	c.usesEnv = true
 	name := s.Name
 
 	// Merge adjacent tokens that form flags: "-la" → single arg, "--verbose" → single arg
@@ -1475,6 +1529,7 @@ func (c *compiler) commandArgToString(expr core.Expression) string {
 }
 
 func (c *compiler) compilePipeStatement(s *core.PipeStatement) {
+	c.usesEnv = true
 	c.addImport("io", "")
 	c.addImport("sync", "")
 
@@ -1570,6 +1625,7 @@ func (c *compiler) compilePipeStatement(s *core.PipeStatement) {
 }
 
 func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
+	c.usesEnv = true
 	c.addImport("os", "")
 	c.addImport("kamishell/recompiler", "")
 	c.addImport("kamishell/builtin", "")
@@ -1628,6 +1684,7 @@ func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
 }
 
 func (c *compiler) compilePipeWithOutput(ps *core.PipeStatement, output string) {
+	c.usesEnv = true
 	cmds := ps.Commands
 	n := len(cmds)
 	if n <= 1 {
@@ -1858,6 +1915,7 @@ func (c *compiler) compileMethodCallBlockStatement(s *core.MethodCallBlockStatem
 }
 
 func (c *compiler) compileExecStatement(s *core.ExecStatement) {
+	c.usesEnv = true
 	c.addImport("os", "")
 	c.addImport("strings", "")
 	c.addImport("os/exec", "")
@@ -1910,13 +1968,12 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		c.funcReturnList[funcName] = []goType{goAny}
 	}
 
-	var params []string
-	params = append(params, "kamiEnv *recompiler.Env")
+	// Build user parameter list (without kamiEnv — added after body analysis)
+	var userParams []string
 	for _, p := range s.Parameters {
 		goType := c.kamiTypeToGo(p.TypeName)
-		params = append(params, fmt.Sprintf("%s %s", p.Name, goType))
+		userParams = append(userParams, fmt.Sprintf("%s %s", p.Name, goType))
 	}
-	paramStr := strings.Join(params, ", ")
 
 	// Determine return type from declaration
 	returnType := "any"
@@ -1942,6 +1999,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		parentTypes:    c.symbols,
 		loopDepth:      0,
 		indentLv:       1,
+		funcNeedsEnv:   c.funcNeedsEnv,
 	}
 	// Register parameters with their types so they won't be re-declared
 	for _, p := range s.Parameters {
@@ -1988,6 +2046,20 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		}
 	}
 
+	// Build full parameter list — conditionally add kamiEnv based on body usage
+	var params []string
+	if c.funcNeedsEnv == nil {
+		c.funcNeedsEnv = make(map[string]bool)
+	}
+	if sub.usesEnv {
+		params = append(params, "kamiEnv *recompiler.Env")
+		c.funcNeedsEnv[funcName] = true
+	} else {
+		c.funcNeedsEnv[funcName] = false
+	}
+	params = append(params, userParams...)
+	paramStr := strings.Join(params, ", ")
+
 	// Generate function definition
 	var fd strings.Builder
 	fd.WriteString(fmt.Sprintf("func kamiFunc_%s(%s) %s {\n", funcName, paramStr, returnType))
@@ -1996,6 +2068,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	fd.WriteString("}\n")
 
 	// Register in main env so builtins/commands can find it
+	c.usesEnv = true
 	c.addImport("kamishell/recompiler", "")
 	c.line("kamiEnv.SetString(%q, %q)", funcName, "func")
 
