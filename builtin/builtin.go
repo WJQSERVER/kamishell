@@ -14,6 +14,13 @@ type Environment interface {
 	Get(name string) (any, bool)
 }
 
+// StringEnvironment is an optimized interface for string-only access.
+// Implementations can avoid any boxing overhead by storing strings directly.
+type StringEnvironment interface {
+	SetString(name string, val string)
+	GetString(name string) (string, bool)
+}
+
 type Inspector interface {
 	Inspect() string
 }

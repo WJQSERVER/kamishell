@@ -97,8 +97,8 @@ func getX() int {
 print getX()`
 	src := compileSource(t, source)
 
-	// x is captured by closure getX, so it MUST have kamiEnv.Set("x", x)
-	assertSourceContains(t, src, `kamiEnv.Set("x", x)`)
+	// x is captured by closure getX, so it MUST have kamiEnv.SetString("x", ...)
+	assertSourceContains(t, src, `kamiEnv.SetString("x", strconv.FormatInt(x, 10))`)
 
 	// End-to-end: should print "10"
 	out := compileRun(t, "bug2", source)
@@ -125,7 +125,7 @@ print compute(5)`
 
 	// The function body should contain the assignment
 	assertSourceContains(t, src, "var result int64")
-	// After fix: "result" is not referenced via $var, so kamiEnv.Set("result", result)
+	// After fix: "result" is not referenced via $var, so kamiEnv.SetString("result", result)
 	// should NOT appear in the function body.
 	// Current behavior: it DOES appear (because envSync is nil in sub-compiler)
 	// This test documents the expected behavior.
@@ -244,7 +244,7 @@ exec "echo $msg"`
 	src := compileSource(t, source)
 
 	// msg is used in exec "echo $msg" via $var, so it needs env sync
-	assertSourceContains(t, src, `kamiEnv.Set("msg", msg)`)
+	assertSourceContains(t, src, `kamiEnv.SetString("msg", msg)`)
 }
 
 // ============================================================
@@ -345,7 +345,7 @@ func TestBug11_ConsistentEnvSyncCheck(t *testing.T) {
 	source1 := `var name string = "kami"
 print "hello $name"`
 	src1 := compileSource(t, source1)
-	assertSourceContains(t, src1, `kamiEnv.Set("name", name)`)
+	assertSourceContains(t, src1, `kamiEnv.SetString("name", name)`)
 
 	// Var without $var reference should NOT sync (after fix)
 	source2 := `var count int = 42
@@ -389,7 +389,7 @@ print "value is $msg"`
 	src := compileSource(t, source)
 
 	// msg is used via $var interpolation in print statement
-	assertSourceContains(t, src, `kamiEnv.Set("msg", msg)`)
+	assertSourceContains(t, src, `kamiEnv.SetString("msg", msg)`)
 }
 
 // ============================================================
@@ -405,15 +405,15 @@ print sum`
 		src := compileSource(t, source)
 		// No $var reference, no builtin access, no closure capture
 		// So NO kamiEnv.Set should appear
-		assertSourceNotContains(t, src, `kamiEnv.Set("sum"`)
-		assertSourceNotContains(t, src, `kamiEnv.Set("i"`)
+		assertSourceNotContains(t, src, `kamiEnv.SetString("sum"`)
+		assertSourceNotContains(t, src, `kamiEnv.SetString("i"`)
 	})
 
 	t.Run("string interpolation needs env sync", func(t *testing.T) {
 		source := `name := "kami"
 print "hello $name"`
 		src := compileSource(t, source)
-		assertSourceContains(t, src, `kamiEnv.Set("name", name)`)
+		assertSourceContains(t, src, `kamiEnv.SetString("name", name)`)
 	})
 
 	t.Run("closure capture needs env sync", func(t *testing.T) {
@@ -421,7 +421,7 @@ print "hello $name"`
 func getX() int { return x }
 print getX()`
 		src := compileSource(t, source)
-		assertSourceContains(t, src, `kamiEnv.Set("x", x)`)
+		assertSourceContains(t, src, `kamiEnv.SetString("x", strconv.FormatInt(x, 10))`)
 	})
 
 	t.Run("function param no env sync", func(t *testing.T) {
@@ -432,7 +432,7 @@ print getX()`
 print double(5)`
 		_ = compileSource(t, source)
 		// Inside the function, "result" is local and not $var referenced
-		// So no kamiEnv.Set("result") should appear in the function body
+		// So no kamiEnv.SetString("result") should appear in the function body
 		// (Currently it does because sub-compiler envSync is nil)
 	})
 
@@ -444,9 +444,9 @@ for i := 0; i < 5; i = i + 1 {
 }
 print total`
 		src := compileSource(t, source)
-		assertSourceNotContains(t, src, `kamiEnv.Set("arr"`)
-		assertSourceNotContains(t, src, `kamiEnv.Set("total"`)
-		assertSourceNotContains(t, src, `kamiEnv.Set("i"`)
+		assertSourceNotContains(t, src, `kamiEnv.SetString("arr"`)
+		assertSourceNotContains(t, src, `kamiEnv.SetString("total"`)
+		assertSourceNotContains(t, src, `kamiEnv.SetString("i"`)
 	})
 }
 

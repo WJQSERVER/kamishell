@@ -12,12 +12,12 @@ import (
 )
 
 type Env struct {
-	store map[string]any
+	store map[string]string // primary store: strings only, no any boxing
 	mu    sync.RWMutex
 }
 
 func NewEnv() *Env {
-	e := &Env{store: make(map[string]any)}
+	e := &Env{store: make(map[string]string)}
 	for _, env := range os.Environ() {
 		k, v, _ := strings.Cut(env, "=")
 		e.store[k] = v
@@ -25,51 +25,48 @@ func NewEnv() *Env {
 	return e
 }
 
-func (e *Env) Set(name string, val any) {
+// SetString stores a string value directly (no boxing).
+func (e *Env) SetString(name string, val string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.store[name] = val
 }
 
-func (e *Env) Get(name string) (any, bool) {
+// GetString retrieves a string value directly (no boxing).
+func (e *Env) GetString(name string) (string, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	v, ok := e.store[name]
 	return v, ok
 }
 
-func (e *Env) SetInt(name string, v int64)    { e.Set(name, v) }
-func (e *Env) SetFloat(name string, v float64) { e.Set(name, v) }
-func (e *Env) SetStr(name string, v string)    { e.Set(name, v) }
-func (e *Env) SetBool(name string, v bool)     { e.Set(name, v) }
+// Set implements builtin.Environment — converts any to string via ToStr.
+func (e *Env) Set(name string, val any) {
+	e.SetString(name, ToStr(val))
+}
+
+// Get implements builtin.Environment — returns string as any.
+func (e *Env) Get(name string) (any, bool) {
+	return e.GetString(name)
+}
+
+func (e *Env) SetInt(name string, v int64)    { e.SetString(name, strconv.FormatInt(v, 10)) }
+func (e *Env) SetFloat(name string, v float64) { e.SetString(name, strconv.FormatFloat(v, 'f', -1, 64)) }
+func (e *Env) SetStr(name string, v string)    { e.SetString(name, v) }
+func (e *Env) SetBool(name string, v bool)     { e.SetString(name, strconv.FormatBool(v)) }
 
 func (e *Env) GetInt(name string) int64 {
-	v, ok := e.Get(name)
+	v, ok := e.GetString(name)
 	if !ok {
 		return 0
 	}
-	switch x := v.(type) {
-	case int64:
-		return x
-	case string:
-		n, _ := strconv.ParseInt(x, 10, 64)
-		return n
-	}
-	return 0
+	n, _ := strconv.ParseInt(v, 10, 64)
+	return n
 }
 
 func (e *Env) GetStr(name string) string {
-	v, ok := e.Get(name)
-	if !ok {
-		return ""
-	}
-	switch x := v.(type) {
-	case string:
-		return x
-	case fmt.Stringer:
-		return x.String()
-	}
-	return fmt.Sprint(v)
+	v, _ := e.GetString(name)
+	return v
 }
 
 // Task represents a goroutine future result.

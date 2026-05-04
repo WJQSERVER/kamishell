@@ -31,20 +31,28 @@ func Type(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 		found := false
 
 		// 1. Check functions and other environment variables
-		val, ok := env.Get(name)
-		if ok {
-			v := reflect.ValueOf(val)
-			method := v.MethodByName("Type")
-			if method.IsValid() {
-				results := method.Call(nil)
-				if len(results) > 0 {
-					typeStr := fmt.Sprintf("%v", results[0].Interface())
-					if typeStr == "FUNCTION" {
-						fmt.Fprintf(stdout, "%s is a function\n", name)
-						found = true
-					} else {
-						fmt.Fprintf(stdout, "%s is a variable of type %s\n", name, typeStr)
-						found = true
+		if se, isStr := env.(StringEnvironment); isStr {
+			// StringEnvironment: only strings are stored, report as variable
+			if _, ok := se.GetString(name); ok {
+				fmt.Fprintf(stdout, "%s is a variable\n", name)
+				found = true
+			}
+		} else {
+			val, ok := env.Get(name)
+			if ok {
+				v := reflect.ValueOf(val)
+				method := v.MethodByName("Type")
+				if method.IsValid() {
+					results := method.Call(nil)
+					if len(results) > 0 {
+						typeStr := fmt.Sprintf("%v", results[0].Interface())
+						if typeStr == "FUNCTION" {
+							fmt.Fprintf(stdout, "%s is a function\n", name)
+							found = true
+						} else {
+							fmt.Fprintf(stdout, "%s is a variable of type %s\n", name, typeStr)
+							found = true
+						}
 					}
 				}
 			}

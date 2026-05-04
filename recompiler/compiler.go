@@ -102,6 +102,31 @@ func (c *compiler) hasVar(name string) bool {
 	return ok
 }
 
+// genEnvSync generates a SetString call to sync a variable to kamiEnv.
+// Converts the Go value to string based on its type.
+func (c *compiler) genEnvSync(name string) {
+	varType, ok := c.symbols[name]
+	if !ok {
+		varType = goAny
+	}
+	switch varType {
+	case goInt:
+		c.addImport("strconv", "")
+		c.line("kamiEnv.SetString(%q, strconv.FormatInt(%s, 10))", name, name)
+	case goFloat:
+		c.addImport("strconv", "")
+		c.line("kamiEnv.SetString(%q, strconv.FormatFloat(%s, 'f', -1, 64))", name, name)
+	case goBool:
+		c.addImport("strconv", "")
+		c.line("kamiEnv.SetString(%q, strconv.FormatBool(%s))", name, name)
+	case goStr:
+		c.line("kamiEnv.SetString(%q, %s)", name, name)
+	default:
+		c.addImport("kamishell/recompiler", "")
+		c.line("kamiEnv.SetString(%q, recompiler.ToStr(%s))", name, name)
+	}
+}
+
 // analyzeEnvDependencies walks the AST and determines which variables need 
 // environment synchronization (kamiEnv.Set). Variables need sync if they are:
 // 1. Referenced via $var in string interpolation
@@ -563,7 +588,8 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 					c.declareVar(name, goAny)
 					c.line("var %s any = %s", name, tmpVars[i])
 					if c.envSync == nil || c.envSync[name] {
-						c.line("kamiEnv.Set(%q, %s)", name, name)
+						c.addImport("kamishell/recompiler", "")
+						c.line("kamiEnv.SetString(%q, recompiler.ToStr(%s))", name, name)
 					}
 				}
 				return
@@ -582,7 +608,8 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 		c.declareVar(s.Names[0], goAny)
 		c.line("var %s any = %s", s.Names[0], val)
 		if c.envSync == nil || c.envSync[s.Names[0]] {
-			c.line("kamiEnv.Set(%q, %s)", s.Names[0], s.Names[0])
+			c.addImport("kamishell/recompiler", "")
+			c.line("kamiEnv.SetString(%q, recompiler.ToStr(%s))", s.Names[0], s.Names[0])
 		}
 		return
 	}
@@ -623,9 +650,8 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 	}
 
 	// Only sync to env if this variable is referenced via $var or by builtins
-	// If envSync is nil (analysis not performed), sync everything for safety
 	if c.envSync == nil || c.envSync[name] {
-		c.line("kamiEnv.Set(%q, %s)", name, name)
+		c.genEnvSync(name)
 	}
 }
 
@@ -639,7 +665,7 @@ func (c *compiler) compileVarStatement(s *core.VarStatement) {
 		c.line("var %s %s", s.Name, typ)
 	}
 	if c.envSync == nil || c.envSync[s.Name] {
-		c.line("kamiEnv.Set(%q, %s)", s.Name, s.Name)
+		c.genEnvSync(s.Name)
 	}
 }
 
@@ -780,7 +806,15 @@ func (c *compiler) capturePost(s core.Statement) string {
 		val := c.compileExpression(a.Value)
 		buf.WriteString(fmt.Sprintf("%s = %s", a.Names[0], val))
 		if c.hasVar(a.Names[0]) && (c.envSync == nil || c.envSync[a.Names[0]]) {
-			buf.WriteString(fmt.Sprintf("; kamiEnv.Set(%q, %s)", a.Names[0], a.Names[0]))
+			varType := c.symbols[a.Names[0]]
+			switch varType {
+			case goInt:
+				buf.WriteString(fmt.Sprintf("; kamiEnv.SetString(%q, strconv.FormatInt(%s, 10))", a.Names[0], a.Names[0]))
+			case goStr:
+				buf.WriteString(fmt.Sprintf("; kamiEnv.SetString(%q, %s)", a.Names[0], a.Names[0]))
+			default:
+				buf.WriteString(fmt.Sprintf("; kamiEnv.SetString(%q, recompiler.ToStr(%s))", a.Names[0], a.Names[0]))
+			}
 		}
 	}
 	return buf.String()
@@ -937,14 +971,25 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 		}
 	}
 	c.declareVar(name, varType)
-	if varType != goAny {
-		// Typed closure variable — use type assertion
-		c.line("var %s %s", name, varType)
-		c.line("if v, ok := kamiEnv.Get(%q); ok { %s = v.(%s) }", name, name, varType)
-	} else {
-		// Untyped — assign directly
+	switch varType {
+	case goInt:
+		c.addImport("strconv", "")
+		c.line("var %s int64", name)
+		c.line("if v, ok := kamiEnv.GetString(%q); ok { %s, _ = strconv.ParseInt(v, 10, 64) }", name, name)
+	case goStr:
+		c.line("var %s string", name)
+		c.line("if v, ok := kamiEnv.GetString(%q); ok { %s = v }", name, name)
+	case goFloat:
+		c.addImport("strconv", "")
+		c.line("var %s float64", name)
+		c.line("if v, ok := kamiEnv.GetString(%q); ok { %s, _ = strconv.ParseFloat(v, 64) }", name, name)
+	case goBool:
+		c.addImport("strconv", "")
+		c.line("var %s bool", name)
+		c.line("if v, ok := kamiEnv.GetString(%q); ok { %s, _ = strconv.ParseBool(v) }", name, name)
+	default:
 		c.line("var %s any", name)
-		c.line("if v, ok := kamiEnv.Get(%q); ok { %s = v }", name, name)
+		c.line("if v, ok := kamiEnv.GetString(%q); ok { %s = v }", name, name)
 	}
 	return name
 }
@@ -1230,7 +1275,7 @@ func (c *compiler) compileCommandStatement(s *core.CommandStatement) {
 		c.line("kamiErr = fmt.Errorf(\"%%s exited with code %%d\", %q, exitCode)", name)
 		c.dedent()
 		c.line("}")
-		c.line("kamiEnv.Set(\"err\", kamiErr)")
+		c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
 		c.dedent()
 		c.line("}")
 		return
@@ -1252,7 +1297,7 @@ func (c *compiler) compileCommandStatement(s *core.CommandStatement) {
 	c.line("kamiErr = err")
 	c.dedent()
 	c.line("}")
-	c.line("kamiEnv.Set(\"err\", kamiErr)")
+	c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
 	c.dedent()
 	c.line("}")
 }
@@ -1489,7 +1534,7 @@ func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
 	c.line("if err != nil {")
 	c.indent()
 	c.line("kamiErr = err")
-	c.line("kamiEnv.Set(\"err\", kamiErr)")
+	c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
 	c.line("return")
 	c.dedent()
 	c.line("}")
@@ -1522,7 +1567,7 @@ func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
 		c.compilePipeWithOutput(ps, "f")
 	}
 
-	c.line("kamiEnv.Set(\"err\", kamiErr)")
+	c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
 	c.dedent()
 	c.line("}")
 }
@@ -1775,7 +1820,7 @@ func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 	c.line("if err := c.Run(); err != nil { kamiErr = err }")
 	c.dedent()
 	c.line("}")
-	c.line("kamiEnv.Set(\"err\", kamiErr)")
+	c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
 	c.dedent()
 	c.line("}")
 }
@@ -1884,7 +1929,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 
 	// Register in main env so builtins/commands can find it
 	c.addImport("kamishell/recompiler", "")
-	c.line("kamiEnv.Set(%q, any(kamiFunc_%s))", funcName, funcName)
+	c.line("kamiEnv.SetString(%q, %q)", funcName, "func")
 
 	// Store func def
 	c.funcDefs = append(c.funcDefs, fd.String())
