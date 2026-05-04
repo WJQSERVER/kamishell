@@ -52,6 +52,7 @@ type compiler struct {
 	arrayTypes     map[string]goType
 	envSync        map[string]bool
 	parentTypes    map[string]goType
+	funcLiteralVars map[string]*core.FunctionLiteral // variables assigned function literals
 	loopDepth      int
 	indentLv       int
 	usesErr        bool
@@ -641,10 +642,14 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 		for _, p := range fl.Parameters {
 			paramTypes = append(paramTypes, string(c.kamiTypeToGo(p.TypeName)))
 		}
-		// Closure params are always 'any' for CallFunc compatibility
-		// but the variable type can be more specific
+		// Use Go type inference — the function literal has a concrete type
 		c.declareVar(s.Names[0], goAny)
-		c.line("var %s any = %s", s.Names[0], val)
+		// Track as function literal for direct call optimization
+		if c.funcLiteralVars == nil {
+			c.funcLiteralVars = make(map[string]*core.FunctionLiteral)
+		}
+		c.funcLiteralVars[s.Names[0]] = fl
+		c.line("var %s = %s", s.Names[0], val)
 		if c.envSync == nil || c.envSync[s.Names[0]] {
 			c.addImport("kamishell/recompiler", "")
 			c.line("kamiEnv.SetString(%q, recompiler.ToStr(%s))", s.Names[0], s.Names[0])
@@ -1250,6 +1255,18 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 		}
 	}
 
+	// Check if this is a call to a function literal variable — generate direct call
+	if id, ok := e.Function.(*core.Identifier); ok && c.funcLiteralVars != nil {
+		if _, exists := c.funcLiteralVars[id.Value]; exists {
+			// Generate direct call with typed arguments
+			var args []string
+			for _, a := range e.Arguments {
+				args = append(args, c.compileExpression(a))
+			}
+			return fmt.Sprintf("%s(%s)", id.Value, strings.Join(args, ", "))
+		}
+	}
+
 	// Generic call: function loaded from env as any
 	c.addImport("kamishell/recompiler", "")
 	fn := c.compileExpression(e.Function)
@@ -1345,10 +1362,29 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 	}
 	inlineParamStr := strings.Join(inlineParams, ", ")
 
+	// Determine return type from declaration
+	returnType := "any"
+	if len(f.ReturnTypes) == 1 {
+		returnType = string(c.kamiTypeToGo(f.ReturnTypes[0]))
+	}
+
 	var fd strings.Builder
-	fd.WriteString(fmt.Sprintf("func(%s) any {\n", inlineParamStr))
+	fd.WriteString(fmt.Sprintf("func(%s) %s {\n", inlineParamStr, returnType))
 	fd.WriteString(sub.buf.String())
-	fd.WriteString("return nil\n")
+
+	// Add default return if body doesn't end with return
+	bodyStr := sub.buf.String()
+	lines := strings.Split(strings.TrimRight(bodyStr, "\n"), "\n")
+	hasTrailingReturn := false
+	if len(lines) > 0 {
+		lastLine := strings.TrimSpace(lines[len(lines)-1])
+		if strings.HasPrefix(lastLine, "return ") || lastLine == "return" {
+			hasTrailingReturn = true
+		}
+	}
+	if !hasTrailingReturn {
+		fd.WriteString(fmt.Sprintf("return %s\n", c.kamiTypeToGo(f.ReturnTypes[0]).zero()))
+	}
 	fd.WriteString("}")
 
 	return fd.String()
