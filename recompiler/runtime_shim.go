@@ -315,7 +315,7 @@ func GreaterEq(a, b any) bool {
 // ToStr converts any value to its string representation.
 func ToStr(v any) string {
 	if v == nil {
-		return ""
+		return "nil"
 	}
 	switch x := v.(type) {
 	case string:
@@ -431,6 +431,17 @@ func WaitAllTimeout(secs any) {
 // MemberGet gets a member value from an object.
 func MemberGet(obj any, prop string) any {
 	return nil
+}
+
+// NewError creates a new error value (for the error() native function).
+type kamiError struct {
+	message string
+}
+
+func (e *kamiError) Error() string { return e.message }
+
+func NewError(msg string) error {
+	return &kamiError{message: msg}
 }
 
 // CallFunc calls a function value with the given arguments.

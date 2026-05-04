@@ -299,10 +299,17 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 					args = append(args, c.compileExpression(a))
 				}
 				callStr := fmt.Sprintf("kamiFunc_%s(%s)", id.Value, strings.Join(args, ", "))
-				c.line("_ = %s // multi-return unpacking TODO", callStr)
-				for _, name := range s.Names {
+				// Generate temp vars to capture return values
+				tmpVars := make([]string, len(s.Names))
+				for i, name := range s.Names {
+					tmpVars[i] = fmt.Sprintf("kami_tmp_%s_%d", name, i)
+				}
+				c.line("%s := %s", strings.Join(tmpVars, ", "), callStr)
+				// Assign temp vars to named vars
+				for i, name := range s.Names {
 					c.declareVar(name, goAny)
-					c.line("var %s any", name)
+					c.line("var %s any = %s", name, tmpVars[i])
+					c.line("kamiEnv.Set(%q, %s)", name, name)
 				}
 				return
 			}
@@ -607,9 +614,6 @@ func (c *compiler) compileStringLiteral(s *core.StringLiteral) string {
 
 func (c *compiler) compileIdentifier(id *core.Identifier) string {
 	name := id.Value
-	if name == "err" {
-		return "kamiErr"
-	}
 	if name == "nil" {
 		return "nil"
 	}
@@ -619,8 +623,13 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 	if name == "false" {
 		return "false"
 	}
+	// Check if it's a declared local variable first
 	if c.hasVar(name) {
 		return name
+	}
+	// Special: 'err' maps to kamiErr for auto error tracking
+	if name == "err" {
+		return "kamiErr"
 	}
 	// Known user-defined functions: reference the Go function directly
 	if c.knownFuncs != nil && c.knownFuncs[name] {
@@ -747,6 +756,13 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 				val := c.compileExpression(e.Arguments[1])
 				return fmt.Sprintf("recompiler.ArrayPush(%s, %s)", arr, val)
 			}
+		case "error":
+			c.addImport("kamishell/recompiler", "")
+			if len(e.Arguments) > 0 {
+				arg := c.compileExpression(e.Arguments[0])
+				return fmt.Sprintf("recompiler.NewError(recompiler.ToStr(%s))", arg)
+			}
+			return "recompiler.NewError(\"\")"
 		}
 
 		// Known user-defined functions: call directly
@@ -1410,6 +1426,10 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	for _, p := range s.Parameters {
 		sub.declareVar(p.Name, c.kamiTypeToGo(p.TypeName))
 	}
+
+	// Declare kamiErr in function body
+	sub.line("var kamiErr error")
+	sub.line("_ = kamiErr")
 
 	// Compile body statements
 	for _, st := range s.Body.Statements {
