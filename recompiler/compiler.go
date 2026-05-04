@@ -47,8 +47,10 @@ type compiler struct {
 	funcDefs    []string
 	knownFuncs  map[string]bool
 	funcReturns map[string]goType // function name -> return type
+	arrayTypes  map[string]goType // variable name -> element type (for typed arrays)
 	loopDepth   int
 	indentLv    int
+	usesErr     bool // whether current function uses 'err' variable
 	err         error
 	hasErr      bool
 }
@@ -109,7 +111,6 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 	comp.line("var kamiErr error")
 	comp.line("kamiEnv := recompiler.NewEnv()")
 	comp.addImport("kamishell/recompiler", "")
-	// Suppress unused errors if no commands run
 	comp.line("_ = kamiErr")
 	comp.line("_ = kamiEnv")
 
@@ -282,6 +283,14 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 		arr := c.compileExpression(idxExpr.Left)
 		idx := c.compileExpression(idxExpr.Index)
 		val := c.compileExpression(s.Value)
+		// Inline typed array assignment
+		if arrType, ok := c.inferArrayType(idxExpr.Left); ok {
+			switch arrType {
+			case goInt, goStr, goFloat, goBool:
+				c.line("%s[%s] = %s", arr, idx, val)
+				return
+			}
+		}
 		c.line("%s = recompiler.ArraySet(%s, %s, %s)", arr, arr, idx, val)
 		return
 	}
@@ -331,20 +340,41 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 		return
 	}
 
+	name := s.Names[0]
+
 	if s.Token.Literal == ":=" {
 		// Variable declaration: infer type from expr
 		typ := c.inferGoType(s.Value)
-		c.declareVar(s.Names[0], typ)
-		c.line("var %s %s = %s", s.Names[0], typ, val)
-		c.line("kamiEnv.Set(%q, %s)", s.Names[0], s.Names[0])
+		c.declareVar(name, typ)
+		c.line("var %s %s = %s", name, typ, val)
+
+		// Track array element type for typed arrays
+		if al, ok := s.Value.(*core.ArrayLiteral); ok && len(al.Elements) > 0 {
+			elemType := c.inferGoType(al.Elements[0])
+			if c.arrayTypes == nil {
+				c.arrayTypes = make(map[string]goType)
+			}
+			c.arrayTypes[name] = elemType
+			// Update variable type to typed array
+			switch elemType {
+			case goInt:
+				c.declareVar(name, "[]int64")
+			case goStr:
+				c.declareVar(name, "[]string")
+			case goFloat:
+				c.declareVar(name, "[]float64")
+			case goBool:
+				c.declareVar(name, "[]bool")
+			}
+		}
 	} else {
 		// Reassignment
-		if !c.hasVar(s.Names[0]) {
-			c.declareVar(s.Names[0], goAny)
+		if !c.hasVar(name) {
+			c.declareVar(name, goAny)
 		}
-		c.line("%s = %s", s.Names[0], val)
-		c.line("kamiEnv.Set(%q, %s)", s.Names[0], s.Names[0])
+		c.line("%s = %s", name, val)
 	}
+	c.line("kamiEnv.Set(%q, %s)", name, name)
 }
 
 func (c *compiler) compileVarStatement(s *core.VarStatement) {
@@ -590,6 +620,13 @@ func (c *compiler) compileExpression(expr core.Expression) string {
 	case *core.IndexExpression:
 		arr := c.compileExpression(e.Left)
 		idx := c.compileExpression(e.Index)
+		// Inline array access for known typed arrays
+		if arrType, ok := c.inferArrayType(e.Left); ok {
+			switch arrType {
+			case goInt, goStr, goFloat, goBool:
+				return fmt.Sprintf("%s[%s]", arr, idx)
+			}
+		}
 		return fmt.Sprintf("recompiler.ArrayGet(%s, %s)", arr, idx)
 	case *core.ArrayLiteral:
 		return c.compileArrayLiteral(e)
@@ -630,6 +667,7 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 	}
 	// Special: 'err' maps to kamiErr for auto error tracking
 	if name == "err" {
+		c.usesErr = true
 		return "kamiErr"
 	}
 	// Known user-defined functions: reference the Go function directly
@@ -809,9 +847,33 @@ func (c *compiler) compileArrayLiteral(a *core.ArrayLiteral) string {
 	if len(a.Elements) == 0 {
 		return "[]any{}"
 	}
+	// Infer element type from first element
+	elemType := c.inferGoType(a.Elements[0])
+	allSameType := true
+	for _, el := range a.Elements[1:] {
+		if c.inferGoType(el) != elemType {
+			allSameType = false
+			break
+		}
+	}
+
 	var elems []string
 	for _, el := range a.Elements {
 		elems = append(elems, c.compileExpression(el))
+	}
+
+	// Generate typed array if all elements are the same type
+	if allSameType && elemType == goInt {
+		return fmt.Sprintf("[]int64{%s}", strings.Join(elems, ", "))
+	}
+	if allSameType && elemType == goStr {
+		return fmt.Sprintf("[]string{%s}", strings.Join(elems, ", "))
+	}
+	if allSameType && elemType == goFloat {
+		return fmt.Sprintf("[]float64{%s}", strings.Join(elems, ", "))
+	}
+	if allSameType && elemType == goBool {
+		return fmt.Sprintf("[]bool{%s}", strings.Join(elems, ", "))
 	}
 	return fmt.Sprintf("[]any{%s}", strings.Join(elems, ", "))
 }
@@ -1431,6 +1493,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		imports:     c.imports,
 		knownFuncs:  c.knownFuncs,
 		funcReturns: c.funcReturns,
+		arrayTypes:  make(map[string]goType),
 		loopDepth:   0,
 		indentLv:    1,
 	}
@@ -1439,29 +1502,47 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		sub.declareVar(p.Name, c.kamiTypeToGo(p.TypeName))
 	}
 
-	// Declare kamiErr in function body
-	sub.line("var kamiErr error")
-	sub.line("_ = kamiErr")
-
 	// Compile body statements
 	for _, st := range s.Body.Statements {
 		sub.compileStatement(st)
 	}
-	if len(s.ReturnTypes) == 0 {
-		sub.line("return nil")
-	} else if len(s.ReturnTypes) == 1 {
-		sub.line("return %s", c.kamiTypeToGo(s.ReturnTypes[0]).zero())
-	} else {
-		zeros := make([]string, len(s.ReturnTypes))
-		for i, rt := range s.ReturnTypes {
-			zeros[i] = c.kamiTypeToGo(rt).zero()
+
+	// Conditionally declare kamiErr (only if 'err' is used in the function)
+	kamiErrDecl := ""
+	if sub.usesErr {
+		kamiErrDecl = "var kamiErr error\n\t_ = kamiErr\n"
+	}
+
+	// Check if body ends with a return statement (dead code elimination)
+	bodyStr := sub.buf.String()
+	hasTrailingReturn := false
+	lines := strings.Split(strings.TrimRight(bodyStr, "\n"), "\n")
+	if len(lines) > 0 {
+		lastLine := strings.TrimSpace(lines[len(lines)-1])
+		if strings.HasPrefix(lastLine, "return ") || lastLine == "return" || strings.HasPrefix(lastLine, "return\t") {
+			hasTrailingReturn = true
 		}
-		sub.line("return %s", strings.Join(zeros, ", "))
+	}
+
+	if !hasTrailingReturn {
+		// Add default return only if body doesn't end with return
+		if len(s.ReturnTypes) == 0 {
+			sub.line("return nil")
+		} else if len(s.ReturnTypes) == 1 {
+			sub.line("return %s", c.kamiTypeToGo(s.ReturnTypes[0]).zero())
+		} else {
+			zeros := make([]string, len(s.ReturnTypes))
+			for i, rt := range s.ReturnTypes {
+				zeros[i] = c.kamiTypeToGo(rt).zero()
+			}
+			sub.line("return %s", strings.Join(zeros, ", "))
+		}
 	}
 
 	// Generate function definition
 	var fd strings.Builder
 	fd.WriteString(fmt.Sprintf("func kamiFunc_%s(%s) %s {\n", funcName, paramStr, returnType))
+	fd.WriteString(kamiErrDecl)
 	fd.WriteString(sub.buf.String())
 	fd.WriteString("}\n")
 
@@ -1518,6 +1599,27 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 		if len(e.Elements) == 0 {
 			return goArrAny
 		}
+		// Infer typed array if all elements have the same type
+		elemType := c.inferGoType(e.Elements[0])
+		allSame := true
+		for _, el := range e.Elements[1:] {
+			if c.inferGoType(el) != elemType {
+				allSame = false
+				break
+			}
+		}
+		if allSame {
+			switch elemType {
+			case goInt:
+				return "[]int64"
+			case goStr:
+				return "[]string"
+			case goFloat:
+				return "[]float64"
+			case goBool:
+				return "[]bool"
+			}
+		}
 		return goArrAny
 	case *core.InfixExpression:
 		if e.Operator == "+" || e.Operator == "-" || e.Operator == "*" || e.Operator == "/" {
@@ -1541,6 +1643,12 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 			}
 		}
 		return goAny
+	case *core.IndexExpression:
+		// Infer element type from array
+		if elemType, ok := c.inferArrayType(e.Left); ok {
+			return elemType
+		}
+		return goAny
 	case *core.Identifier:
 		if e.Value == "nil" || e.Value == "true" || e.Value == "false" {
 			if e.Value == "true" || e.Value == "false" {
@@ -1555,6 +1663,46 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 		return goAny
 	}
 	return goAny
+}
+
+// inferArrayType returns the element type of an array expression if known.
+func (c *compiler) inferArrayType(expr core.Expression) (goType, bool) {
+	switch e := expr.(type) {
+	case *core.ArrayLiteral:
+		if len(e.Elements) == 0 {
+			return goAny, false
+		}
+		elemType := c.inferGoType(e.Elements[0])
+		// Check all elements have the same type
+		for _, el := range e.Elements[1:] {
+			if c.inferGoType(el) != elemType {
+				return goAny, false
+			}
+		}
+		return elemType, true
+	case *core.Identifier:
+		// Check variable type directly
+		if t, ok := c.getVarType(e.Value); ok {
+			switch t {
+			case "[]int64":
+				return goInt, true
+			case "[]string":
+				return goStr, true
+			case "[]float64":
+				return goFloat, true
+			case "[]bool":
+				return goBool, true
+			case goArrAny:
+				// Check arrayTypes map for more specific type
+				if c.arrayTypes != nil {
+					if elemType, exists := c.arrayTypes[e.Value]; exists {
+						return elemType, true
+					}
+				}
+			}
+		}
+	}
+	return goAny, false
 }
 
 func (c *compiler) isType(expr core.Expression, t goType) bool {
@@ -1577,6 +1725,8 @@ func (c *compiler) isType(expr core.Expression, t goType) bool {
 	case *core.CallExpression:
 		return c.inferGoType(expr) == t
 	case *core.InfixExpression:
+		return c.inferGoType(expr) == t
+	case *core.IndexExpression:
 		return c.inferGoType(expr) == t
 	}
 	return false
