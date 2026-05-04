@@ -45,6 +45,7 @@ type Environment struct {
 	store        map[string]Object
 	refStore     map[string]*EnvEntry // pointer reference storage (lazy)
 	types        map[string]string
+	constants    map[string]bool // constant names (from func declarations)
 	outer        *Environment
 	packageStore map[string]map[string]string
 }
@@ -173,6 +174,23 @@ func (e *Environment) ResolveForAssign(name string) (*Environment, string, bool)
 		}
 	}
 	return nil, "", false
+}
+
+// MarkConstant marks a name as a constant (from func declarations).
+// Constants cannot be reassigned via =.
+func (e *Environment) MarkConstant(name string) {
+	if e.constants == nil {
+		e.constants = make(map[string]bool)
+	}
+	e.constants[name] = true
+}
+
+// IsConstant checks if a name is a constant.
+func (e *Environment) IsConstant(name string) bool {
+	if e.constants == nil {
+		return false
+	}
+	return e.constants[name]
 }
 
 func NewEmptyEnvironment() *Environment {

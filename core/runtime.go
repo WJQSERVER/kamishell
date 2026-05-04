@@ -645,7 +645,9 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 				elem := tuple.Elements[i]
 				if node.Token.Literal == ":=" {
 					typeName := ""
-					if shouldTrackType(string(elem.Type())) {
+					if fn, ok := elem.(*Function); ok {
+						typeName = buildFunctionSignature(fn)
+					} else if shouldTrackType(string(elem.Type())) {
 						typeName = string(elem.Type())
 					}
 					env.SetWithType(name, elem, typeName)
@@ -670,11 +672,25 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 				val = &Array{ElemType: arr.ElemType, Elements: copied}
 			}
 			typeName := ""
-			if shouldTrackType(string(val.Type())) {
+			// For function literals, store the full signature as the type
+			if fn, ok := val.(*Function); ok {
+				typeName = buildFunctionSignature(fn)
+			} else if shouldTrackType(string(val.Type())) {
 				typeName = string(val.Type())
 			}
 			env.SetWithType(name, val, typeName)
 		} else {
+			// Check if target is a constant (from func declaration)
+			if env.IsConstant(name) {
+				return &Error{Message: fmt.Sprintf("cannot assign to constant %s", name)}
+			}
+			// Also check outer scopes for constants
+			for scope := env.outer; scope != nil; scope = scope.outer {
+				if scope.IsConstant(name) {
+					return &Error{Message: fmt.Sprintf("cannot assign to constant %s", name)}
+				}
+			}
+
 			// Array value semantics: copy on reassignment too
 			if arr, ok := val.(*Array); ok {
 				copied := make([]Object, len(arr.Elements))
@@ -684,12 +700,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			// Fast path: direct lookup in current scope
 			if _, hasIt := env.store[name]; hasIt {
 				if typeName, hasType := env.types[name]; hasType && typeName != "" {
-					// nil can only be assigned to reference types (FUNCTION, ERROR)
-					if val.Type() == NULL_OBJ {
-						if typeName != string(FUNCTION_OBJ) && typeName != string(ERROR_OBJ) {
-							return &Error{Message: fmt.Sprintf("cannot assign nil to variable of type %s", typeName)}
-						}
-					} else if string(val.Type()) != typeName {
+					if !isTypeCompatible(val, typeName) {
 						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), typeName)}
 					}
 				}
@@ -701,12 +712,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			} else {
 				scope, expectedType, ok := env.ResolveForAssign(name)
 				if ok && expectedType != "" {
-					// nil can only be assigned to reference types (FUNCTION, ERROR)
-					if val.Type() == NULL_OBJ {
-						if expectedType != string(FUNCTION_OBJ) && expectedType != string(ERROR_OBJ) {
-							return &Error{Message: fmt.Sprintf("cannot assign nil to variable of type %s", expectedType)}
-						}
-					} else if string(val.Type()) != expectedType {
+					if !isTypeCompatible(val, expectedType) {
 						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), expectedType)}
 					}
 				}
@@ -2062,11 +2068,14 @@ func evalLogicalStatement(ls *LogicalStatement, env *Environment, stdin io.Reade
 
 func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 	fn := &Function{
-		Parameters: fs.Parameters,
-		Body:       fs.Body,
-		Env:        env,
+		Parameters:  fs.Parameters,
+		ReturnTypes: fs.ReturnTypes,
+		Body:        fs.Body,
+		Env:         env,
 	}
-	env.SetObject(fs.Name, fn)
+	sig := buildFunctionSignature(fn)
+	env.SetWithType(fs.Name, fn, sig)
+	env.MarkConstant(fs.Name)
 	return NULL
 }
 
@@ -2129,11 +2138,137 @@ func evalImportStatement(is *ImportStatement, env *Environment) Object {
 	return &Error{Message: "package not found: " + goPath}
 }
 
+// kamiTypeNameToObjectType maps Kami type annotation strings to ObjectTypes.
+// Returns "" for unknown/empty types (no enforcement).
+func kamiTypeNameToObjectType(typeName string) ObjectType {
+	switch strings.ToLower(typeName) {
+	case "int", "integer":
+		return INTEGER_OBJ
+	case "float", "float64":
+		return FLOAT_OBJ
+	case "string":
+		return STRING_OBJ
+	case "bool", "boolean":
+		return BOOLEAN_OBJ
+	case "array":
+		return ARRAY_OBJ
+	}
+	return ""
+}
+
+// normalizeTypeName normalizes Kami type names for comparison.
+func normalizeTypeName(name string) string {
+	switch strings.ToLower(name) {
+	case "int", "integer":
+		return "int"
+	case "float", "float64":
+		return "float"
+	case "bool", "boolean":
+		return "bool"
+	default:
+		return strings.ToLower(name)
+	}
+}
+
+// hasTypedParams returns true if any parameter in the slice has a TypeName.
+func hasTypedParams(params []Parameter) bool {
+	for _, p := range params {
+		if p.TypeName != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// functionSignaturesCompatible checks if two functions have compatible signatures
+// (same parameter types and return types).
+func functionSignaturesCompatible(old, new *Function) bool {
+	if len(old.Parameters) != len(new.Parameters) {
+		return false
+	}
+	if len(old.ReturnTypes) != len(new.ReturnTypes) {
+		return false
+	}
+	for i := range old.Parameters {
+		if normalizeTypeName(old.Parameters[i].TypeName) != normalizeTypeName(new.Parameters[i].TypeName) {
+			return false
+		}
+	}
+	for i := range old.ReturnTypes {
+		if normalizeTypeName(old.ReturnTypes[i]) != normalizeTypeName(new.ReturnTypes[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// buildFunctionSignature creates a type string for a function, e.g. "func(int,int)->int".
+func buildFunctionSignature(fn *Function) string {
+	var b strings.Builder
+	b.WriteString("func(")
+	for i, p := range fn.Parameters {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		if p.TypeName != "" {
+			b.WriteString(normalizeTypeName(p.TypeName))
+		} else {
+			b.WriteString("any")
+		}
+	}
+	b.WriteString(")")
+	if len(fn.ReturnTypes) > 0 {
+		b.WriteString("->")
+		for i, rt := range fn.ReturnTypes {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(normalizeTypeName(rt))
+		}
+	}
+	return b.String()
+}
+
+// isFunctionType returns true if the type name represents a function signature.
+func isFunctionType(typeName string) bool {
+	return strings.HasPrefix(typeName, "func(")
+}
+
+// isTypeCompatible checks if a value is compatible with an expected type name.
+// Handles nil assignment to reference types and function signature comparison.
+func isTypeCompatible(val Object, expectedTypeName string) bool {
+	if val.Type() == NULL_OBJ {
+		return expectedTypeName == string(FUNCTION_OBJ) ||
+			expectedTypeName == string(ERROR_OBJ) ||
+			isFunctionType(expectedTypeName)
+	}
+	if val.Type() == FUNCTION_OBJ && isFunctionType(expectedTypeName) {
+		fn, ok := val.(*Function)
+		if !ok {
+			return false
+		}
+		return buildFunctionSignature(fn) == expectedTypeName
+	}
+	return string(val.Type()) == expectedTypeName
+}
+
 func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
+	// Arity check: enforce when any parameter has a type annotation
+	if hasTypedParams(fn.Parameters) && len(args) != len(fn.Parameters) {
+		return &Error{Message: fmt.Sprintf("expected %d arguments, got %d", len(fn.Parameters), len(args))}
+	}
+
 	extendEnv := NewFunctionCallEnvironment(fn.Env, len(fn.Parameters))
 
 	for i, param := range fn.Parameters {
 		if i < len(args) {
+			// Type check: if parameter has a type annotation, verify the argument
+			if param.TypeName != "" {
+				expected := kamiTypeNameToObjectType(param.TypeName)
+				if expected != "" && args[i].Type() != NULL_OBJ && args[i].Type() != expected {
+					return &Error{Message: fmt.Sprintf("parameter %s: expected %s, got %s", param.Name, expected, args[i].Type())}
+				}
+			}
 			extendEnv.SetObject(param.Name, args[i])
 		}
 	}
