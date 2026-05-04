@@ -233,16 +233,35 @@ func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 
 func (c *compiler) compilePrintStatement(s *core.PrintStatement) {
 	c.addImport("fmt", "")
-	c.addImport("kamishell/recompiler", "")
 	val := c.compileExpression(s.Expression)
+
+	// Direct output for simple string literals (no interpolation)
 	if strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"") {
 		raw, _ := strconv.Unquote(val)
-		if !strings.Contains(raw, "$") && !strings.Contains(raw, "kamiExpand") {
+		if !strings.Contains(raw, "$") {
 			c.line("fmt.Println(%s)", val)
 			return
 		}
 	}
-	c.line("fmt.Println(recompiler.ToStr(%s))", val)
+
+	// Direct strconv for known types — skip recompiler.ToStr(any) overhead
+	expr := s.Expression
+	switch {
+	case c.isType(expr, goStr):
+		c.line("fmt.Println(%s)", val)
+	case c.isType(expr, goInt):
+		c.addImport("strconv", "")
+		c.line("fmt.Println(strconv.FormatInt(%s, 10))", val)
+	case c.isType(expr, goBool):
+		c.addImport("strconv", "")
+		c.line("fmt.Println(strconv.FormatBool(%s))", val)
+	case c.isType(expr, goFloat):
+		c.addImport("strconv", "")
+		c.line("fmt.Println(strconv.FormatFloat(%s, 'f', -1, 64))", val)
+	default:
+		c.addImport("kamishell/recompiler", "")
+		c.line("fmt.Println(recompiler.ToStr(%s))", val)
+	}
 }
 
 func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
@@ -297,9 +316,14 @@ func (c *compiler) compileVarStatement(s *core.VarStatement) {
 }
 
 func (c *compiler) compileIfStatement(s *core.IfStatement) {
-	c.addImport("kamishell/recompiler", "")
 	cond := c.compileExpression(s.Condition)
-	c.line("if recompiler.IsTruthy(%s) {", cond)
+	// Skip IsTruthy when condition is already a bool expression
+	if c.isBoolExpr(s.Condition) {
+		c.line("if %s {", cond)
+	} else {
+		c.addImport("kamishell/recompiler", "")
+		c.line("if recompiler.IsTruthy(%s) {", cond)
+	}
 	c.indent()
 	for _, st := range s.Consequence.Statements {
 		c.compileStatement(st)
@@ -331,8 +355,36 @@ func (c *compiler) isSingleIf(block *core.BlockStatement) bool {
 	return ok
 }
 
+// isBoolExpr returns true if the expression is guaranteed to produce a bool value.
+func (c *compiler) isBoolExpr(expr core.Expression) bool {
+	switch e := expr.(type) {
+	case *core.BooleanLiteral:
+		return true
+	case *core.InfixExpression:
+		switch e.Operator {
+		case "==", "!=", "<", ">", "<=", ">=":
+			return true
+		}
+	case *core.PrefixExpression:
+		if e.Operator == "!" {
+			return true
+		}
+	case *core.Identifier:
+		if c.isType(e, goBool) {
+			return true
+		}
+	case *core.CallExpression:
+		if id, ok := e.Function.(*core.Identifier); ok {
+			switch id.Value {
+			case "len", "push":
+				return false
+			}
+		}
+	}
+	return false
+}
+
 func (c *compiler) compileForStatement(s *core.ForStatement) {
-	c.addImport("kamishell/recompiler", "")
 	if s.IsIterRange {
 		c.compileIterRangeStatement(s)
 		return
@@ -344,11 +396,16 @@ func (c *compiler) compileForStatement(s *core.ForStatement) {
 	}
 	if s.Condition != nil {
 		cond := c.compileExpression(s.Condition)
+		var condStr string
+		if c.isBoolExpr(s.Condition) {
+			condStr = fmt.Sprintf("for %s {", cond)
+		} else {
+			c.addImport("kamishell/recompiler", "")
+			condStr = fmt.Sprintf("for recompiler.IsTruthy(%s) {", cond)
+		}
 		if s.Post != nil {
-			// 3-clause
-			// We need to capture the post statement as Go code
 			postBuf := c.capturePost(s.Post)
-			c.line("for recompiler.IsTruthy(%s) {", cond)
+			c.line("%s", condStr)
 			c.indent()
 			for _, st := range s.Consequence.Statements {
 				c.compileStatement(st)
@@ -358,7 +415,7 @@ func (c *compiler) compileForStatement(s *core.ForStatement) {
 			c.line("}")
 		} else {
 			// while-style
-			c.line("for recompiler.IsTruthy(%s) {", cond)
+			c.line("%s", condStr)
 			c.indent()
 			for _, st := range s.Consequence.Statements {
 				c.compileStatement(st)
@@ -541,34 +598,74 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 }
 
 func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
-	c.addImport("kamishell/recompiler", "")
 	left := c.compileExpression(e.Left)
 	right := c.compileExpression(e.Right)
 
+	bothInt := c.isType(e.Left, goInt) && c.isType(e.Right, goInt)
+	bothStr := c.isType(e.Left, goStr) && c.isType(e.Right, goStr)
+	bothFloat := c.isType(e.Left, goFloat) && c.isType(e.Right, goFloat)
+	bothBool := c.isType(e.Left, goBool) && c.isType(e.Right, goBool)
+
 	switch e.Operator {
 	case "+":
-		// Check if both are integers for direct addition
-		if c.isType(e.Left, goInt) && c.isType(e.Right, goInt) {
+		if bothInt || bothStr {
 			return fmt.Sprintf("(%s + %s)", left, right)
 		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Add(%s, %s)", left, right)
 	case "-":
+		if bothInt {
+			return fmt.Sprintf("(%s - %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Sub(%s, %s)", left, right)
 	case "*":
+		if bothInt {
+			return fmt.Sprintf("(%s * %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Mul(%s, %s)", left, right)
 	case "/":
+		if bothInt {
+			return fmt.Sprintf("(%s / %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Div(%s, %s)", left, right)
 	case "==":
+		if bothInt || bothStr || bothFloat || bothBool {
+			return fmt.Sprintf("(%s == %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Eq(%s, %s)", left, right)
 	case "!=":
+		if bothInt || bothStr || bothFloat || bothBool {
+			return fmt.Sprintf("(%s != %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.NotEq(%s, %s)", left, right)
 	case "<":
+		if bothInt || bothFloat {
+			return fmt.Sprintf("(%s < %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.LessThan(%s, %s)", left, right)
 	case ">":
+		if bothInt || bothFloat {
+			return fmt.Sprintf("(%s > %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.GreaterThan(%s, %s)", left, right)
 	case "<=":
+		if bothInt || bothFloat {
+			return fmt.Sprintf("(%s <= %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.LessEq(%s, %s)", left, right)
 	case ">=":
+		if bothInt || bothFloat {
+			return fmt.Sprintf("(%s >= %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.GreaterEq(%s, %s)", left, right)
 	default:
 		c.errorf("unknown infix operator: %s", e.Operator)
@@ -824,9 +921,29 @@ func (c *compiler) evalCommandArg(arg core.Expression) string {
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.ToStr(%s)", c.compileExpression(a))
 	case *core.Identifier:
+		// Direct strconv for known types
+		if c.isType(a, goStr) {
+			return a.Value
+		}
+		if c.isType(a, goInt) {
+			c.addImport("strconv", "")
+			return fmt.Sprintf("strconv.FormatInt(%s, 10)", a.Value)
+		}
+		if c.isType(a, goBool) {
+			c.addImport("strconv", "")
+			return fmt.Sprintf("strconv.FormatBool(%s)", a.Value)
+		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.ToStr(%s)", a.Value)
 	default:
+		// For complex expressions, check if we can infer the type
+		if c.isType(arg, goStr) {
+			return c.compileExpression(arg)
+		}
+		if c.isType(arg, goInt) {
+			c.addImport("strconv", "")
+			return fmt.Sprintf("strconv.FormatInt(%s, 10)", c.compileExpression(arg))
+		}
 		c.addImport("kamishell/recompiler", "")
 		val := c.compileExpression(a)
 		return fmt.Sprintf("recompiler.ToStr(%s)", val)
@@ -1316,7 +1433,7 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 				return goInt
 			}
 		}
-		if e.Operator == "==" || e.Operator == "!=" || e.Operator == "<" || e.Operator == ">" {
+		if e.Operator == "==" || e.Operator == "!=" || e.Operator == "<" || e.Operator == ">" || e.Operator == "<=" || e.Operator == ">=" {
 			return goBool
 		}
 		return goAny
