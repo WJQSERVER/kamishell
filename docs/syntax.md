@@ -481,16 +481,71 @@ print len(arr)   // 0
 
 ### `func` 定义函数
 
+函数参数**必须**有类型注解：
+
 ```go
-func greet(name) {
+func greet(name string) {
     print "hello " + name
+}
+```
+
+### 多参数
+
+```go
+func add(a int, b int) int {
+    return a + b
+}
+```
+
+### 返回值类型
+
+```go
+// 单返回值
+func add(a int, b int) int {
+    return a + b
+}
+
+// 多返回值 (Go 风格)
+func div(a int, b int) (int, error) {
+    if b == 0 {
+        return 0, error("division by zero")
+    }
+    return a / b, nil
+}
+
+// 无返回值 (void)
+func greet(name string) {
+    print "hello " + name
+}
+```
+
+### 多值解包赋值
+
+```go
+ok, err := check_positive(5)
+if err != nil {
+    print "error: " + err
+}
+print ok
+```
+
+### `error()` 构造器
+
+```go
+func validate(age int) (bool, error) {
+    if age < 0 {
+        return false, error("negative age")
+    }
+    return true, nil
 }
 ```
 
 ### 匿名函数
 
+匿名函数同样需要类型注解：
+
 ```go
-add := func(a, b) { return a + b }
+add := func(a int, b int) int { return a + b }
 print add(3, 4)   // 7
 ```
 
@@ -502,7 +557,7 @@ print add(3, 4)   // 7
 - 命令式调用：`greet "kami"`
 
 ```go
-func greet(name) {
+func greet(name string) {
     print name
 }
 
@@ -528,7 +583,7 @@ print x
 ### `return`
 
 ```go
-func add(a, b) {
+func add(a int, b int) int {
     return a + b
 }
 result := add(3, 4)
