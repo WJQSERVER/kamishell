@@ -11,6 +11,7 @@ Kamishell 是一种混合型 Shell 语言：
 - 可以像传统 Shell 一样直接执行命令、管道、重定向
 - 也可以像轻量脚本语言一样写变量、条件、循环、函数
 - 在 `.km` 构建脚本里还能作为 `make` DSL 使用
+- 支持编译为原生二进制（`--compile`），生成零 `any` 的纯 Go 代码
 
 ## 2. 基础语法
 
@@ -50,7 +51,7 @@ name := "kami"; print name
 - `STRING` — 字符串
 - `BOOLEAN` — `true` / `false`
 - `ARRAY` — 同构数组（元素必须同一类型）
-- `FUNCTION` — 函数（含闭包）
+- `FUNCTION` — 函数（含闭包），带有完整签名信息
 - `NULL` — 空值，源码字面量写作 `nil`
 - `ERROR` — 错误对象
 - `PACKAGE` — 包对象（`env`、`sync` 等）
@@ -67,7 +68,7 @@ nil
 [1, 2, 3]
 ```
 
-### 当前变量静态类型约束
+### 变量静态类型约束
 
 Kamishell 是静态类型语言，变量一旦赋值，类型即固定：
 
@@ -82,6 +83,7 @@ arr[0] = "a"  // 错误：cannot assign STRING to ARRAY[INTEGER] element
 支持的显式类型声明：
 
 - `int` / `integer`
+- `float` / `float64`
 - `string`
 - `bool` / `boolean`
 - `array`
@@ -90,6 +92,18 @@ arr[0] = "a"  // 错误：cannot assign STRING to ARRAY[INTEGER] element
 
 - `nil` 是运行时空值，不会被记录为变量静态类型
 - 所以 `x := nil; x = 1` 是允许的
+- `nil` 可以赋给函数变量（引用类型语义）
+
+### 函数签名类型
+
+函数变量携带完整的签名信息。`func(a, b int) int` 和 `func(x string)` 是不同的类型：
+
+```go
+f := func(a, b int) int { return a + b }
+f = func(a, b int) int { return a * b }   // ✅ 同签名
+f = func(x string) { print x }            // ❌ 签名不兼容
+f = nil                                    // ✅ nil 可赋给引用类型
+```
 
 ## 4. 变量与赋值
 
@@ -208,26 +222,24 @@ print $PATH
 
 ```go
 x := 10 + 20     // 整数加法
-y := 3.14 * 2.0  // 浮点乘法（未实现）
-z := 10 - 3      // 减法（未实现）
+y := 3.14 * 2.0  // 浮点乘法
+z := 10 - 3      // 减法
+w := 100 / 5     // 除法
 ```
 
-当前已实现：
+已实现：
 
 - `+` 加法 / 字符串拼接
+- `-` 减法
+- `*` 乘法
+- `/` 除法
 - `==` 等于
 - `!=` 不等于
 - `>` 大于
 - `<` 小于
-- `!` 逻辑非（前缀）
-
-未实现：
-
-- `-` 减法
-- `*` 乘法
-- `/` 除法
 - `>=` 大于等于
 - `<=` 小于等于
+- `!` 逻辑非（前缀）
 
 ### 逻辑非 `!`
 
@@ -245,6 +257,7 @@ if !false {
 `+` 在当前语义下：
 
 - 两边都是整数时做整数加法
+- 两边都是浮点数时做浮点加法
 - 任一边是字符串时做字符串拼接
 
 ```go
@@ -256,7 +269,8 @@ print "count=" + 3
 ### 括号分组
 
 ```go
-x := (10 + 20) * 3  // 注意：* 未实现
+x := (10 + 20) * 3
+y := (a + b) / 2
 ```
 
 ## 7. 控制结构
@@ -481,7 +495,7 @@ print len(arr)   // 0
 
 ### `func` 定义函数
 
-函数参数**必须**有类型注解：
+函数参数**必须**有类型注解，遵循 Go 语法规范：
 
 ```go
 func greet(name string) {
@@ -489,12 +503,67 @@ func greet(name string) {
 }
 ```
 
-### 多参数
+### 多参数与类型共享
+
+支持 Go 风格的 `(a, b T)` 简写：
 
 ```go
+// 逐个声明
 func add(a int, b int) int {
     return a + b
 }
+
+// 共享类型简写
+func add(a, b int) int {
+    return a + b
+}
+
+// 混合类型
+func greet(name string, age int) {
+    print name + " is " + age
+}
+
+// 三个参数共享类型
+func sum(a, b, c int) int {
+    return a + b + c
+}
+```
+
+### 运行时类型强制
+
+参数类型在运行时强制执行：
+
+```go
+func add(a, b int) int { return a + b }
+add(1, 2)       // ✅
+add("x", 2)     // ❌ parameter a: expected INTEGER, got STRING
+add(1)           // ❌ expected 2 arguments, got 1
+add(1, 2, 3)    // ❌ expected 2 arguments, got 3
+```
+
+使用 `any` 类型可接受任意参数：
+
+```go
+func echo(v any) { print v }
+echo(42)        // ✅
+echo("hello")   // ✅
+```
+
+### 函数常量
+
+`func` 声明的函数名是**常量标识符**，不可重赋值：
+
+```go
+func add(a, b int) int { return a + b }
+add = func(a, b int) int { return a * b }  // ❌ cannot assign to constant add
+```
+
+函数字面量赋值的变量可以重赋值（签名必须匹配）：
+
+```go
+f := func(a, b int) int { return a + b }
+f = func(a, b int) int { return a * b }    // ✅ 同签名
+f = func(x string) { print x }             // ❌ 签名不兼容
 ```
 
 ### 返回值类型
@@ -542,11 +611,21 @@ func validate(age int) (bool, error) {
 
 ### 匿名函数
 
-匿名函数同样需要类型注解：
+匿名函数同样需要类型注解，支持多返回值：
 
 ```go
 add := func(a int, b int) int { return a + b }
 print add(3, 4)   // 7
+
+// 多返回值闭包
+divmod := func(a, b int) (int, int) { return a / b, a % b }
+q, r := divmod(17, 5)
+print q   // 3
+print r   // 2
+
+// 无返回值闭包
+greet := func(name string) { print "hello " + name }
+greet("world")
 ```
 
 ### 调用函数
@@ -683,11 +762,24 @@ result := t.Wait(10)  // 带超时
 
 ### WaitGroup
 
+使用 Go 1.26 原生 `sync.WaitGroup.Go` 方法：
+
 ```go
 wg := sync.NewWaitGroup()
 wg.Go { task1() }
 wg.Go { task2() }
 wg.Wait()
+```
+
+带超时：
+
+```go
+wg := sync.NewWaitGroup()
+wg.Go { doWork() }
+wg.Wait(5)  // 最多等待 5 秒
+if err != nil {
+    print "timeout"
+}
 ```
 
 ### `wait` 命令
@@ -764,7 +856,7 @@ target_env "app" "CGO_ENABLED=0"
 
 ## 16. Go 标准库导入
 
-Kami 支持通过 `import` 语法导入 Go 标准库函数。
+Kami 支持通过 `import` 语法导入 Go 标准库函数，编译时直接解析为原生 Go 调用。
 
 ### 语法
 
@@ -774,20 +866,26 @@ import "Go/包名"
 
 ### 已支持的包
 
-- `fmt` - 格式化输出
-- `math` - 数学函数
-- `strings` - 字符串处理
+- `fmt` — 格式化输出（`Println`、`Printf`、`Sprintf`）
+- `math` — 数学函数（`Sqrt`、`Abs`）
+- `strings` — 字符串处理（`Contains`、`HasPrefix`、`HasSuffix`、`Replace`、`Split`、`Join`）
+- `strconv` — 类型转换（`Itoa`、`Atoi`）
+- `os` — 系统操作（`Getenv`、`Setenv`）
 
 ### 内置包（无需 import）
 
-- `env` - 环境变量管理
-- `sync` - 并发同步（WaitGroup）
+- `env` — 环境变量管理
+- `sync` — 并发同步（`NewWaitGroup`、`wg.Go`、`wg.Wait`）
 
 ### 示例
 
 ```go
 import "Go/fmt"
+import "Go/strings"
+
 fmt.Println("Hello, Kami!")
+print strings.Contains("hello", "ell")   // true
+print strings.ToUpper("hello")            // HELLO
 ```
 
 ## 17. 关键字总览
@@ -819,11 +917,15 @@ fmt.Println("Hello, Kami!")
 | `:=` | 短变量声明 |
 | `=` | 赋值 |
 | `+` | 加法 / 字符串拼接 |
+| `-` | 减法 |
+| `*` | 乘法 |
+| `/` | 除法 |
 | `!` | 逻辑非 |
 | `==` / `!=` | 等于 / 不等于 |
 | `>` / `<` | 大于 / 小于 |
+| `>=` / `<=` | 大于等于 / 小于等于 |
 | `\|` | 管道 |
-| `->` / `>>` | 输出重定向 |
+| `>` / `>>` | 输出重定向 |
 | `&&` / `\|\|` | 逻辑与 / 或 |
 | `&` | 后台执行 / 取地址 |
 | `*` | 指针解引用 |
@@ -846,14 +948,11 @@ fmt.Println("Hello, Kami!")
 
 下面这些名字可能出现在文档、帮助系统或规划里，但当前不能当成稳定能力使用：
 
-- `const`
-- `>=` / `<=`
-- `-` 减法
-- `*` 乘法
-- `/` 除法
-- 通用对象字段访问
+- `const` — 常量声明（`func` 声明的函数名已是常量，但通用 `const` 语法未实现）
+- 通用对象字段访问（`MemberGet` 已移除，仅支持包成员访问）
 - map 类型
 - 字符串 range（按字符迭代）
+- 命名返回参数（Go 的 `func foo() (result int, err error)` 语法）
 
 ## 19. 综合示例
 
@@ -867,8 +966,8 @@ for i, v := range arr {
 }
 
 // 迭代器
-func countTo(n) {
-    return func(yield) {
+func countTo(n int) func(func(int) bool) {
+    return func(yield func(int) bool) {
         i := 0
         for i < n {
             if !yield(i) { return }
@@ -878,7 +977,7 @@ func countTo(n) {
 }
 for v := range countTo(5) { print v }
 
-// switch/case
+// switch/case（原生 Go switch，无 ToStr 开销）
 x := 3
 switch x {
 case 1: print "one"
@@ -887,12 +986,46 @@ case 3: print "three"
 default: print "other"
 }
 
-// 匿名函数
-add := func(a, b) { return a + b }
-print add(3, 4)
+// 强类型函数（运行时检查参数类型和数量）
+func add(a, b int) int { return a + b }
+print add(3, 4)   // 7
 
-// 并发
+// 多返回值函数
+func divmod(a, b int) (int, int) { return a / b, a % b }
+q, r := divmod(17, 5)
+print q   // 3
+print r   // 2
+
+// 匿名函数（支持多返回值）
+f := func(a, b int) (int, int) { return a + b, a - b }
+x, y := f(5, 3)
+print x   // 8
+print y   // 2
+
+// 函数常量（不可重赋值）
+func greet(name string) { print "hello " + name }
+greet("world")
+
+// 并发（Go 1.26 原生 WaitGroup）
+wg := sync.NewWaitGroup()
+wg.Go { print "task1" }
+wg.Go { print "task2" }
+wg.Wait()
+
+// WaitGroup 带超时
+wg := sync.NewWaitGroup()
+wg.Go { doWork() }
+wg.Wait(5)
+if err != nil { print "timeout" }
+
+// Task/Future
 t := go { return 42 }
 result := t.Wait()
 print result
+
+// Go 标准库（编译期直接解析为原生调用）
+import "Go/fmt"
+import "Go/strings"
+fmt.Println("Hello, Kami!")
+print strings.Contains("hello", "ell")   // true
 ```
