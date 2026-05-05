@@ -11,7 +11,7 @@ Kamishell 是一种混合型 Shell 语言：
 - 可以像传统 Shell 一样直接执行命令、管道、重定向
 - 也可以像轻量脚本语言一样写变量、条件、循环、函数
 - 在 `.km` 构建脚本里还能作为 `make` DSL 使用
-- 支持编译为原生二进制（`--compile`），生成零 `any` 的纯 Go 代码
+- 支持编译为原生二进制（`--compile`），生成高效 Go 代码
 
 ## 2. 基础语法
 
@@ -90,9 +90,8 @@ arr[0] = "a"  // 错误：cannot assign STRING to ARRAY[INTEGER] element
 
 注意：
 
-- `nil` 是运行时空值，不会被记录为变量静态类型
-- 所以 `x := nil; x = 1` 是允许的
-- `nil` 可以赋给函数变量（引用类型语义）
+- `nil` 是运行时空值，`:=` 不能用于 `nil`（`x := nil` 会报错：`untyped nil cannot be used with :=`）
+- `nil` 可以赋给已声明的函数变量（引用类型语义）：`f := func(a int) int { return a }; f = nil`
 
 ### 函数签名类型
 
@@ -139,11 +138,7 @@ b[0] = 99     // a 不变
 
 ### `var` 显式声明
 
-`var` 支持：
-
-- 仅声明类型
-- 声明类型并初始化
-- 不写类型、只给初始值
+`var` 必须声明类型：
 
 ```go
 var count int
@@ -152,8 +147,9 @@ var ready bool
 var arr array
 
 var retries int = 3
-var title = "kami"
 ```
+
+注意：`var title = "kami"`（无类型）**不合法**，parser 会静默丢弃该语句。需要写 `var title string = "kami"` 或使用 `title := "kami"`。
 
 ### 零值规则
 
@@ -237,9 +233,13 @@ w := 100 / 5     // 除法
 - `!=` 不等于
 - `>` 大于
 - `<` 小于
-- `>=` 大于等于
-- `<=` 小于等于
 - `!` 逻辑非（前缀）
+
+未实现：
+
+- `>=` 大于等于（lexer 未生成 token，runtime 有死代码但不可达）
+- `<=` 小于等于（同上）
+- `%` 取模
 
 ### 逻辑非 `!`
 
@@ -495,13 +495,15 @@ print len(arr)   // 0
 
 ### `func` 定义函数
 
-函数参数**必须**有类型注解，遵循 Go 语法规范：
+函数参数建议使用类型注解。有类型注解的参数在运行时强制类型检查和参数数量检查：
 
 ```go
 func greet(name string) {
     print "hello " + name
 }
 ```
+
+无类型注解的参数（如 `func foo(a, b) { }`）在 parser 中会被静默丢弃，**不推荐使用**。
 
 ### 多参数与类型共享
 
@@ -618,7 +620,7 @@ add := func(a int, b int) int { return a + b }
 print add(3, 4)   // 7
 
 // 多返回值闭包
-divmod := func(a, b int) (int, int) { return a / b, a % b }
+divmod := func(a, b int) (int, int) { return a / b, a - a / b * b }
 q, r := divmod(17, 5)
 print q   // 3
 print r   // 2
@@ -706,10 +708,10 @@ exec "go run main.go"
 print "line1\nline2" | cat
 ```
 
-### `>` 覆盖重定向
+### `->` 覆盖重定向
 
 ```bash
-print "hello" > "out.txt"
+print "hello" -> "out.txt"
 ```
 
 ### `>>` 追加重定向
@@ -762,14 +764,14 @@ result := t.Wait(10)  // 带超时
 
 ### WaitGroup
 
-使用 Go 1.26 原生 `sync.WaitGroup.Go` 方法：
-
 ```go
 wg := sync.NewWaitGroup()
 wg.Go { task1() }
 wg.Go { task2() }
 wg.Wait()
 ```
+
+注意：`wg.Go { body }` 在编译模式下生成 Go 1.26 原生 `wg.Go(func() { ... })` 调用；在解释模式下使用手动 `wg.Add(1)` + `go func() { defer wg.Done(); ... }()` 模式（功能等价）。
 
 带超时：
 
@@ -885,8 +887,10 @@ import "Go/strings"
 
 fmt.Println("Hello, Kami!")
 print strings.Contains("hello", "ell")   // true
-print strings.ToUpper("hello")            // HELLO
+print strings.Replace("hello", "l", "L", -1)  // heLLo
 ```
+
+注意：解释模式下仅支持 `goStdlib` 中注册的函数（`Contains`、`HasPrefix`、`HasSuffix`、`Replace`、`Split`、`Join`）。编译模式下支持 Go 标准库的任意函数（直接生成 Go 调用）。
 
 ## 17. 关键字总览
 
@@ -917,18 +921,17 @@ print strings.ToUpper("hello")            // HELLO
 | `:=` | 短变量声明 |
 | `=` | 赋值 |
 | `+` | 加法 / 字符串拼接 |
-| `-` | 减法 |
-| `*` | 乘法 |
+| `-` | 减法 / 重定向箭头（`->`） |
+| `*` | 乘法 / 指针解引用 |
 | `/` | 除法 |
 | `!` | 逻辑非 |
 | `==` / `!=` | 等于 / 不等于 |
 | `>` / `<` | 大于 / 小于 |
-| `>=` / `<=` | 大于等于 / 小于等于 |
 | `\|` | 管道 |
-| `>` / `>>` | 输出重定向 |
+| `->` | 覆盖重定向 |
+| `>>` | 追加重定向 |
 | `&&` / `\|\|` | 逻辑与 / 或 |
 | `&` | 后台执行 / 取地址 |
-| `*` | 指针解引用 |
 | `$` | 变量插值 |
 | `.` | 成员访问 |
 | `[` `]` | 数组索引 |
@@ -949,10 +952,12 @@ print strings.ToUpper("hello")            // HELLO
 下面这些名字可能出现在文档、帮助系统或规划里，但当前不能当成稳定能力使用：
 
 - `const` — 常量声明（`func` 声明的函数名已是常量，但通用 `const` 语法未实现）
-- 通用对象字段访问（`MemberGet` 已移除，仅支持包成员访问）
+- 通用对象字段访问（仅支持已导入包的成员访问，如 `fmt.Println`；自定义对象成员访问不支持）
 - map 类型
 - 字符串 range（按字符迭代）
 - 命名返回参数（Go 的 `func foo() (result int, err error)` 语法）
+- `>=` / `<=` 比较运算符（lexer 未实现，runtime 有死代码）
+- `%` 取模运算符（lexer 未实现）
 
 ## 19. 综合示例
 
@@ -966,7 +971,7 @@ for i, v := range arr {
 }
 
 // 迭代器
-func countTo(n int) func(func(int) bool) {
+func countTo(n int) {
     return func(yield func(int) bool) {
         i := 0
         for i < n {
@@ -991,7 +996,7 @@ func add(a, b int) int { return a + b }
 print add(3, 4)   // 7
 
 // 多返回值函数
-func divmod(a, b int) (int, int) { return a / b, a % b }
+func divmod(a, b int) (int, int) { return a / b, a - a / b * b }
 q, r := divmod(17, 5)
 print q   // 3
 print r   // 2
@@ -1006,7 +1011,7 @@ print y   // 2
 func greet(name string) { print "hello " + name }
 greet("world")
 
-// 并发（Go 1.26 原生 WaitGroup）
+// 并发
 wg := sync.NewWaitGroup()
 wg.Go { print "task1" }
 wg.Go { print "task2" }
