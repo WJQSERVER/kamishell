@@ -771,8 +771,6 @@ wg.Go { task2() }
 wg.Wait()
 ```
 
-注意：`wg.Go { body }` 在编译模式下生成 Go 1.26 原生 `wg.Go(func() { ... })` 调用；在解释模式下使用手动 `wg.Add(1)` + `go func() { defer wg.Done(); ... }()` 模式（功能等价）。
-
 带超时：
 
 ```go
@@ -1011,7 +1009,7 @@ print y   // 2
 func greet(name string) { print "hello " + name }
 greet("world")
 
-// 并发
+// 并发（Go 1.26 原生 wg.Go）
 wg := sync.NewWaitGroup()
 wg.Go { print "task1" }
 wg.Go { print "task2" }
