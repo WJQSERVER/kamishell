@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -1494,8 +1495,7 @@ func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, std
 	var wg sync.WaitGroup
 	wg.Add(n)
 
-	var errs []string
-	var errMu sync.Mutex
+	var firstErr atomic.Pointer[string]
 
 	for i := range n {
 		go func(idx int) {
@@ -1526,17 +1526,16 @@ func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, std
 			}
 
 			if isError(res) {
-				errMu.Lock()
-				errs = append(errs, res.Inspect())
-				errMu.Unlock()
+				msg := res.Inspect()
+				firstErr.CompareAndSwap(nil, &msg)
 			}
 		}(i)
 	}
 
 	wg.Wait()
 
-	if len(errs) > 0 {
-		return &Error{Message: strings.Join(errs, "; ")}
+	if err := firstErr.Load(); err != nil {
+		return &Error{Message: *err}
 	}
 
 	return NULL

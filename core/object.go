@@ -44,7 +44,7 @@ func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
 
 const (
 	integerCacheMin int64 = -128
-	integerCacheMax int64 = 1024
+	integerCacheMax int64 = 10000
 )
 
 var integerCache = initIntegerCache()
