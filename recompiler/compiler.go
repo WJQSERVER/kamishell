@@ -536,10 +536,18 @@ func (c *compiler) compileStatement(stmt core.Statement) {
 func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 	val := c.compileExpression(s.Expression)
 	if val != "" {
-		// WaitGroup method calls (wg.Wait()) return nothing — don't wrap with _ =
+		// WaitGroup method calls — check if it's a void or error-returning call
 		if ce, ok := s.Expression.(*core.CallExpression); ok {
 			if me, ok := ce.Function.(*core.MemberExpression); ok {
 				if id, ok := me.Object.(*core.Identifier); ok && c.waitGroups != nil && c.waitGroups[id.Value] {
+					if me.Property == "Wait" && len(ce.Arguments) > 0 {
+						// wg.Wait(timeout) returns error — assign to kamiErr
+						c.line("kamiErr = %s", val)
+						c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
+						c.addImport("kamishell/recompiler", "")
+						return
+					}
+					// wg.Wait() or wg.Go — void, just call
 					c.line("%s", val)
 					return
 				}
@@ -1301,11 +1309,18 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 		}
 	}
 
-	// Check if it's wg.Wait() or wg.Go where wg is a known WaitGroup
+	// Check if it's wg.Wait() or wg.Wait(timeout) where wg is a known WaitGroup
 	if me, ok := e.Function.(*core.MemberExpression); ok {
 		if id, ok := me.Object.(*core.Identifier); ok && c.waitGroups != nil && c.waitGroups[id.Value] {
 			if me.Property == "Wait" {
-				return fmt.Sprintf("%s.Wait()", id.Value)
+				if len(e.Arguments) == 0 {
+					return fmt.Sprintf("%s.Wait()", id.Value)
+				}
+				// wg.Wait(timeout) → kamilib.WaitTimeout(wg, timeout)
+				timeout := c.compileExpression(e.Arguments[0])
+				c.addImport("kamishell/kamilib", "")
+				c.usesErr = true
+				return fmt.Sprintf("kamilib.WaitTimeout(%s, %s)", id.Value, timeout)
 			}
 		}
 	}
