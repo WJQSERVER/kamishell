@@ -49,6 +49,7 @@ type compiler struct {
 	knownFuncs     map[string]bool
 	funcReturns    map[string]goType   // function name -> first return type (for type inference)
 	funcReturnList map[string][]goType // function name -> all return types (for multi-value unpack)
+	funcIsVoid     map[string]bool     // function name -> true if void (no return types)
 	arrayTypes     map[string]goType
 	envSync        map[string]bool
 	parentTypes    map[string]goType
@@ -549,6 +550,13 @@ func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 						return
 					}
 					// wg.Wait() or wg.Go — void, just call
+					c.line("%s", val)
+					return
+				}
+			}
+			// Check if it's a call to a known void function
+			if id, ok := ce.Function.(*core.Identifier); ok && c.knownFuncs != nil && c.knownFuncs[id.Value] {
+				if c.funcIsVoid != nil && c.funcIsVoid[id.Value] {
 					c.line("%s", val)
 					return
 				}
@@ -1418,6 +1426,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		knownFuncs:     c.knownFuncs,
 		funcReturns:    c.funcReturns,
 		funcReturnList: c.funcReturnList,
+		funcIsVoid:     c.funcIsVoid,
 		arrayTypes:     copyMap(c.arrayTypes),
 		envSync:        c.envSync,
 		loopDepth:      c.loopDepth,
@@ -1444,13 +1453,23 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 	inlineParamStr := strings.Join(inlineParams, ", ")
 
 	// Determine return type from declaration
-	returnType := "any"
+	returnType := ""
 	if len(f.ReturnTypes) == 1 {
 		returnType = string(c.kamiTypeToGo(f.ReturnTypes[0]))
+	} else if len(f.ReturnTypes) > 1 {
+		retTypes := make([]string, len(f.ReturnTypes))
+		for i, rt := range f.ReturnTypes {
+			retTypes[i] = string(c.kamiTypeToGo(rt))
+		}
+		returnType = "(" + strings.Join(retTypes, ", ") + ")"
 	}
 
 	var fd strings.Builder
-	fd.WriteString(fmt.Sprintf("func(%s) %s {\n", inlineParamStr, returnType))
+	if returnType != "" {
+		fd.WriteString(fmt.Sprintf("func(%s) %s {\n", inlineParamStr, returnType))
+	} else {
+		fd.WriteString(fmt.Sprintf("func(%s) {\n", inlineParamStr))
+	}
 	fd.WriteString(sub.buf.String())
 
 	// Add default return if body doesn't end with return
@@ -1464,7 +1483,17 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		}
 	}
 	if !hasTrailingReturn {
-		fd.WriteString(fmt.Sprintf("return %s\n", c.kamiTypeToGo(f.ReturnTypes[0]).zero()))
+		if len(f.ReturnTypes) == 0 {
+			// Void function — no return needed
+		} else if len(f.ReturnTypes) == 1 {
+			fd.WriteString(fmt.Sprintf("return %s\n", c.kamiTypeToGo(f.ReturnTypes[0]).zero()))
+		} else {
+			zeros := make([]string, len(f.ReturnTypes))
+			for i, rt := range f.ReturnTypes {
+				zeros[i] = c.kamiTypeToGo(rt).zero()
+			}
+			fd.WriteString(fmt.Sprintf("return %s\n", strings.Join(zeros, ", ")))
+		}
 	}
 	fd.WriteString("}")
 
@@ -2074,8 +2103,13 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		}
 		c.funcReturnList[funcName] = list
 	} else {
+		// Void function — no return types
 		c.funcReturns[funcName] = goAny
 		c.funcReturnList[funcName] = []goType{goAny}
+		if c.funcIsVoid == nil {
+			c.funcIsVoid = make(map[string]bool)
+		}
+		c.funcIsVoid[funcName] = true
 	}
 
 	// Build user parameter list (without kamiEnv — added after body analysis)
@@ -2086,7 +2120,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	}
 
 	// Determine return type from declaration
-	returnType := "any"
+	returnType := ""
 	if len(s.ReturnTypes) == 1 {
 		returnType = string(c.kamiTypeToGo(s.ReturnTypes[0]))
 	} else if len(s.ReturnTypes) > 1 {
@@ -2104,6 +2138,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		knownFuncs:     c.knownFuncs,
 		funcReturns:    c.funcReturns,
 		funcReturnList: c.funcReturnList,
+		funcIsVoid:     c.funcIsVoid,
 		arrayTypes:     copyMap(c.arrayTypes),
 		envSync:        c.envSync,
 		parentTypes:    c.symbols,
@@ -2146,7 +2181,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	if !hasTrailingReturn {
 		// Add default return only if body doesn't end with return
 		if len(s.ReturnTypes) == 0 {
-			sub.line("return nil")
+			// Void function — no return needed in Go
 		} else if len(s.ReturnTypes) == 1 {
 			sub.line("return %s", c.kamiTypeToGo(s.ReturnTypes[0]).zero())
 		} else {
@@ -2174,7 +2209,11 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 
 	// Generate function definition
 	var fd strings.Builder
-	fd.WriteString(fmt.Sprintf("func kamiFunc_%s(%s) %s {\n", funcName, paramStr, returnType))
+	if returnType != "" {
+		fd.WriteString(fmt.Sprintf("func kamiFunc_%s(%s) %s {\n", funcName, paramStr, returnType))
+	} else {
+		fd.WriteString(fmt.Sprintf("func kamiFunc_%s(%s) {\n", funcName, paramStr))
+	}
 	fd.WriteString(kamiErrDecl)
 	fd.WriteString(sub.buf.String())
 	fd.WriteString("}\n")
