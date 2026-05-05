@@ -847,8 +847,10 @@ func (c *compiler) compileForStatement(s *core.ForStatement) {
 			postBuf := c.capturePost(s.Post)
 			c.line("%s", condStr)
 			c.indent()
-			for _, st := range s.Consequence.Statements {
-				c.compileStatement(st)
+			if s.Consequence != nil {
+				for _, st := range s.Consequence.Statements {
+					c.compileStatement(st)
+				}
 			}
 			c.line("%s", postBuf)
 			c.dedent()
@@ -857,30 +859,28 @@ func (c *compiler) compileForStatement(s *core.ForStatement) {
 			// while-style
 			c.line("%s", condStr)
 			c.indent()
-			for _, st := range s.Consequence.Statements {
-				c.compileStatement(st)
+			if s.Consequence != nil {
+				for _, st := range s.Consequence.Statements {
+					c.compileStatement(st)
+				}
 			}
 			c.dedent()
 			c.line("}")
 		}
 	} else {
 		// infinite loop
-		if s.Post != nil {
-			postBuf := c.capturePost(s.Post)
-			c.line("for {")
-			c.indent()
-			c.line("%s", postBuf)
-			c.dedent()
-			c.line("}")
-		} else {
-			c.line("for {")
-			c.indent()
+		c.line("for {")
+		c.indent()
+		if s.Consequence != nil {
 			for _, st := range s.Consequence.Statements {
 				c.compileStatement(st)
 			}
-			c.dedent()
-			c.line("}")
 		}
+		if s.Post != nil {
+			c.line("%s", c.capturePost(s.Post))
+		}
+		c.dedent()
+		c.line("}")
 	}
 	c.loopDepth--
 }
@@ -1385,7 +1385,7 @@ func (c *compiler) compileMemberExpression(e *core.MemberExpression) string {
 
 func (c *compiler) compileArrayLiteral(a *core.ArrayLiteral) string {
 	if len(a.Elements) == 0 {
-		return "[]any{}"
+		return "nil"
 	}
 	// Infer element type from first element
 	elemType := c.inferGoType(a.Elements[0])
@@ -1429,6 +1429,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		funcIsVoid:     c.funcIsVoid,
 		arrayTypes:     copyMap(c.arrayTypes),
 		envSync:        c.envSync,
+		parentTypes:    c.symbols,
 		loopDepth:      c.loopDepth,
 		funcNeedsEnv:   c.funcNeedsEnv,
 		waitGroups:     c.waitGroups,
