@@ -501,8 +501,16 @@ func (c *compiler) compileStatement(stmt core.Statement) {
 			c.line("return %s", strings.Join(vals, ", "))
 		}
 	case *core.BreakStatement:
+		if c.loopDepth == 0 {
+			c.errorf("break outside loop")
+			return
+		}
 		c.line("break")
 	case *core.ContinueStatement:
+		if c.loopDepth == 0 {
+			c.errorf("continue outside loop")
+			return
+		}
 		c.line("continue")
 	case *core.CommandStatement:
 		c.compileCommandStatement(s)
@@ -1445,7 +1453,8 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		arrayTypes:     copyMap(c.arrayTypes),
 		envSync:        c.envSync,
 		parentTypes:    c.symbols,
-		loopDepth:      c.loopDepth,
+		loopDepth:      0,
+		indentLv:       1,
 		funcNeedsEnv:   c.funcNeedsEnv,
 		waitGroups:     c.waitGroups,
 		importedPkgs:   c.importedPkgs,
