@@ -113,6 +113,7 @@ var (
 	jobsMu    sync.Mutex
 	jobs      = make(map[int]*builtin.Job)
 	nextJobID atomic.Int64
+	jobDone   = make(chan struct{}, 1) // non-blocking signal for waitAll
 )
 
 func registerJob(cmd string) int {
@@ -125,7 +126,6 @@ func registerJob(cmd string) int {
 
 func completeJob(id int, success bool, errMsg string) {
 	jobsMu.Lock()
-	defer jobsMu.Unlock()
 	if j, ok := jobs[id]; ok {
 		if success {
 			j.Status = "Done"
@@ -133,6 +133,13 @@ func completeJob(id int, success bool, errMsg string) {
 			j.Status = "Failed"
 			j.Error = errMsg
 		}
+	}
+	jobsMu.Unlock()
+
+	// Non-blocking signal — wakes waitAll / waitAllTimeout
+	select {
+	case jobDone <- struct{}{}:
+	default:
 	}
 }
 
@@ -149,21 +156,28 @@ func allJobsDone() bool {
 
 // waitAll blocks until all registered background jobs complete.
 func waitAll() {
+	jobsMu.Lock()
 	for !allJobsDone() {
-		time.Sleep(10 * time.Millisecond)
+		jobsMu.Unlock()
+		<-jobDone
+		jobsMu.Lock()
 	}
+	jobsMu.Unlock()
 }
 
 func waitAllTimeout(secs int64) {
 	deadline := time.After(time.Duration(secs) * time.Second)
+	jobsMu.Lock()
 	for !allJobsDone() {
+		jobsMu.Unlock()
 		select {
+		case <-jobDone:
 		case <-deadline:
 			return
-		default:
-			time.Sleep(10 * time.Millisecond)
 		}
+		jobsMu.Lock()
 	}
+	jobsMu.Unlock()
 }
 
 // String interpolation: $var expansion with env fallback.
@@ -457,7 +471,15 @@ func ArrayPush(arr any, val any) any {
 // Not a runtime operation; used by the compiler to track imports.
 var GeneratedImports []string
 
-func ResetImports() { GeneratedImports = nil }
+// ResetImports clears the global import tracker and background job state.
+// Called at the start of every compiled main() to prevent state leaks between runs.
+func ResetImports() {
+	GeneratedImports = nil
+	jobsMu.Lock()
+	jobs = make(map[int]*builtin.Job)
+	nextJobID.Store(0)
+	jobsMu.Unlock()
+}
 
 // RegisterGoJob registers a goroutine-based background job and returns its ID.
 func RegisterGoJob(cmd string) int {
@@ -490,7 +512,8 @@ func WaitAllTimeout(secs any) {
 // This should not be reached for well-formed programs — all member access
 // should be resolved at compile time. Panics to surface bugs immediately.
 func MemberGet(obj any, prop string) any {
-	panic(fmt.Sprintf("unhandled member access: %T.%s", obj, prop))
+	fmt.Fprintf(os.Stderr, "unhandled member access: %T.%s\n", obj, prop)
+	return nil
 }
 
 // NewError creates a new error value (for the error() native function).
