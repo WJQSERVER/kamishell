@@ -53,6 +53,7 @@ type compiler struct {
 	envSync        map[string]bool
 	parentTypes    map[string]goType
 	funcLiteralVars map[string]*core.FunctionLiteral // variables assigned function literals
+	waitGroups     map[string]bool // variables that are *sync.WaitGroup
 	loopDepth      int
 	indentLv       int
 	usesErr        bool
@@ -535,6 +536,15 @@ func (c *compiler) compileStatement(stmt core.Statement) {
 func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 	val := c.compileExpression(s.Expression)
 	if val != "" {
+		// WaitGroup method calls (wg.Wait()) return nothing — don't wrap with _ =
+		if ce, ok := s.Expression.(*core.CallExpression); ok {
+			if me, ok := ce.Function.(*core.MemberExpression); ok {
+				if id, ok := me.Object.(*core.Identifier); ok && c.waitGroups != nil && c.waitGroups[id.Value] {
+					c.line("%s", val)
+					return
+				}
+			}
+		}
 		c.line("_ = %s", val)
 	}
 }
@@ -660,6 +670,22 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 	name := s.Names[0]
 
 	if s.Token.Literal == ":=" {
+		// Check if this is sync.NewWaitGroup() — use Go type inference
+		if ce, ok := s.Value.(*core.CallExpression); ok {
+			if me, ok := ce.Function.(*core.MemberExpression); ok {
+				if id, ok := me.Object.(*core.Identifier); ok && id.Value == "sync" && me.Property == "NewWaitGroup" {
+					c.addImport("sync", "")
+					c.declareVar(name, goAny)
+					c.line("var %s = &sync.WaitGroup{}", name)
+					if c.waitGroups == nil {
+						c.waitGroups = make(map[string]bool)
+					}
+					c.waitGroups[name] = true
+					return
+				}
+			}
+		}
+
 		// Variable declaration: infer type from expr
 		typ := c.inferGoType(s.Value)
 		c.declareVar(name, typ)
@@ -1267,6 +1293,23 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 		}
 	}
 
+	// Check if it's sync.NewWaitGroup() — generate &sync.WaitGroup{}
+	if me, ok := e.Function.(*core.MemberExpression); ok {
+		if id, ok := me.Object.(*core.Identifier); ok && id.Value == "sync" && me.Property == "NewWaitGroup" {
+			c.addImport("sync", "")
+			return "&sync.WaitGroup{}"
+		}
+	}
+
+	// Check if it's wg.Wait() or wg.Go where wg is a known WaitGroup
+	if me, ok := e.Function.(*core.MemberExpression); ok {
+		if id, ok := me.Object.(*core.Identifier); ok && c.waitGroups != nil && c.waitGroups[id.Value] {
+			if me.Property == "Wait" {
+				return fmt.Sprintf("%s.Wait()", id.Value)
+			}
+		}
+	}
+
 	// Generic call: function loaded from env as any
 	c.addImport("kamishell/recompiler", "")
 	fn := c.compileExpression(e.Function)
@@ -1343,6 +1386,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		envSync:        c.envSync,
 		loopDepth:      c.loopDepth,
 		funcNeedsEnv:   c.funcNeedsEnv,
+		waitGroups:     c.waitGroups,
 	}
 
 	// Register parameters with their declared types
@@ -1925,26 +1969,20 @@ func (c *compiler) compilePointerAssignStatement(s *core.PointerAssignStatement)
 }
 
 func (c *compiler) compileMethodCallBlockStatement(s *core.MethodCallBlockStatement) {
-	// wg.Go { ... } or wg.Wait { ... }
-	// In Kami, this is: wg.Add(1); go func() { defer wg.Done(); body }()
 	obj := c.compileExpression(s.Object)
-	_ = obj
 	switch s.Method {
 	case "Go":
-		// wg.Go { body } → go func() { body }()
-		c.line("{")
-		c.indent()
-		c.line("go func() {")
+		// wg.Go { body } → wg.Go(func() { body })
+		// Uses Go 1.26 native sync.WaitGroup.Go
+		c.line("%s.Go(func() {", obj)
 		c.indent()
 		for _, st := range s.Body.Statements {
 			c.compileStatement(st)
 		}
 		c.dedent()
-		c.line("}()")
-		c.dedent()
-		c.line("}")
+		c.line("})")
 	case "Wait":
-		// wg.Wait — just call wait
+		// wg.Wait { ... } — not a real pattern, just call Wait
 		c.line("%s.Wait()", obj)
 	}
 }
@@ -2035,6 +2073,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		loopDepth:      0,
 		indentLv:       1,
 		funcNeedsEnv:   c.funcNeedsEnv,
+		waitGroups:     c.waitGroups,
 	}
 	// Register parameters with their types so they won't be re-declared
 	for _, p := range s.Parameters {
