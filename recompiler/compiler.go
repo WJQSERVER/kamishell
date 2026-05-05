@@ -669,8 +669,9 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 		for _, p := range fl.Parameters {
 			paramTypes = append(paramTypes, string(c.kamiTypeToGo(p.TypeName)))
 		}
-		// Use Go type inference — the function literal has a concrete type
-		c.declareVar(s.Names[0], goAny)
+		// Track concrete Go function type so call sites can avoid CallFunc
+		funcType := c.compileFunctionType(fl)
+		c.declareVar(s.Names[0], funcType)
 		// Track as function literal for direct call optimization
 		if c.funcLiteralVars == nil {
 			c.funcLiteralVars = make(map[string]*core.FunctionLiteral)
@@ -1306,6 +1307,20 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 	if id, ok := e.Function.(*core.Identifier); ok && c.funcLiteralVars != nil {
 		if _, exists := c.funcLiteralVars[id.Value]; exists {
 			// Generate direct call with typed arguments
+			var args []string
+			for _, a := range e.Arguments {
+				args = append(args, c.compileExpression(a))
+			}
+			return fmt.Sprintf("%s(%s)", id.Value, strings.Join(args, ", "))
+		}
+	}
+
+	// Check if function expression has a known concrete Go function type
+	// (not any) — generate a direct call instead of CallFunc.
+	// This handles cases like: fn := add; fn(3,4) where 'fn' inherited a
+	// function type from 'add' via type inference.
+	if id, ok := e.Function.(*core.Identifier); ok {
+		if t, exists := c.getVarType(id.Value); exists && isFuncType(t) {
 			var args []string
 			for _, a := range e.Arguments {
 				args = append(args, c.compileExpression(a))
@@ -2244,6 +2259,32 @@ func (c *compiler) compileImportStatement(s *core.ImportStatement) {
 }
 
 // Helper functions
+
+func isFuncType(t goType) bool {
+	return strings.HasPrefix(string(t), "func(")
+}
+
+func (c *compiler) compileFunctionType(fl *core.FunctionLiteral) goType {
+	var paramTypes []string
+	for _, p := range fl.Parameters {
+		paramTypes = append(paramTypes, string(c.kamiTypeToGo(p.TypeName)))
+	}
+	var retStr string
+	if len(fl.ReturnTypes) == 1 {
+		retStr = string(c.kamiTypeToGo(fl.ReturnTypes[0]))
+	} else if len(fl.ReturnTypes) > 1 {
+		rets := make([]string, len(fl.ReturnTypes))
+		for i, rt := range fl.ReturnTypes {
+			rets[i] = string(c.kamiTypeToGo(rt))
+		}
+		retStr = "(" + strings.Join(rets, ", ") + ")"
+	}
+	s := "func(" + strings.Join(paramTypes, ", ") + ")"
+	if retStr != "" {
+		s += " " + retStr
+	}
+	return goType(s)
+}
 
 func (c *compiler) kamiTypeToGo(kamiType string) goType {
 	switch strings.ToLower(kamiType) {

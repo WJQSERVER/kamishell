@@ -528,6 +528,9 @@ func NewError(msg string) error {
 }
 
 // CallFunc calls a function value with the given arguments.
+// Typed function variables are resolved to direct calls at compile time
+// (see compileCallExpression in compiler.go); this function serves as the
+// runtime fallback for truly dynamic cases only.
 func CallFunc(fn any, env *Env, args ...any) any {
 	switch f := fn.(type) {
 	case func(*Env, ...any) any:
@@ -544,112 +547,7 @@ func CallFunc(fn any, env *Env, args ...any) any {
 		}
 	case func() any:
 		return f()
-
-	// Typed function literal patterns — avoids reflection for common Kami signatures
-	case func() int64:
-		return f()
-	case func() string:
-		return f()
-	case func() float64:
-		return f()
-	case func() bool:
-		return f()
-
-	case func(int64) int64:
-		if len(args) >= 1 {
-			if a0, ok := args[0].(int64); ok {
-				return f(a0)
-			}
-		}
-	case func(int64) string:
-		if len(args) >= 1 {
-			if a0, ok := args[0].(int64); ok {
-				return f(a0)
-			}
-		}
-	case func(int64) float64:
-		if len(args) >= 1 {
-			if a0, ok := args[0].(int64); ok {
-				return f(a0)
-			}
-		}
-	case func(int64) bool:
-		if len(args) >= 1 {
-			if a0, ok := args[0].(int64); ok {
-				return f(a0)
-			}
-		}
-
-	case func(string) string:
-		if len(args) >= 1 {
-			if a0, ok := args[0].(string); ok {
-				return f(a0)
-			}
-		}
-	case func(string) int64:
-		if len(args) >= 1 {
-			if a0, ok := args[0].(string); ok {
-				return f(a0)
-			}
-		}
-
-	case func(float64) float64:
-		if len(args) >= 1 {
-			if a0, ok := args[0].(float64); ok {
-				return f(a0)
-			}
-		}
-	case func(bool) bool:
-		if len(args) >= 1 {
-			if a0, ok := args[0].(bool); ok {
-				return f(a0)
-			}
-		}
-
-	case func(int64, int64) int64:
-		if len(args) >= 2 {
-			if a0, ok := args[0].(int64); ok {
-				if a1, ok := args[1].(int64); ok {
-					return f(a0, a1)
-				}
-			}
-		}
-	case func(int64, int64) float64:
-		if len(args) >= 2 {
-			if a0, ok := args[0].(int64); ok {
-				if a1, ok := args[1].(int64); ok {
-					return f(a0, a1)
-				}
-			}
-		}
-	case func(int64, int64) bool:
-		if len(args) >= 2 {
-			if a0, ok := args[0].(int64); ok {
-				if a1, ok := args[1].(int64); ok {
-					return f(a0, a1)
-				}
-			}
-		}
-
-	case func(string, string) string:
-		if len(args) >= 2 {
-			if a0, ok := args[0].(string); ok {
-				if a1, ok := args[1].(string); ok {
-					return f(a0, a1)
-				}
-			}
-		}
-	case func(float64, float64) float64:
-		if len(args) >= 2 {
-			if a0, ok := args[0].(float64); ok {
-				if a1, ok := args[1].(float64); ok {
-					return f(a0, a1)
-				}
-			}
-		}
-
 	default:
-		// Reflect fallback for typed closure signatures not covered above
 		v := reflect.ValueOf(fn)
 		if v.Kind() == reflect.Func {
 			in := make([]reflect.Value, len(args))
