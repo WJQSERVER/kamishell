@@ -553,7 +553,7 @@ func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 					if me.Property == "Wait" && len(ce.Arguments) > 0 {
 						// wg.Wait(timeout) returns error — assign to kamiErr
 						c.line("kamiErr = %s", val)
-						c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
+						c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
 						c.addImport("kamishell/recompiler", "")
 						return
 					}
@@ -701,7 +701,7 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 			if me, ok := ce.Function.(*core.MemberExpression); ok {
 				if id, ok := me.Object.(*core.Identifier); ok && id.Value == "sync" && me.Property == "NewWaitGroup" {
 					c.addImport("sync", "")
-					c.declareVar(name, goAny)
+c.declareVar(name, goType("*sync.WaitGroup"))
 					c.line("var %s = &sync.WaitGroup{}", name)
 					if c.waitGroups == nil {
 						c.waitGroups = make(map[string]bool)
@@ -823,10 +823,9 @@ func (c *compiler) isBoolExpr(expr core.Expression) bool {
 			return true
 		}
 	case *core.CallExpression:
-		if id, ok := e.Function.(*core.Identifier); ok {
-			switch id.Value {
-			case "len", "push":
-				return false
+		if id, ok := e.Function.(*core.Identifier); ok && c.funcReturns != nil {
+			if retType, exists := c.funcReturns[id.Value]; exists {
+				return retType == goBool
 			}
 		}
 	}
@@ -981,11 +980,15 @@ func (c *compiler) compileSwitchStatement(s *core.SwitchStatement) {
 			for _, v := range cas.Values {
 				vals = append(vals, c.compileExpression(v))
 			}
-			valStrs := make([]string, len(vals))
-			for i, v := range vals {
-				valStrs[i] = fmt.Sprintf("recompiler.ToStr(%s)", v)
+			if s.Tag != nil {
+				valStrs := make([]string, len(vals))
+				for i, v := range vals {
+					valStrs[i] = fmt.Sprintf("recompiler.ToStr(%s)", v)
+				}
+				c.line("case %s:", strings.Join(valStrs, ", "))
+			} else {
+				c.line("case %s:", strings.Join(vals, ", "))
 			}
-			c.line("case %s:", strings.Join(valStrs, ", "))
 		}
 		c.indent()
 		for _, st := range cas.Body.Statements {
@@ -1138,7 +1141,7 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 		c.line("var %s bool", name)
 		c.line("if v, ok := kamiEnv.GetString(%q); ok { %s, _ = strconv.ParseBool(v) }", name, name)
 	default:
-		c.line("var %s any", name)
+		c.line("var %s string", name)
 		c.line("if v, ok := kamiEnv.GetString(%q); ok { %s = v }", name, name)
 	}
 	return name
@@ -1155,25 +1158,25 @@ func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
 
 	switch e.Operator {
 	case "+":
-		if bothInt || bothStr {
+		if bothInt || bothStr || bothFloat {
 			return fmt.Sprintf("(%s + %s)", left, right)
 		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Add(%s, %s)", left, right)
 	case "-":
-		if bothInt {
+		if bothInt || bothFloat {
 			return fmt.Sprintf("(%s - %s)", left, right)
 		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Sub(%s, %s)", left, right)
 	case "*":
-		if bothInt {
+		if bothInt || bothFloat {
 			return fmt.Sprintf("(%s * %s)", left, right)
 		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Mul(%s, %s)", left, right)
 	case "/":
-		if bothInt {
+		if bothInt || bothFloat {
 			return fmt.Sprintf("(%s / %s)", left, right)
 		}
 		c.addImport("kamishell/recompiler", "")
@@ -1191,25 +1194,25 @@ func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.NotEq(%s, %s)", left, right)
 	case "<":
-		if bothInt || bothFloat {
+		if bothInt || bothFloat || bothStr {
 			return fmt.Sprintf("(%s < %s)", left, right)
 		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.LessThan(%s, %s)", left, right)
 	case ">":
-		if bothInt || bothFloat {
+		if bothInt || bothFloat || bothStr {
 			return fmt.Sprintf("(%s > %s)", left, right)
 		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.GreaterThan(%s, %s)", left, right)
 	case "<=":
-		if bothInt || bothFloat {
+		if bothInt || bothFloat || bothStr {
 			return fmt.Sprintf("(%s <= %s)", left, right)
 		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.LessEq(%s, %s)", left, right)
 	case ">=":
-		if bothInt || bothFloat {
+		if bothInt || bothFloat || bothStr {
 			return fmt.Sprintf("(%s >= %s)", left, right)
 		}
 		c.addImport("kamishell/recompiler", "")
@@ -1224,6 +1227,10 @@ func (c *compiler) compilePrefixExpression(e *core.PrefixExpression) string {
 	right := c.compileExpression(e.Right)
 	switch e.Operator {
 	case "!":
+		// Skip IsTruthy when operand is known to be bool
+		if c.isBoolExpr(e.Right) {
+			return fmt.Sprintf("!(%s)", right)
+		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("!recompiler.IsTruthy(%s)", right)
 	case "-":
@@ -1270,21 +1277,39 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 		switch name {
 		case "len":
 			if len(e.Arguments) > 0 {
-				c.addImport("kamishell/recompiler", "")
 				arg := c.compileExpression(e.Arguments[0])
+				// Use native len() for typed arrays
+				if arrType, ok := c.inferArrayType(e.Arguments[0]); ok {
+					switch arrType {
+					case goInt, goStr, goFloat, goBool:
+						return fmt.Sprintf("int64(len(%s))", arg)
+					}
+				}
+				c.addImport("kamishell/recompiler", "")
 				return fmt.Sprintf("recompiler.ArrayLen(%s)", arg)
 			}
 		case "push":
 			if len(e.Arguments) >= 2 {
-				c.addImport("kamishell/recompiler", "")
 				arr := c.compileExpression(e.Arguments[0])
 				val := c.compileExpression(e.Arguments[1])
+				// Use native append() for typed arrays
+				if arrType, ok := c.inferArrayType(e.Arguments[0]); ok {
+					switch arrType {
+					case goInt, goStr, goFloat, goBool:
+						return fmt.Sprintf("append(%s, %s)", arr, val)
+					}
+				}
+				c.addImport("kamishell/recompiler", "")
 				return fmt.Sprintf("recompiler.ArrayPush(%s, %s)", arr, val)
 			}
 		case "error":
 			c.addImport("kamishell/recompiler", "")
 			if len(e.Arguments) > 0 {
 				arg := c.compileExpression(e.Arguments[0])
+				// Skip ToStr when arg is already string
+				if c.isType(e.Arguments[0], goStr) {
+					return fmt.Sprintf("recompiler.NewError(%s)", arg)
+				}
 				return fmt.Sprintf("recompiler.NewError(recompiler.ToStr(%s))", arg)
 			}
 			return "recompiler.NewError(\"\")"
@@ -1396,7 +1421,7 @@ func (c *compiler) compileMemberExpression(e *core.MemberExpression) string {
 			c.usesEnv = true
 			return fmt.Sprintf("kamiEnv.GetStr(%q)", prop)
 		case "param":
-			return fmt.Sprintf("recompiler.ToStr(paramGet(%q))", prop)
+			return fmt.Sprintf("paramGet(%q)", prop)
 		}
 	}
 
@@ -1554,7 +1579,7 @@ func (c *compiler) compileCommandStatement(s *core.CommandStatement) {
 		c.line("kamiErr = fmt.Errorf(\"%%s exited with code %%d\", %q, exitCode)", name)
 		c.dedent()
 		c.line("}")
-		c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
+		c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
 		c.dedent()
 		c.line("}")
 		return
@@ -1576,7 +1601,7 @@ func (c *compiler) compileCommandStatement(s *core.CommandStatement) {
 	c.line("kamiErr = err")
 	c.dedent()
 	c.line("}")
-	c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
+	c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
 	c.dedent()
 	c.line("}")
 }
@@ -1676,6 +1701,14 @@ func (c *compiler) evalCommandArg(arg core.Expression) string {
 		if c.isType(arg, goInt) {
 			c.addImport("strconv", "")
 			return fmt.Sprintf("strconv.FormatInt(%s, 10)", c.compileExpression(arg))
+		}
+		if c.isType(arg, goFloat) {
+			c.addImport("strconv", "")
+			return fmt.Sprintf("strconv.FormatFloat(%s, 'f', -1, 64)", c.compileExpression(arg))
+		}
+		if c.isType(arg, goBool) {
+			c.addImport("strconv", "")
+			return fmt.Sprintf("strconv.FormatBool(%s)", c.compileExpression(arg))
 		}
 		c.addImport("kamishell/recompiler", "")
 		val := c.compileExpression(a)
@@ -1802,6 +1835,13 @@ func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
 	c.addImport("os/exec", "")
 	target := c.compileExpression(s.Target)
 
+	var targetArg string
+	if c.isType(s.Target, goStr) {
+		targetArg = target
+	} else {
+		targetArg = fmt.Sprintf("recompiler.ToStr(%s)", target)
+	}
+
 	var flag string
 	if s.Append {
 		flag = "os.O_APPEND"
@@ -1811,11 +1851,11 @@ func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
 
 	c.line("{")
 	c.indent()
-	c.line("f, err := os.OpenFile(recompiler.ToStr(%s), os.O_CREATE|os.O_WRONLY|%s, 0644)", target, flag)
+	c.line("f, err := os.OpenFile(%s, os.O_CREATE|os.O_WRONLY|%s, 0644)", targetArg, flag)
 	c.line("if err != nil {")
 	c.indent()
 	c.line("kamiErr = err")
-	c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
+	c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
 	c.line("return")
 	c.dedent()
 	c.line("}")
@@ -1848,7 +1888,7 @@ func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
 		c.compilePipeWithOutput(ps, "f")
 	}
 
-	c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
+	c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
 	c.dedent()
 	c.line("}")
 }
@@ -2089,7 +2129,11 @@ func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 	c.line("{")
 	c.indent()
 	c.line("kamiErr = nil")
-	c.line("parts := strings.Fields(recompiler.ToStr(%s))", cmd)
+	if c.isType(s.CommandStr, goStr) {
+		c.line("parts := strings.Fields(%s)", cmd)
+	} else {
+		c.line("parts := strings.Fields(recompiler.ToStr(%s))", cmd)
+	}
 	c.line("if len(parts) > 0 {")
 	c.indent()
 	c.line("c := exec.Command(parts[0], parts[1:]...)")
@@ -2097,7 +2141,7 @@ func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 	c.line("if err := c.Run(); err != nil { kamiErr = err }")
 	c.dedent()
 	c.line("}")
-	c.line("kamiEnv.SetString(\"err\", recompiler.ToStr(kamiErr))")
+	c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
 	c.dedent()
 	c.line("}")
 }
@@ -2130,7 +2174,6 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	} else {
 		// Void function — no return types
 		c.funcReturns[funcName] = goAny
-		c.funcReturnList[funcName] = []goType{goAny}
 		if c.funcIsVoid == nil {
 			c.funcIsVoid = make(map[string]bool)
 		}
@@ -2388,7 +2431,7 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 			return t
 		}
 	case *core.FunctionLiteral:
-		return goAny
+		return c.compileFunctionType(e)
 	}
 	return goAny
 }
