@@ -1061,7 +1061,8 @@ func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environ
 		if !ok {
 			return &Error{Message: "type mismatch: for increment requires INTEGER"}
 		}
-		env.SetObject(incName, getIntegerObject(intObj.Value+delta))
+		env.recycleInteger(intObj)
+		env.SetObject(incName, env.allocInteger(intObj.Value+delta))
 	}
 	return result
 }

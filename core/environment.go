@@ -4,6 +4,7 @@ import "maps"
 
 import "os"
 import "strings"
+import "unsafe"
 
 // EnvEntry holds a variable's value for pointer reference support.
 type EnvEntry struct {
@@ -41,6 +42,8 @@ func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environm
 	}
 }
 
+const intFreelistCap = 16
+
 type Environment struct {
 	store        map[string]Object
 	refStore     map[string]*EnvEntry // pointer reference storage (lazy)
@@ -48,6 +51,7 @@ type Environment struct {
 	constants    map[string]bool // constant names (from func declarations)
 	outer        *Environment
 	packageStore map[string]map[string]string
+	intFreelist  []*Integer // recycled Integer objects (CPython-style freelist)
 }
 
 func (e *Environment) Clone() *Environment {
@@ -372,4 +376,41 @@ func (e *Environment) SetByPointer(ref *EnvEntry, val Object) {
 		owner.ensureTypes()
 		owner.types[ref.Name] = string(val.Type())
 	}
+}
+
+// allocInteger returns an Integer with the given value.
+// For cached range: returns pointer into the global cache (zero alloc).
+// For out-of-range: reuses a recycled Integer from the freelist if available,
+// otherwise heap-allocates a new one.
+func (e *Environment) allocInteger(value int64) *Integer {
+	if value >= integerCacheMin && value <= integerCacheMax {
+		return &integerCache[value-integerCacheMin]
+	}
+	if n := len(e.intFreelist); n > 0 {
+		obj := e.intFreelist[n-1]
+		e.intFreelist[n-1] = nil // avoid retaining reference
+		e.intFreelist = e.intFreelist[:n-1]
+		obj.Value = value
+		return obj
+	}
+	return &Integer{Value: value}
+}
+
+// recycleInteger adds an Integer object back to the freelist for reuse.
+// Cached Integers (pointers into the global integerCache) are not recycled.
+func (e *Environment) recycleInteger(obj *Integer) {
+	if len(e.intFreelist) >= intFreelistCap {
+		return
+	}
+	// Don't recycle cached singletons
+	if isCachedInteger(obj) {
+		return
+	}
+	e.intFreelist = append(e.intFreelist, obj)
+}
+
+// isCachedInteger reports whether obj is a pointer into the global integerCache.
+func isCachedInteger(obj *Integer) bool {
+	return uintptr(unsafe.Pointer(obj)) >= uintptr(unsafe.Pointer(&integerCache[0])) &&
+		uintptr(unsafe.Pointer(obj)) < uintptr(unsafe.Pointer(&integerCache[0]))+uintptr(len(integerCache))*unsafe.Sizeof(integerCache[0])
 }

@@ -30,6 +30,10 @@ func BenchmarkEvalLoopVeryLargeProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `i := 0; for i < 10000 { i = i + 1 }`)
 }
 
+func BenchmarkEvalLoopBeyondCache(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 20000; for i < 30000 { i = i + 1 }`)
+}
+
 func BenchmarkEvalLoopWithPrintProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `i := 0; for i < 100 { print i; i = i + 1 }`)
 }
