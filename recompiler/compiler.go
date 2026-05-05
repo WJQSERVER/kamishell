@@ -54,6 +54,7 @@ type compiler struct {
 	parentTypes    map[string]goType
 	funcLiteralVars map[string]*core.FunctionLiteral // variables assigned function literals
 	waitGroups     map[string]bool // variables that are *sync.WaitGroup
+	importedPkgs   map[string]bool // imported Go package names (e.g., "fmt", "math")
 	loopDepth      int
 	indentLv       int
 	usesErr        bool
@@ -1089,6 +1090,10 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 	if c.knownFuncs != nil && c.knownFuncs[name] {
 		return fmt.Sprintf("kamiFunc_%s", name)
 	}
+	// Imported Go package — return package name directly (no env lookup)
+	if c.importedPkgs != nil && c.importedPkgs[name] {
+		return name
+	}
 	// Auto-declare from env lookup — use parent types if available for closure capture
 	c.usesEnv = true
 	c.addImport("kamishell/recompiler", "")
@@ -1325,6 +1330,17 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 		}
 	}
 
+	// Check if it's a call to an imported Go package function — generate direct call
+	if me, ok := e.Function.(*core.MemberExpression); ok {
+		if id, ok := me.Object.(*core.Identifier); ok && c.importedPkgs != nil && c.importedPkgs[id.Value] {
+			var args []string
+			for _, a := range e.Arguments {
+				args = append(args, c.compileExpression(a))
+			}
+			return fmt.Sprintf("%s.%s(%s)", id.Value, me.Property, strings.Join(args, ", "))
+		}
+	}
+
 	// Generic call: function loaded from env as any
 	c.addImport("kamishell/recompiler", "")
 	fn := c.compileExpression(e.Function)
@@ -1337,11 +1353,13 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 }
 
 func (c *compiler) compileMemberExpression(e *core.MemberExpression) string {
-	c.addImport("kamishell/recompiler", "")
-	obj := c.compileExpression(e.Object)
 	prop := e.Property
 
 	if id, ok := e.Object.(*core.Identifier); ok {
+		// Imported Go package — generate direct package function reference
+		if c.importedPkgs != nil && c.importedPkgs[id.Value] {
+			return fmt.Sprintf("%s.%s", id.Value, prop)
+		}
 		switch id.Value {
 		case "env":
 			c.usesEnv = true
@@ -1351,6 +1369,9 @@ func (c *compiler) compileMemberExpression(e *core.MemberExpression) string {
 		}
 	}
 
+	// Fallback — should not be reached for well-formed programs
+	obj := c.compileExpression(e.Object)
+	c.addImport("kamishell/recompiler", "")
 	return fmt.Sprintf("recompiler.MemberGet(%s, %q)", obj, prop)
 }
 
@@ -1402,6 +1423,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 		loopDepth:      c.loopDepth,
 		funcNeedsEnv:   c.funcNeedsEnv,
 		waitGroups:     c.waitGroups,
+		importedPkgs:   c.importedPkgs,
 	}
 
 	// Register parameters with their declared types
@@ -2089,6 +2111,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 		indentLv:       1,
 		funcNeedsEnv:   c.funcNeedsEnv,
 		waitGroups:     c.waitGroups,
+		importedPkgs:   c.importedPkgs,
 	}
 	// Register parameters with their types so they won't be re-declared
 	for _, p := range s.Parameters {
@@ -2171,6 +2194,10 @@ func (c *compiler) compileImportStatement(s *core.ImportStatement) {
 	if strings.HasPrefix(path, "Go/") {
 		goPkg := strings.TrimPrefix(path, "Go/")
 		c.addImport(goPkg, "")
+		if c.importedPkgs == nil {
+			c.importedPkgs = make(map[string]bool)
+		}
+		c.importedPkgs[goPkg] = true
 	} else if path == "Go" {
 		// "Go" alone doesn't need an import
 	}

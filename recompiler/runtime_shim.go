@@ -487,8 +487,10 @@ func WaitAllTimeout(secs any) {
 }
 
 // MemberGet gets a member value from an object.
+// This should not be reached for well-formed programs — all member access
+// should be resolved at compile time. Panics to surface bugs immediately.
 func MemberGet(obj any, prop string) any {
-	return nil
+	panic(fmt.Sprintf("unhandled member access: %T.%s", obj, prop))
 }
 
 // NewError creates a new error value (for the error() native function).
