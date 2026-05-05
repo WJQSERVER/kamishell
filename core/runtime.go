@@ -2293,17 +2293,10 @@ func evalMethodCallBlock(mcb *MethodCallBlockStatement, env *Environment, stdin 
 			if !ok {
 				return &Error{Message: "invalid WaitGroup"}
 			}
-			wg.Add(1)
 			asyncEnv := env.Clone()
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						fmt.Fprintf(stderr, "panic in wg.Go: %v\n", r)
-					}
-					wg.Done()
-				}()
+			wg.Go(func() {
 				EvalWithIO(mcb.Body, asyncEnv, stdin, stdout, stderr)
-			}()
+			})
 			return NULL
 		case "Wait":
 			wg, ok := o.Wg.(*sync.WaitGroup)
