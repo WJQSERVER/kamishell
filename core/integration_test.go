@@ -874,6 +874,65 @@ func TestVarWithTypeZeroValue(t *testing.T) {
 	}
 }
 
+func TestVarTypeInference(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `var title = "kami"; var count = 42; var ok = true; print title; print count; print ok`
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "kami" {
+		t.Errorf("expected 'kami', got %q", lines[0])
+	}
+	if lines[1] != "42" {
+		t.Errorf("expected '42', got %q", lines[1])
+	}
+	if lines[2] != "true" {
+		t.Errorf("expected 'true', got %q", lines[2])
+	}
+}
+
+func TestVarTypeInferenceReassignment(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `var x = 10; x = 20; print x`
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "20" {
+		t.Errorf("expected '20', got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestVarTypeInferenceRejectsTypeMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`var x = 10; x = "hello"`, env)
+	if !strings.Contains(stderr, "cannot assign") {
+		t.Errorf("expected type mismatch error, got %q", stderr)
+	}
+}
+
+func TestVarTypeInferenceArray(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `var arr = [1, 2, 3]; print len(arr); print arr[1]`
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if lines[0] != "3" || lines[1] != "2" {
+		t.Errorf("expected '3' and '2', got %v", lines)
+	}
+}
+
 func TestVarTypeMismatch(t *testing.T) {
 	env := NewEmptyEnvironment()
 	_, stderr, _ := runKami("var count int = true", env)
@@ -917,8 +976,8 @@ func TestNilDoesNotBecomeTrackedVariableType(t *testing.T) {
 func TestVarNilDoesNotFreezeNullType(t *testing.T) {
 	env := NewEmptyEnvironment()
 	stdout, stderr, _ := runKami("var x = nil", env)
-	if !strings.Contains(stderr, "invalid var statement") {
-		t.Errorf("expected error about invalid var statement, got stderr: %q", stderr)
+	if !strings.Contains(stderr, "untyped nil cannot be used with var") {
+		t.Errorf("expected error about untyped nil, got stderr: %q", stderr)
 	}
 	if strings.TrimSpace(stdout) != "" {
 		t.Errorf("expected empty stdout, got %q", stdout)

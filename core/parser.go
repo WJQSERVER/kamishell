@@ -1307,12 +1307,13 @@ func (p *Parser) parseVarStatement() *VarStatement {
 	p.nextToken()
 	stmt.Name = p.curToken.Literal
 
-	// Type is required for var
-	if p.peekToken.Type != IDENT {
-		return nil  // var x without type is error
+	// Type is optional if = follows directly (type inferred from value)
+	if p.peekToken.Type == IDENT {
+		p.nextToken()
+		stmt.TypeName = p.curToken.Literal
+	} else if p.peekToken.Type != ASSIGN && p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF {
+		return nil
 	}
-	p.nextToken()
-	stmt.TypeName = p.curToken.Literal
 
 	// Optional value
 	if p.peekToken.Type == ASSIGN {

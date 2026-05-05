@@ -138,18 +138,26 @@ b[0] = 99     // a 不变
 
 ### `var` 显式声明
 
-`var` 必须声明类型：
+`var` 支持显式类型声明和类型推断：
 
 ```go
+// 显式类型 + 零值
 var count int
 var name string
 var ready bool
 var arr array
 
+// 显式类型 + 初始值
 var retries int = 3
+
+// 类型推断（从值推断类型）
+var title = "kami"     // 推断为 string
+var x = 42             // 推断为 int
+var ok = true          // 推断为 bool
+var arr = [1, 2, 3]    // 推断为 array
 ```
 
-注意：`var title = "kami"`（无类型）**不合法**，parser 会静默丢弃该语句。需要写 `var title string = "kami"` 或使用 `title := "kami"`。
+注意：`var x = nil`（无类型 nil）**不合法**，因为 nil 无法推断类型。
 
 ### 零值规则
 

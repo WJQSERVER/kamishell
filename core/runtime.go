@@ -2544,6 +2544,11 @@ func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdou
 		return errObj
 	}
 
+	// Reject untyped nil (consistent with := which rejects nil)
+	if typeName == "" && val.Type() == NULL_OBJ {
+		return &Error{Message: "untyped nil cannot be used with var (use var x type = nil instead)"}
+	}
+
 	if typeName == "" && shouldTrackType(string(val.Type())) {
 		typeName = string(val.Type())
 	}
