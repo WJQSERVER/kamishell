@@ -498,3 +498,177 @@ func TestParseModuloOperator(t *testing.T) {
 		t.Errorf("expected operator %%, got %q", infix.Operator)
 	}
 }
+
+// --- Grouped expression as statement ---
+
+func TestParseGroupedExpressionStatement(t *testing.T) {
+	input := `(5 + 3)`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExpressionStatement. got=%T", program.Statements[0])
+	}
+
+	infix, ok := stmt.Expression.(*InfixExpression)
+	if !ok {
+		t.Fatalf("expression is not *InfixExpression. got=%T", stmt.Expression)
+	}
+
+	if infix.Operator != "+" {
+		t.Errorf("expected operator +, got %q", infix.Operator)
+	}
+}
+
+func TestParsePrintGroupedExpression(t *testing.T) {
+	input := `print (5 + 3)`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*PrintStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PrintStatement. got=%T", program.Statements[0])
+	}
+
+	infix, ok := stmt.Expression.(*InfixExpression)
+	if !ok {
+		t.Fatalf("expression is not *InfixExpression. got=%T", stmt.Expression)
+	}
+
+	if infix.Operator != "+" {
+		t.Errorf("expected operator +, got %q", infix.Operator)
+	}
+}
+
+func TestParseIfGroupedCondition(t *testing.T) {
+	input := `if (x > 5) { print "big" }`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*IfStatement)
+	if !ok {
+		t.Fatalf("stmt is not *IfStatement. got=%T", program.Statements[0])
+	}
+
+	// Condition should be a grouped expression (InfixExpression)
+	infix, ok := stmt.Condition.(*InfixExpression)
+	if !ok {
+		t.Fatalf("condition is not *InfixExpression. got=%T", stmt.Condition)
+	}
+
+	if infix.Operator != ">" {
+		t.Errorf("expected operator >, got %q", infix.Operator)
+	}
+}
+
+func TestParseNilLiteralStatement(t *testing.T) {
+	input := `nil`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExpressionStatement. got=%T", program.Statements[0])
+	}
+
+	_, ok = stmt.Expression.(*NilLiteral)
+	if !ok {
+		t.Fatalf("expression is not *NilLiteral. got=%T", stmt.Expression)
+	}
+}
+
+func TestParseArrayLiteralStatement(t *testing.T) {
+	input := `[1, 2, 3]`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExpressionStatement. got=%T", program.Statements[0])
+	}
+
+	arr, ok := stmt.Expression.(*ArrayLiteral)
+	if !ok {
+		t.Fatalf("expression is not *ArrayLiteral. got=%T", stmt.Expression)
+	}
+
+	if len(arr.Elements) != 3 {
+		t.Errorf("expected 3 elements, got %d", len(arr.Elements))
+	}
+}
+
+func TestParsePrefixNotStatement(t *testing.T) {
+	input := `!true`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExpressionStatement. got=%T", program.Statements[0])
+	}
+
+	prefix, ok := stmt.Expression.(*PrefixExpression)
+	if !ok {
+		t.Fatalf("expression is not *PrefixExpression. got=%T", stmt.Expression)
+	}
+
+	if prefix.Operator != "!" {
+		t.Errorf("expected operator !, got %q", prefix.Operator)
+	}
+}
+
+func TestParsePrefixNegationStatement(t *testing.T) {
+	input := `-5`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExpressionStatement. got=%T", program.Statements[0])
+	}
+
+	prefix, ok := stmt.Expression.(*PrefixExpression)
+	if !ok {
+		t.Fatalf("expression is not *PrefixExpression. got=%T", stmt.Expression)
+	}
+
+	if prefix.Operator != "-" {
+		t.Errorf("expected operator -, got %q", prefix.Operator)
+	}
+}

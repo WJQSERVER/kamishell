@@ -196,7 +196,7 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		}
 	case LBRACE:
 		stmt = p.parseBlockStatement()
-	case NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, DOLLAR:
+	case NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, DOLLAR, LPAREN, NIL, LBRACKET, NOT, MINUS:
 		stmt = p.parseExpressionStatement()
 	default:
 		stmt = p.parseCommandStatement()

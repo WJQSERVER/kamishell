@@ -623,3 +623,53 @@ func TestStringComparison(t *testing.T) {
 		testBooleanObject(t, evaluated, tt.expected)
 	}
 }
+
+// --- Grouped expression as statement ---
+
+func TestGroupedExpressionStatement(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int64
+	}{
+		{"(5 + 3)", 8},
+		{"(10 - 2)", 8},
+		{"(2 * 3)", 6},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		testIntegerObject(t, evaluated, tt.expected)
+	}
+}
+
+func TestPrintGroupedExpression(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("print (5 + 3)", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "8" {
+		t.Errorf("expected '8', got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestIfGroupedCondition(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("x := 10; if (x > 5) { print \"big\" }", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "big" {
+		t.Errorf("expected 'big', got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestPrefixNotStatement(t *testing.T) {
+	evaluated := testEval("(!false)")
+	testBooleanObject(t, evaluated, true)
+}
+
+func TestPrefixNegationStatement(t *testing.T) {
+	evaluated := testEval("(-5)")
+	testIntegerObject(t, evaluated, -5)
+}
