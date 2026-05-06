@@ -1256,6 +1256,19 @@ func evalPrefixExpression(node *PrefixExpression, env *Environment, stdin io.Rea
 			return val
 		}
 		return nativeBoolToBooleanObject(!isTruthy(val))
+	case "-":
+		val := EvalWithIO(node.Right, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		switch v := val.(type) {
+		case *Integer:
+			return &Integer{Value: -v.Value}
+		case *Float:
+			return &Float{Value: -v.Value}
+		default:
+			return &Error{Message: "cannot negate " + string(val.Type())}
+		}
 	default:
 		return &Error{Message: "unknown prefix operator: " + node.Operator}
 	}

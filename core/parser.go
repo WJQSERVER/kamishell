@@ -702,6 +702,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseDereferenceExpression()
 	case NOT:
 		leftExp = p.parseNotExpression()
+	case MINUS:
+		leftExp = p.parseNegateExpression()
 	case LBRACKET:
 		leftExp = p.parseArrayLiteral()
 	case FUNC:
@@ -1358,6 +1360,13 @@ func (p *Parser) parseDereferenceExpression() Expression {
 
 func (p *Parser) parseNotExpression() Expression {
 	exp := &PrefixExpression{Token: p.curToken, Operator: "!"}
+	p.nextToken()
+	exp.Right = p.parseExpression(PREFIX)
+	return exp
+}
+
+func (p *Parser) parseNegateExpression() Expression {
+	exp := &PrefixExpression{Token: p.curToken, Operator: "-"}
 	p.nextToken()
 	exp.Right = p.parseExpression(PREFIX)
 	return exp
