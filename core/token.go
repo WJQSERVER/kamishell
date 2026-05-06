@@ -26,6 +26,8 @@ const (
 	NOT TokenType = "!"
 	EQ TokenType = "=="
 	NEQ TokenType = "!="
+	GEQ TokenType = ">="
+	LEQ TokenType = "<="
 	PLUS TokenType = "+"
 	MINUS TokenType = "-"
 	ASTERISK TokenType = "*"

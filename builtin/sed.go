@@ -32,19 +32,42 @@ func Sed(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 	}
 
 	expr := args[0]
-	if !strings.HasPrefix(expr, "s/") {
+	if len(expr) < 2 || expr[0] != 's' {
 		fmt.Fprintln(stderr, "sed: only simple 's/old/new/' substitution is supported")
 		return 1
 	}
 
-	parts := strings.Split(expr, "/")
-	if len(parts) < 3 {
-		fmt.Fprintln(stderr, "sed: invalid substitution expression")
+	// Use the character after 's' as the delimiter (usually '/')
+	delim := rune(expr[1])
+
+	// Find the second delimiter (end of old pattern)
+ secondIdx := -1
+ for i := 2; i < len(expr); i++ {
+		if rune(expr[i]) == delim {
+			secondIdx = i
+			break
+		}
+	}
+	if secondIdx < 0 {
+		fmt.Fprintln(stderr, "sed: invalid substitution expression: missing second delimiter")
 		return 1
 	}
 
-	old := parts[1]
-	new := parts[2]
+	// Find the third delimiter (end of new pattern)
+ thirdIdx := -1
+ for i := secondIdx + 1; i < len(expr); i++ {
+		if rune(expr[i]) == delim {
+			thirdIdx = i
+			break
+		}
+	}
+	if thirdIdx < 0 {
+		fmt.Fprintln(stderr, "sed: invalid substitution expression: missing third delimiter")
+		return 1
+	}
+
+	old := expr[2:secondIdx]
+	new := expr[secondIdx+1 : thirdIdx]
 	files := args[1:]
 
 	if len(files) == 0 {

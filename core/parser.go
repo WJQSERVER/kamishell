@@ -715,7 +715,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND && precedence < p.peekPrecedence() {
 		p.nextToken()
 		switch p.curToken.Type {
-		case EQ, NEQ, GREATER, LESS, PLUS, MINUS, ASTERISK, SLASH, MODULO:
+		case EQ, NEQ, GREATER, LESS, GEQ, LEQ, PLUS, MINUS, ASTERISK, SLASH, MODULO:
 			leftExp = p.parseInfixExpression(leftExp)
 		case DOT:
 			leftExp = p.parseMemberExpression(leftExp)
@@ -806,7 +806,7 @@ func precedenceForToken(tokenType TokenType) int {
 	switch tokenType {
 	case EQ, NEQ:
 		return EQUALS
-	case GREATER, LESS:
+	case GREATER, LESS, GEQ, LEQ:
 		return LESSGREATER
 	case PLUS, MINUS:
 		return SUM

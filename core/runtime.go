@@ -354,6 +354,26 @@ var goStdlib = map[string]map[string]*NativeFunction{
 				return &String{Value: strings.Replace(s.Value, old.Value, new.Value, -1)}
 			},
 		},
+		"Join": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Join requires exactly two arguments"}
+				}
+				arr, ok := args[0].(*Array)
+				if !ok {
+					return &Error{Message: "Join first argument must be an array"}
+				}
+				sep, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Join second argument must be a string"}
+				}
+				strs := make([]string, len(arr.Elements))
+				for i, elem := range arr.Elements {
+					strs[i] = inspectObject(elem)
+				}
+				return &String{Value: strings.Join(strs, sep.Value)}
+			},
+		},
 		"Split": &NativeFunction{
 			Fn: func(env *Environment, args ...Object) Object {
 				if len(args) != 2 {
@@ -368,33 +388,11 @@ var goStdlib = map[string]map[string]*NativeFunction{
 					return &Error{Message: "Split second argument must be a string"}
 				}
 				parts := strings.Split(s.Value, sep.Value)
-				// 返回字符串数组（暂时用字符串表示）
-				var result strings.Builder
-				result.WriteString("[")
+				elems := make([]Object, len(parts))
 				for i, part := range parts {
-					if i > 0 {
-						result.WriteString(", ")
-					}
-					result.WriteString("\"" + part + "\"")
+					elems[i] = &String{Value: part}
 				}
-				result.WriteString("]")
-				return &String{Value: result.String()}
-			},
-		},
-		"Join": &NativeFunction{
-			Fn: func(env *Environment, args ...Object) Object {
-				if len(args) != 2 {
-					return &Error{Message: "Join requires exactly two arguments"}
-				}
-				arr, ok := args[0].(*String)
-				if !ok {
-					return &Error{Message: "Join first argument must be a string"}
-				}
-				sep, ok := args[1].(*String)
-				if !ok {
-					return &Error{Message: "Join second argument must be a string"}
-				}
-				return &String{Value: strings.Join([]string{arr.Value}, sep.Value)}
+				return &Array{Elements: elems}
 			},
 		},
 	},
@@ -1427,6 +1425,14 @@ func evalStringInfixExpression(operator string, left, right string) Object {
 		return nativeBoolToBooleanObject(left == right)
 	case "!=":
 		return nativeBoolToBooleanObject(left != right)
+	case ">":
+		return nativeBoolToBooleanObject(left > right)
+	case "<":
+		return nativeBoolToBooleanObject(left < right)
+	case ">=":
+		return nativeBoolToBooleanObject(left >= right)
+	case "<=":
+		return nativeBoolToBooleanObject(left <= right)
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", STRING_OBJ, operator, STRING_OBJ)}
 	}

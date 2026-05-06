@@ -4,6 +4,7 @@ import "maps"
 
 import "os"
 import "strings"
+import "sync"
 import "unsafe"
 
 // EnvEntry holds a variable's value for pointer reference support.
@@ -52,6 +53,7 @@ type Environment struct {
 	outer        *Environment
 	packageStore map[string]map[string]string
 	intFreelist  []*Integer // recycled Integer objects (CPython-style freelist)
+	freelistMu   sync.Mutex // protects intFreelist
 }
 
 func (e *Environment) Clone() *Environment {
@@ -386,27 +388,30 @@ func (e *Environment) allocInteger(value int64) *Integer {
 	if value >= integerCacheMin && value <= integerCacheMax {
 		return &integerCache[value-integerCacheMin]
 	}
+	e.freelistMu.Lock()
 	if n := len(e.intFreelist); n > 0 {
 		obj := e.intFreelist[n-1]
 		e.intFreelist[n-1] = nil // avoid retaining reference
 		e.intFreelist = e.intFreelist[:n-1]
+		e.freelistMu.Unlock()
 		obj.Value = value
 		return obj
 	}
+	e.freelistMu.Unlock()
 	return &Integer{Value: value}
 }
 
 // recycleInteger adds an Integer object back to the freelist for reuse.
 // Cached Integers (pointers into the global integerCache) are not recycled.
 func (e *Environment) recycleInteger(obj *Integer) {
-	if len(e.intFreelist) >= intFreelistCap {
-		return
-	}
-	// Don't recycle cached singletons
 	if isCachedInteger(obj) {
 		return
 	}
-	e.intFreelist = append(e.intFreelist, obj)
+	e.freelistMu.Lock()
+	if len(e.intFreelist) < intFreelistCap {
+		e.intFreelist = append(e.intFreelist, obj)
+	}
+	e.freelistMu.Unlock()
 }
 
 // isCachedInteger reports whether obj is a pointer into the global integerCache.
