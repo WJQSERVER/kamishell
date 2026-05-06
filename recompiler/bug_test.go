@@ -332,8 +332,8 @@ z := x + y
 print z`
 
 	src := compileSource(t, source)
-	// z should be computed as x + y
-	assertSourceContains(t, src, "(x + y)")
+	// z should be computed as x + y (no redundant parens at assignment level)
+	assertSourceContains(t, src, "x + y")
 }
 
 // ============================================================

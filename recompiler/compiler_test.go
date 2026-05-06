@@ -253,3 +253,140 @@ if z == 3 {
 		t.Fatalf("expected 'ok', got: %q", out)
 	}
 }
+
+// --- Readability: literal optimization and paren removal ---
+
+func TestLiteralOptimizationInt(t *testing.T) {
+	source := `x := 42
+print x`
+	src := compileSource(t, source)
+	// Should generate "var x int64 = 42" not "var x int64 = int64(42)"
+	assertSourceContains(t, src, "var x int64 = 42")
+	assertSourceNotContains(t, src, "int64(42)")
+}
+
+func TestLiteralOptimizationFloat(t *testing.T) {
+	source := `x := 3.14
+print x`
+	src := compileSource(t, source)
+	// Should generate "var x float64 = 3.14" not "var x float64 = float64(3.14)"
+	assertSourceContains(t, src, "var x float64 = 3.14")
+}
+
+func TestArithmeticPrecedencePreserved(t *testing.T) {
+	// a + b * c should be a + (b * c), not (a + b) * c
+	source := `a := 2
+b := 3
+c := 4
+result := a + b * c
+print result`
+	binary, _ := compileAndBuild(t, "precedence", source)
+	out := runBinary(t, binary)
+	// 2 + 3*4 = 2 + 12 = 14
+	if strings.TrimSpace(out) != "14" {
+		t.Fatalf("expected '14', got: %q", out)
+	}
+}
+
+func TestArithmeticPrecedenceSubtraction(t *testing.T) {
+	source := `a := 10
+b := 3
+c := 2
+result := a - b * c
+print result`
+	binary, _ := compileAndBuild(t, "precedence_sub", source)
+	out := runBinary(t, binary)
+	// 10 - 3*2 = 10 - 6 = 4
+	if strings.TrimSpace(out) != "4" {
+		t.Fatalf("expected '4', got: %q", out)
+	}
+}
+
+func TestArithmeticPrecedenceDivision(t *testing.T) {
+	source := `a := 10
+b := 2
+c := 3
+result := a + b / c
+print result`
+	binary, _ := compileAndBuild(t, "precedence_div", source)
+	out := runBinary(t, binary)
+	// 10 + 2/3 = 10 + 0 = 10 (integer division)
+	if strings.TrimSpace(out) != "10" {
+		t.Fatalf("expected '10', got: %q", out)
+	}
+}
+
+func TestNestedFunctionCallsCorrect(t *testing.T) {
+	source := `func add(a int, b int) int { return a + b }
+func mul(a int, b int) int { return a * b }
+result := add(mul(2, 3), 4)
+print result`
+	binary, _ := compileAndBuild(t, "nested_calls", source)
+	out := runBinary(t, binary)
+	// mul(2,3) = 6, add(6, 4) = 10
+	if strings.TrimSpace(out) != "10" {
+		t.Fatalf("expected '10', got: %q", out)
+	}
+}
+
+func TestForLoopPostCorrect(t *testing.T) {
+	source := `sum := 0
+for i := 0; i < 5; i = i + 1 {
+    sum = sum + i
+}
+print sum`
+	binary, _ := compileAndBuild(t, "for_post", source)
+	out := runBinary(t, binary)
+	// 0+1+2+3+4 = 10
+	if strings.TrimSpace(out) != "10" {
+		t.Fatalf("expected '10', got: %q", out)
+	}
+}
+
+func TestReturnWithoutParens(t *testing.T) {
+	source := `func calc(a int, b int) int { return a + b }
+print calc(3, 4)`
+	binary, _ := compileAndBuild(t, "return_no_parens", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "7" {
+		t.Fatalf("expected '7', got: %q", out)
+	}
+}
+
+func TestPrintWithoutParens(t *testing.T) {
+	source := `x := 10
+y := 20
+print x + y`
+	binary, _ := compileAndBuild(t, "print_no_parens", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "30" {
+		t.Fatalf("expected '30', got: %q", out)
+	}
+}
+
+func TestStringConcatCorrect(t *testing.T) {
+	source := `a := "hello"
+b := " "
+c := "world"
+print a + b + c`
+	binary, _ := compileAndBuild(t, "str_concat", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "hello world" {
+		t.Fatalf("expected 'hello world', got: %q", out)
+	}
+}
+
+func TestMixedArithmeticAndComparison(t *testing.T) {
+	source := `x := 10
+y := 3
+if x % y == 1 {
+    print "correct"
+} else {
+    print "wrong"
+}`
+	binary, _ := compileAndBuild(t, "mixed_ops", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "correct" {
+		t.Fatalf("expected 'correct', got: %q", out)
+	}
+}

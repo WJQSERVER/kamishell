@@ -492,11 +492,11 @@ func (c *compiler) compileStatement(stmt core.Statement) {
 			c.line("return")
 		} else if len(s.ReturnValues) == 1 {
 			val := c.compileExpression(s.ReturnValues[0])
-			c.line("return %s", val)
+			c.line("return %s", stripOuterParens(val))
 		} else {
 			vals := make([]string, len(s.ReturnValues))
 			for i, rv := range s.ReturnValues {
-				vals[i] = c.compileExpression(rv)
+				vals[i] = stripOuterParens(c.compileExpression(rv))
 			}
 			c.line("return %s", strings.Join(vals, ", "))
 		}
@@ -577,7 +577,7 @@ func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 func (c *compiler) compilePrintStatement(s *core.PrintStatement) {
 	c.addImport("kamishell/kamilib", "")
 	val := c.compileExpression(s.Expression)
-	c.line("kamilib.KamiPrint(%s)", val)
+	c.line("kamilib.KamiPrint(%s)", stripOuterParens(val))
 }
 
 func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
@@ -715,7 +715,22 @@ c.declareVar(name, goType("*sync.WaitGroup"))
 		// Variable declaration: infer type from expr
 		typ := c.inferGoType(s.Value)
 		c.declareVar(name, typ)
-		c.line("var %s %s = %s", name, typ, val)
+		// Optimize: use literal value directly when type is known
+		if typ == goInt {
+			if lit, ok := compileIntLiteral(s.Value); ok {
+				c.line("var %s int64 = %s", name, lit)
+			} else {
+				c.line("var %s %s = %s", name, typ, stripOuterParens(val))
+			}
+		} else if typ == goFloat {
+			if lit, ok := compileFloatLiteral(s.Value); ok {
+				c.line("var %s float64 = %s", name, lit)
+			} else {
+				c.line("var %s %s = %s", name, typ, stripOuterParens(val))
+			}
+		} else {
+			c.line("var %s %s = %s", name, typ, stripOuterParens(val))
+		}
 
 		// Track array element type for typed arrays
 		if al, ok := s.Value.(*core.ArrayLiteral); ok && len(al.Elements) > 0 {
@@ -741,7 +756,7 @@ c.declareVar(name, goType("*sync.WaitGroup"))
 		if !c.hasVar(name) {
 			c.declareVar(name, goAny)
 		}
-		c.line("%s = %s", name, val)
+		c.line("%s = %s", name, stripOuterParens(val))
 	}
 
 	// Only sync to env if this variable is referenced via $var or by builtins
@@ -755,7 +770,22 @@ func (c *compiler) compileVarStatement(s *core.VarStatement) {
 	c.declareVar(s.Name, typ)
 	if s.Value != nil {
 		val := c.compileExpression(s.Value)
-		c.line("var %s %s = %s", s.Name, typ, val)
+		// Optimize: use literal value directly when type is known
+		if typ == goInt {
+			if lit, ok := compileIntLiteral(s.Value); ok {
+				c.line("var %s int64 = %s", s.Name, lit)
+			} else {
+				c.line("var %s %s = %s", s.Name, typ, stripOuterParens(val))
+			}
+		} else if typ == goFloat {
+			if lit, ok := compileFloatLiteral(s.Value); ok {
+				c.line("var %s float64 = %s", s.Name, lit)
+			} else {
+				c.line("var %s %s = %s", s.Name, typ, stripOuterParens(val))
+			}
+		} else {
+			c.line("var %s %s = %s", s.Name, typ, stripOuterParens(val))
+		}
 	} else {
 		c.line("var %s %s", s.Name, typ)
 	}
@@ -898,7 +928,7 @@ func (c *compiler) capturePost(s core.Statement) string {
 	switch a := s.(type) {
 	case *core.AssignStatement:
 		val := c.compileExpression(a.Value)
-		buf.WriteString(fmt.Sprintf("%s = %s", a.Names[0], val))
+		buf.WriteString(fmt.Sprintf("%s = %s", a.Names[0], stripOuterParens(val)))
 		if c.hasVar(a.Names[0]) && (c.envSync == nil || c.envSync[a.Names[0]]) {
 			varType := c.symbols[a.Names[0]]
 			switch varType {
@@ -2598,4 +2628,43 @@ func copyMap(src map[string]goType) map[string]goType {
 		dst[k] = v
 	}
 	return dst
+}
+
+// stripOuterParens removes matching outer parentheses from an expression string.
+// Only strips if the outer parens form a matched pair (depth reaches 0 exactly at the end).
+func stripOuterParens(s string) string {
+	if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
+		return s
+	}
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '(' {
+			depth++
+		} else if s[i] == ')' {
+			depth--
+		}
+		if depth == 0 && i < len(s)-1 {
+			return s
+		}
+	}
+	if depth == 0 {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// compileIntLiteral returns the literal integer value without int64() wrapping.
+func compileIntLiteral(expr core.Expression) (string, bool) {
+	if il, ok := expr.(*core.IntegerLiteral); ok {
+		return fmt.Sprintf("%d", il.Value), true
+	}
+	return "", false
+}
+
+// compileFloatLiteral returns the literal float value without float64() wrapping.
+func compileFloatLiteral(expr core.Expression) (string, bool) {
+	if fl, ok := expr.(*core.FloatLiteral); ok {
+		return fmt.Sprintf("%v", fl.Value), true
+	}
+	return "", false
 }
