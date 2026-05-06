@@ -348,7 +348,15 @@ func (p *Parser) parseIfStatement() *IfStatement {
 		if p.peekToken.Type == SEMICOLON {
 			p.nextToken()
 		}
-		if p.peekToken.Type == LBRACE {
+		if p.peekToken.Type == IF {
+			// else if — parse inner if and wrap in a single-statement block
+			p.nextToken()
+			innerIf := p.parseIfStatement()
+			stmt.Alternative = &BlockStatement{
+				Token:      innerIf.Token,
+				Statements: []Statement{innerIf},
+			}
+		} else if p.peekToken.Type == LBRACE {
 			p.nextToken()
 			stmt.Alternative = p.parseBlockStatement()
 		}

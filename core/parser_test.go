@@ -198,7 +198,6 @@ func TestParsePipelineWithLogicalAndBackgroundStatements(t *testing.T) {
 // --- Else-if chains ---
 
 func TestParseElseIfChain(t *testing.T) {
-	// Parser treats `else if` as two statements, not a chain
 	input := `if x > 10 {
     print "big"
 } else if x > 5 {
@@ -210,25 +209,33 @@ func TestParseElseIfChain(t *testing.T) {
 	p := NewParser(l)
 	program := p.ParseProgram()
 
-	// Parser produces 2 statements: first if (no else), second if-else
-	if len(program.Statements) != 2 {
-		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	// else if is now a single chained IfStatement
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
 	}
 
-	stmt0, ok := program.Statements[0].(*IfStatement)
+	stmt, ok := program.Statements[0].(*IfStatement)
 	if !ok {
-		t.Fatalf("stmt0 is not *IfStatement. got=%T", program.Statements[0])
-	}
-	if stmt0.Alternative != nil {
-		t.Error("first if should have no alternative")
+		t.Fatalf("stmt is not *IfStatement. got=%T", program.Statements[0])
 	}
 
-	stmt1, ok := program.Statements[1].(*IfStatement)
-	if !ok {
-		t.Fatalf("stmt1 is not *IfStatement. got=%T", program.Statements[1])
+	if stmt.Alternative == nil {
+		t.Fatal("expected alternative for else-if")
 	}
-	if stmt1.Alternative == nil {
-		t.Error("second if should have alternative")
+
+	block := stmt.Alternative
+	if len(block.Statements) != 1 {
+		t.Fatalf("expected 1 statement in alternative block, got %d", len(block.Statements))
+	}
+
+	innerIf, ok := block.Statements[0].(*IfStatement)
+	if !ok {
+		t.Fatalf("inner statement is not *IfStatement. got=%T", block.Statements[0])
+	}
+
+	// The inner if should have its own alternative (final else)
+	if innerIf.Alternative == nil {
+		t.Fatal("expected alternative for final else")
 	}
 }
 
