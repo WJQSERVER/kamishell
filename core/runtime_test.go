@@ -297,3 +297,329 @@ func testBooleanObject(t *testing.T, obj Object, expected bool) bool {
 	}
 	return true
 }
+
+// --- NilLiteral ---
+
+func TestNilLiteral(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("print nil", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "nil" {
+		t.Errorf("expected 'nil', got %q", stdout)
+	}
+}
+
+// --- Division by zero ---
+
+func TestIntegerDivisionByZero(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, result := runKami("x := 10 / 0; print x", env)
+	if !isError(result) && !strings.Contains(stderr, "division by zero") {
+		t.Errorf("expected error for division by zero, got stderr=%q result=%s", stderr, result.Inspect())
+	}
+}
+
+func TestFloatDivisionByZero(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, result := runKami("x := 10.0 / 0.0; print x", env)
+	if !isError(result) && !strings.Contains(stderr, "division by zero") {
+		t.Errorf("expected error for float division by zero, got stderr=%q result=%s", stderr, result.Inspect())
+	}
+}
+
+func TestModuloByZero(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, result := runKami("x := 10 % 0; print x", env)
+	if !isError(result) && !strings.Contains(stderr, "division by zero") {
+		t.Errorf("expected error for modulo by zero, got stderr=%q result=%s", stderr, result.Inspect())
+	}
+}
+
+// --- Float edge cases ---
+
+func TestFloatEdgeCases(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"print 0.0", "0"},
+	}
+
+	for _, tt := range tests {
+		env := NewEmptyEnvironment()
+		stdout, stderr, _ := runKami(tt.input, env)
+		if stderr != "" {
+			t.Errorf("input %q: unexpected stderr: %s", tt.input, stderr)
+		}
+		if strings.TrimSpace(stdout) != tt.expected {
+			t.Errorf("input %q: expected %q, got %q", tt.input, tt.expected, strings.TrimSpace(stdout))
+		}
+	}
+}
+
+func TestFloatComparisonEdgeCases(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"print 0.0 == 0.0", "true"},
+		{"print 0.0 != 1.0", "true"},
+		{"print 1.0 > 0.0", "true"},
+		{"print 0.0 < 1.0", "true"},
+		{"print 1.0 >= 1.0", "true"},
+		{"print 1.0 <= 1.0", "true"},
+	}
+
+	for _, tt := range tests {
+		env := NewEmptyEnvironment()
+		stdout, stderr, _ := runKami(tt.input, env)
+		if stderr != "" {
+			t.Errorf("input %q: unexpected stderr: %s", tt.input, stderr)
+		}
+		if strings.TrimSpace(stdout) != tt.expected {
+			t.Errorf("input %q: expected %q, got %q", tt.input, tt.expected, strings.TrimSpace(stdout))
+		}
+	}
+}
+
+// --- Negation ---
+
+func TestPrefixNegation(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"print -5", "-5"},
+		{"print --5", "5"},
+		{"print -0", "0"},
+	}
+
+	for _, tt := range tests {
+		env := NewEmptyEnvironment()
+		stdout, stderr, _ := runKami(tt.input, env)
+		if stderr != "" {
+			t.Errorf("input %q: unexpected stderr: %s", tt.input, stderr)
+		}
+		if strings.TrimSpace(stdout) != tt.expected {
+			t.Errorf("input %q: expected %q, got %q", tt.input, tt.expected, strings.TrimSpace(stdout))
+		}
+	}
+}
+
+func TestPrefixNegationFloat(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"print -3.14", "-3.14"},
+		{"print --3.14", "3.14"},
+	}
+
+	for _, tt := range tests {
+		env := NewEmptyEnvironment()
+		stdout, stderr, _ := runKami(tt.input, env)
+		if stderr != "" {
+			t.Errorf("input %q: unexpected stderr: %s", tt.input, stderr)
+		}
+		if strings.TrimSpace(stdout) != tt.expected {
+			t.Errorf("input %q: expected %q, got %q", tt.input, tt.expected, strings.TrimSpace(stdout))
+		}
+	}
+}
+
+func TestPrefixNegationNonNumeric(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, result := runKami(`print -"hello"`, env)
+	if !isError(result) && !strings.Contains(stderr, "cannot negate") {
+		t.Errorf("expected error for negating string, got stderr=%q result=%s", stderr, result.Inspect())
+	}
+}
+
+// --- Modulo ---
+
+func TestModuloInteger(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"print 17 % 5", "2"},
+		{"print 10 % 3", "1"},
+		{"print 0 % 5", "0"},
+		{"print -7 % 3", "-1"},
+	}
+
+	for _, tt := range tests {
+		env := NewEmptyEnvironment()
+		stdout, stderr, _ := runKami(tt.input, env)
+		if stderr != "" {
+			t.Errorf("input %q: unexpected stderr: %s", tt.input, stderr)
+		}
+		if strings.TrimSpace(stdout) != tt.expected {
+			t.Errorf("input %q: expected %q, got %q", tt.input, tt.expected, strings.TrimSpace(stdout))
+		}
+	}
+}
+
+func TestModuloFloat(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("print 17.5 % 5.0", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "2.5" {
+		t.Errorf("expected '2.5', got %q", strings.TrimSpace(stdout))
+	}
+}
+
+// --- >= and <= operators ---
+
+func TestGeqLeqInteger(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"5 >= 3", true},
+		{"3 >= 5", false},
+		{"3 >= 3", true},
+		{"5 <= 3", false},
+		{"3 <= 5", true},
+		{"3 <= 3", true},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		testBooleanObject(t, evaluated, tt.expected)
+	}
+}
+
+func TestGeqLeqString(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{`"abc" >= "abc"`, true},
+		{`"abc" >= "abd"`, false},
+		{`"abd" >= "abc"`, true},
+		{`"abc" <= "abc"`, true},
+		{`"abc" <= "abd"`, true},
+		{`"abd" <= "abc"`, false},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		testBooleanObject(t, evaluated, tt.expected)
+	}
+}
+
+// --- Break/Continue ---
+
+func TestBreakInLoop(t *testing.T) {
+	input := `
+x := 0
+for x < 10 {
+    x = x + 1
+    if x == 5 {
+        break
+    }
+}
+print x
+`
+	env := NewEmptyEnvironment()
+	stdout := &strings.Builder{}
+	EvalWithIO(parse(input), env, strings.NewReader(""), stdout, io.Discard)
+	if strings.TrimSpace(stdout.String()) != "5" {
+		t.Errorf("expected 5, got %q", stdout.String())
+	}
+}
+
+func TestContinueInLoop(t *testing.T) {
+	input := `
+sum := 0
+for i := 0; i < 10; i = i + 1 {
+    if i % 2 == 0 {
+        continue
+    }
+    sum = sum + i
+}
+print sum
+`
+	env := NewEmptyEnvironment()
+	stdout := &strings.Builder{}
+	EvalWithIO(parse(input), env, strings.NewReader(""), stdout, io.Discard)
+	if strings.TrimSpace(stdout.String()) != "25" {
+		t.Errorf("expected 25, got %q", stdout.String())
+	}
+}
+
+func parse(input string) *Program {
+	l := NewLexer(input)
+	p := NewParser(l)
+	return p.ParseProgram()
+}
+
+// --- ImportStatement ---
+
+func TestImportGoFmt(t *testing.T) {
+	input := `
+import "Go/fmt"
+x := fmt.Sprintf("hello %s", "world")
+print x
+`
+	env := NewEmptyEnvironment()
+	stdout := &strings.Builder{}
+	result := EvalWithIO(parse(input), env, strings.NewReader(""), stdout, io.Discard)
+	if isError(result) {
+		t.Fatalf("import failed: %s", result.Inspect())
+	}
+	if strings.TrimSpace(stdout.String()) != "hello world" {
+		t.Errorf("expected 'hello world', got %q", stdout.String())
+	}
+}
+
+// --- WaitStatement ---
+
+func TestWaitAllWithNoJobs(t *testing.T) {
+	input := `wait`
+	evaluated := testEval(input)
+	if evaluated != NULL && !isError(evaluated) {
+		t.Errorf("expected NULL or error, got %T (%s)", evaluated, evaluated.Inspect())
+	}
+}
+
+// --- GoExpression ---
+
+func TestGoExpressionBasic(t *testing.T) {
+	// Go clones the env, so changes inside don't affect parent
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("x := 1; go { x = 2 }; wait; print x", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	// x stays 1 because goroutine operates on cloned env
+	if strings.TrimSpace(stdout) != "1" {
+		t.Errorf("expected 1, got %q", strings.TrimSpace(stdout))
+	}
+}
+
+// --- String comparison operators ---
+
+func TestStringComparison(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{`"a" < "b"`, true},
+		{`"b" < "a"`, false},
+		{`"a" > "b"`, false},
+		{`"b" > "a"`, true},
+		{`"a" == "a"`, true},
+		{`"a" != "b"`, true},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		testBooleanObject(t, evaluated, tt.expected)
+	}
+}

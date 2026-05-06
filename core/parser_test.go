@@ -194,3 +194,300 @@ func TestParsePipelineWithLogicalAndBackgroundStatements(t *testing.T) {
 		t.Fatalf("expected right command print, got %q", right.TokenLiteral())
 	}
 }
+
+// --- Else-if chains ---
+
+func TestParseElseIfChain(t *testing.T) {
+	// Parser treats `else if` as two statements, not a chain
+	input := `if x > 10 {
+    print "big"
+} else if x > 5 {
+    print "medium"
+} else {
+    print "small"
+}`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	// Parser produces 2 statements: first if (no else), second if-else
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt0, ok := program.Statements[0].(*IfStatement)
+	if !ok {
+		t.Fatalf("stmt0 is not *IfStatement. got=%T", program.Statements[0])
+	}
+	if stmt0.Alternative != nil {
+		t.Error("first if should have no alternative")
+	}
+
+	stmt1, ok := program.Statements[1].(*IfStatement)
+	if !ok {
+		t.Fatalf("stmt1 is not *IfStatement. got=%T", program.Statements[1])
+	}
+	if stmt1.Alternative == nil {
+		t.Error("second if should have alternative")
+	}
+}
+
+// --- Switch ---
+
+func TestParseSwitchStatement(t *testing.T) {
+	input := `switch x {
+case 1:
+    print "one"
+case 2:
+    print "two"
+default:
+    print "other"
+}`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*SwitchStatement)
+	if !ok {
+		t.Fatalf("stmt is not *SwitchStatement. got=%T", program.Statements[0])
+	}
+
+	if stmt.Tag == nil {
+		t.Fatal("expected switch tag")
+	}
+
+	if len(stmt.Cases) != 3 {
+		t.Fatalf("expected 3 cases, got %d", len(stmt.Cases))
+	}
+
+	// First case: 1
+	if stmt.Cases[0].Values == nil {
+		t.Fatal("expected case values for first case")
+	}
+
+	// Default case
+	if stmt.Cases[2].Values != nil {
+		t.Fatal("expected nil values for default case")
+	}
+}
+
+// --- Iterator range ---
+
+func TestParseForRange(t *testing.T) {
+	// Array range degrades to three-clause for, not IsIterRange
+	input := `for i, v := range arr {
+    print v
+}`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ForStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ForStatement. got=%T", program.Statements[0])
+	}
+
+	// Array range is NOT IsIterRange; it's degraded to three-clause for
+	if stmt.IsIterRange {
+		t.Fatal("expected IsIterRange to be false for array range")
+	}
+
+	// Init should be the range variable declaration
+	if stmt.Init == nil {
+		t.Fatal("expected init statement")
+	}
+}
+
+// --- Prefix & and * ---
+
+func TestParsePrefixAddressOf(t *testing.T) {
+	input := `p := &x`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*AssignStatement)
+	if !ok {
+		t.Fatalf("stmt is not *AssignStatement. got=%T", program.Statements[0])
+	}
+
+	prefix, ok := stmt.Value.(*PrefixExpression)
+	if !ok {
+		t.Fatalf("value is not *PrefixExpression. got=%T", stmt.Value)
+	}
+
+	if prefix.Operator != "&" {
+		t.Errorf("expected operator &, got %q", prefix.Operator)
+	}
+}
+
+func TestParsePrefixDereference(t *testing.T) {
+	input := `x := *p`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*AssignStatement)
+	if !ok {
+		t.Fatalf("stmt is not *AssignStatement. got=%T", program.Statements[0])
+	}
+
+	prefix, ok := stmt.Value.(*PrefixExpression)
+	if !ok {
+		t.Fatalf("value is not *PrefixExpression. got=%T", stmt.Value)
+	}
+
+	if prefix.Operator != "*" {
+		t.Errorf("expected operator *, got %q", prefix.Operator)
+	}
+}
+
+// --- Import ---
+
+func TestParseImportStatement(t *testing.T) {
+	input := `import "Go/fmt"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ImportStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ImportStatement. got=%T", program.Statements[0])
+	}
+
+	if stmt.Path != "Go/fmt" {
+		t.Errorf("expected path 'Go/fmt', got %q", stmt.Path)
+	}
+}
+
+// --- Exec ---
+
+func TestParseExecStatement(t *testing.T) {
+	input := `exec "echo hello"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if stmt.CommandStr == nil {
+		t.Fatal("expected command string expression")
+	}
+}
+
+// --- >= and <= ---
+
+func TestParseGeqLeqOperators(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"if x >= 5 { print 1 }", ">="},
+		{"if x <= 5 { print 1 }", "<="},
+	}
+
+	for _, tt := range tests {
+		l := NewLexer(tt.input)
+		p := NewParser(l)
+		program := p.ParseProgram()
+
+		if len(program.Statements) != 1 {
+			t.Fatalf("input %q: expected 1 statement, got %d", tt.input, len(program.Statements))
+		}
+
+		stmt, ok := program.Statements[0].(*IfStatement)
+		if !ok {
+			t.Fatalf("input %q: stmt is not *IfStatement. got=%T", tt.input, program.Statements[0])
+		}
+
+		infix, ok := stmt.Condition.(*InfixExpression)
+		if !ok {
+			t.Fatalf("input %q: condition is not *InfixExpression. got=%T", tt.input, stmt.Condition)
+		}
+
+		if infix.Operator != tt.expected {
+			t.Errorf("input %q: expected operator %q, got %q", tt.input, tt.expected, infix.Operator)
+		}
+	}
+}
+
+// --- Prefix - (negation) ---
+
+func TestParsePrefixNegation(t *testing.T) {
+	input := `x := -5`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*AssignStatement)
+	if !ok {
+		t.Fatalf("stmt is not *AssignStatement. got=%T", program.Statements[0])
+	}
+
+	prefix, ok := stmt.Value.(*PrefixExpression)
+	if !ok {
+		t.Fatalf("value is not *PrefixExpression. got=%T", stmt.Value)
+	}
+
+	if prefix.Operator != "-" {
+		t.Errorf("expected operator -, got %q", prefix.Operator)
+	}
+}
+
+// --- Modulo ---
+
+func TestParseModuloOperator(t *testing.T) {
+	input := `x := 10 % 3`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*AssignStatement)
+	if !ok {
+		t.Fatalf("stmt is not *AssignStatement. got=%T", program.Statements[0])
+	}
+
+	infix, ok := stmt.Value.(*InfixExpression)
+	if !ok {
+		t.Fatalf("value is not *InfixExpression. got=%T", stmt.Value)
+	}
+
+	if infix.Operator != "%" {
+		t.Errorf("expected operator %%, got %q", infix.Operator)
+	}
+}
