@@ -30,6 +30,7 @@ const (
 	MINUS TokenType = "-"
 	ASTERISK TokenType = "*"
 	SLASH TokenType = "/"
+	MODULO TokenType = "%"
 	SEMICOLON TokenType = ";"
 	COMMA TokenType = ","
 	DOT TokenType = "."

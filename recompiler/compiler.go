@@ -1181,6 +1181,16 @@ func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
 		}
 		c.addImport("kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Div(%s, %s)", left, right)
+	case "%":
+		if bothInt {
+			return fmt.Sprintf("(%s %% %s)", left, right)
+		}
+		if bothFloat {
+			c.addImport("math", "")
+			return fmt.Sprintf("math.Mod(%s, %s)", left, right)
+		}
+		c.addImport("kamishell/recompiler", "")
+		return fmt.Sprintf("recompiler.Mod(%s, %s)", left, right)
 	case "==":
 		if bothInt || bothStr || bothFloat || bothBool {
 			return fmt.Sprintf("(%s == %s)", left, right)
@@ -2393,9 +2403,12 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 		}
 		return goArrAny
 	case *core.InfixExpression:
-		if e.Operator == "+" || e.Operator == "-" || e.Operator == "*" || e.Operator == "/" {
+		if e.Operator == "+" || e.Operator == "-" || e.Operator == "*" || e.Operator == "/" || e.Operator == "%" {
 			if c.isType(e.Left, goInt) && c.isType(e.Right, goInt) {
 				return goInt
+			}
+			if c.isType(e.Left, goFloat) && c.isType(e.Right, goFloat) {
+				return goFloat
 			}
 		}
 		if e.Operator == "==" || e.Operator == "!=" || e.Operator == "<" || e.Operator == ">" || e.Operator == "<=" || e.Operator == ">=" {

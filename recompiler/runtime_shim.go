@@ -2,6 +2,7 @@ package recompiler
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"strconv"
@@ -245,6 +246,20 @@ func Div(a, b any) any {
 	bi, bIsInt := b.(int64)
 	if aIsInt && bIsInt && bi != 0 {
 		return ai / bi
+	}
+	return int64(0)
+}
+
+func Mod(a, b any) any {
+	ai, aIsInt := a.(int64)
+	bi, bIsInt := b.(int64)
+	if aIsInt && bIsInt && bi != 0 {
+		return ai % bi
+	}
+	af, aIsFloat := a.(float64)
+	bf, bIsFloat := b.(float64)
+	if aIsFloat && bIsFloat && bf != 0 {
+		return math.Mod(af, bf)
 	}
 	return int64(0)
 }

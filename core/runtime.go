@@ -1360,6 +1360,11 @@ func evalIntegerInfixExpression(operator string, left, right Object) Object {
 			return &Error{Message: "division by zero"}
 		}
 		return getIntegerObject(leftVal / rightVal)
+	case "%":
+		if rightVal == 0 {
+			return &Error{Message: "division by zero"}
+		}
+		return getIntegerObject(leftVal % rightVal)
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
@@ -1393,6 +1398,11 @@ func evalFloatInfixExpression(operator string, left, right Object) Object {
 			return &Error{Message: "division by zero"}
 		}
 		return &Float{Value: leftVal / rightVal}
+	case "%":
+		if rightVal == 0 {
+			return &Error{Message: "division by zero"}
+		}
+		return &Float{Value: math.Mod(leftVal, rightVal)}
 	default:
 		return &Error{Message: fmt.Sprintf("unknown operator: %s %s %s", left.Type(), operator, right.Type())}
 	}
