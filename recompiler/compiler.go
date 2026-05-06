@@ -2410,6 +2410,9 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 			if c.isType(e.Left, goFloat) && c.isType(e.Right, goFloat) {
 				return goFloat
 			}
+			if e.Operator == "+" && c.isType(e.Left, goStr) && c.isType(e.Right, goStr) {
+				return goStr
+			}
 		}
 		if e.Operator == "==" || e.Operator == "!=" || e.Operator == "<" || e.Operator == ">" || e.Operator == "<=" || e.Operator == ">=" {
 			return goBool
@@ -2421,9 +2424,32 @@ func (c *compiler) inferGoType(expr core.Expression) goType {
 		}
 	case *core.CallExpression:
 		// Look up return type of known functions
-		if id, ok := e.Function.(*core.Identifier); ok && c.funcReturns != nil {
-			if retType, exists := c.funcReturns[id.Value]; exists {
-				return retType
+		if id, ok := e.Function.(*core.Identifier); ok {
+			// Builtins with known return types
+			switch id.Value {
+			case "len":
+				return goInt
+			case "push":
+				if len(e.Arguments) > 0 {
+					if arrType, ok := c.inferArrayType(e.Arguments[0]); ok {
+						switch arrType {
+						case goInt:
+							return "[]int64"
+						case goStr:
+							return "[]string"
+						case goFloat:
+							return "[]float64"
+						case goBool:
+							return "[]bool"
+						}
+					}
+					return goArrAny
+				}
+			}
+			if c.funcReturns != nil {
+				if retType, exists := c.funcReturns[id.Value]; exists {
+					return retType
+				}
 			}
 		}
 		return goAny
