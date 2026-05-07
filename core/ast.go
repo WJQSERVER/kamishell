@@ -159,6 +159,14 @@ type StringLiteral struct {
 	Token Token
 	Value string
 	Obj   *String
+	Parts []StringPart // pre-parsed interpolation segments (nil = no $)
+}
+
+// StringPart represents a segment of a string literal.
+// If Var is non-empty, it's a variable reference; otherwise Text is a literal.
+type StringPart struct {
+	Text string // literal text (empty if Var is set)
+	Var  string // variable name (empty if Text is set)
 }
 
 func (sl *StringLiteral) expressionNode()      {}

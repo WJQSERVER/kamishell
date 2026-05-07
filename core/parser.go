@@ -776,8 +776,40 @@ func (p *Parser) parseStringLiteral() Expression {
 	lit := &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
 	if strings.IndexByte(lit.Value, '$') < 0 {
 		lit.Obj = &String{Value: lit.Value}
+	} else {
+		lit.Parts = parseStringParts(lit.Value)
 	}
 	return lit
+}
+
+// parseStringParts splits a string containing $var references into segments.
+// "hello $name from $HOME" → [{Text:"hello "}, {Var:"name"}, {Text:" from "}, {Var:"HOME"}]
+func parseStringParts(s string) []StringPart {
+	var parts []StringPart
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '$' {
+			if i > start {
+				parts = append(parts, StringPart{Text: s[start:i]})
+			}
+			i++ // skip $
+			vstart := i
+			for i < len(s) && isIdentChar(s[i]) {
+				i++
+			}
+			parts = append(parts, StringPart{Var: s[vstart:i]})
+			start = i
+			i-- // will be incremented by for loop
+		}
+	}
+	if start < len(s) {
+		parts = append(parts, StringPart{Text: s[start:]})
+	}
+	return parts
+}
+
+func isIdentChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
 }
 
 func (p *Parser) parseNilLiteral() Expression {

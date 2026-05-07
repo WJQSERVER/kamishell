@@ -761,8 +761,11 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *Identifier:
 		return evalIdentifier(node, env)
 	case *StringLiteral:
-		if node.Obj != nil && strings.IndexByte(node.Value, '$') < 0 {
+		if node.Obj != nil {
 			return node.Obj
+		}
+		if node.Parts != nil {
+			return evalInterpolatedString(node.Parts, env)
 		}
 		return &String{Value: os.Expand(node.Value, func(name string) string {
 			if obj, ok := env.GetObject(name); ok {
@@ -891,6 +894,22 @@ func evalStatements(stmts []Statement, env *Environment, stdin io.Reader, stdout
 		}
 	}
 	return result
+}
+
+func evalInterpolatedString(parts []StringPart, env *Environment) *String {
+	var b strings.Builder
+	for _, part := range parts {
+		if part.Text != "" {
+			b.WriteString(part.Text)
+		} else {
+			if obj, ok := env.GetObject(part.Var); ok {
+				b.WriteString(inspectObject(obj))
+			} else {
+				b.WriteString(os.Getenv(part.Var))
+			}
+		}
+	}
+	return &String{Value: b.String()}
 }
 
 func evalIfStatement(is *IfStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
