@@ -15,6 +15,7 @@ func runKami(input string, env *Environment) (string, string, Object) {
 	l := NewLexer(input)
 	p := NewParser(l)
 	program := p.ParseProgram()
+	Resolve(program)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}

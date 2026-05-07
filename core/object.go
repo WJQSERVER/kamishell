@@ -120,10 +120,11 @@ func (e *Error) Inspect() string {
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
 
 type Function struct {
-	Parameters  []Parameter
-	ReturnTypes []string
-	Body        *BlockStatement
-	Env         *Environment
+	Parameters   []Parameter
+	ReturnTypes  []string
+	Body         *BlockStatement
+	Env          *Environment
+	SlotCapacity int // number of slots needed for parameters (set by Resolver)
 }
 
 func (f *Function) Inspect() string  { return "func" }

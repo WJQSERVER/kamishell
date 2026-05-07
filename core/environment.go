@@ -36,11 +36,16 @@ func NewScriptEnvironment(outer *Environment) *Environment {
 
 func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environment {
 	storeCap := max(paramCapacity, 1)
-	return &Environment{
+	env := &Environment{
 		store:        make(map[string]Object, storeCap),
 		outer:        outer,
 		packageStore: outerPackageStore(outer),
 	}
+	if paramCapacity > 0 {
+		env.slots = make([]Object, 0, paramCapacity)
+		env.slotByName = make(map[string]int, paramCapacity)
+	}
+	return env
 }
 
 const intFreelistCap = 16
@@ -54,6 +59,9 @@ type Environment struct {
 	packageStore map[string]map[string]string
 	intFreelist  []*Integer // recycled Integer objects (CPython-style freelist)
 	freelistMu   sync.Mutex // protects intFreelist
+	// Slot-based fast storage for resolved variables
+	slots      []Object         // indexed storage (fast path)
+	slotByName map[string]int   // name → slot index (for SetObject sync)
 }
 
 func (e *Environment) Clone() *Environment {
@@ -73,6 +81,15 @@ func (e *Environment) Clone() *Environment {
 	}
 	for key, value := range e.store {
 		clone.store[key] = cloneObjectForEnv(value, clone)
+	}
+	// Copy slots
+	if e.slots != nil {
+		clone.slots = make([]Object, len(e.slots))
+		copy(clone.slots, e.slots)
+	}
+	if e.slotByName != nil {
+		clone.slotByName = make(map[string]int, len(e.slotByName))
+		maps.Copy(clone.slotByName, e.slotByName)
 	}
 	return clone
 }
@@ -151,6 +168,8 @@ func (e *Environment) SetObject(name string, val Object) {
 			ref.Value = val
 		}
 	}
+	// Sync slot if this variable has one
+	e.SetSlotByName(name, val)
 	if val != nil {
 		typeName := string(val.Type())
 		if shouldTrackType(typeName) {
@@ -374,6 +393,8 @@ func (e *Environment) SetByPointer(ref *EnvEntry, val Object) {
 
 	owner := ref.Owner
 	owner.store[ref.Name] = val
+	// Sync slot if this variable has one
+	owner.SetSlotByName(ref.Name, val)
 	if shouldTrackType(string(val.Type())) {
 		owner.ensureTypes()
 		owner.types[ref.Name] = string(val.Type())
@@ -418,4 +439,87 @@ func (e *Environment) recycleInteger(obj *Integer) {
 func isCachedInteger(obj *Integer) bool {
 	return uintptr(unsafe.Pointer(obj)) >= uintptr(unsafe.Pointer(&integerCache[0])) &&
 		uintptr(unsafe.Pointer(obj)) < uintptr(unsafe.Pointer(&integerCache[0]))+uintptr(len(integerCache))*unsafe.Sizeof(integerCache[0])
+}
+
+// GetBySlot retrieves a value by scope depth and slot index.
+// depth=0 means current scope, depth=1 means one level up, etc.
+func (e *Environment) GetBySlot(depth, index int) Object {
+	scope := e
+	for i := 0; i < depth; i++ {
+		if scope.outer == nil {
+			return nil
+		}
+		scope = scope.outer
+	}
+	if scope.slots == nil || index < 0 || index >= len(scope.slots) {
+		return nil
+	}
+	return scope.slots[index]
+}
+
+// SetSlot sets a value by scope depth and slot index.
+func (e *Environment) SetSlot(depth, index int, val Object) {
+	scope := e
+	for i := 0; i < depth; i++ {
+		if scope.outer == nil {
+			return
+		}
+		scope = scope.outer
+	}
+	if scope.slots == nil || index < 0 || index >= len(scope.slots) {
+		return
+	}
+	scope.slots[index] = val
+}
+
+// DeclareSlot allocates a slot in the current scope and stores the value.
+// Also stores in the map for backward compatibility (pointer ops, Keys(), etc.).
+// If the variable already has a slot, updates the existing slot instead of allocating a new one.
+// Returns the allocated slot index.
+func (e *Environment) DeclareSlot(name string, val Object, typeName string) int {
+	if e.slots == nil {
+		e.slots = make([]Object, 0, 4)
+	}
+	if e.slotByName == nil {
+		e.slotByName = make(map[string]int)
+	}
+	// Check if this variable already has a slot (e.g., re-declaration in a loop body)
+	if idx, ok := e.slotByName[name]; ok {
+		e.slots[idx] = val
+		// Also update map
+		e.store[name] = val
+		if shouldTrackType(typeName) {
+			e.ensureTypes()
+			e.types[name] = typeName
+		}
+		return idx
+	}
+	idx := len(e.slots)
+	e.slots = append(e.slots, val)
+	e.slotByName[name] = idx
+
+	// Also store in map for backward compatibility
+	e.store[name] = val
+	if shouldTrackType(typeName) {
+		e.ensureTypes()
+		e.types[name] = typeName
+	}
+	return idx
+}
+
+// SetSlotByName sets a value in the slot associated with name (if any).
+// Returns true if a slot was found and updated.
+func (e *Environment) SetSlotByName(name string, val Object) bool {
+	if e.slotByName == nil {
+		return false
+	}
+	idx, ok := e.slotByName[name]
+	if !ok {
+		return false
+	}
+	if e.slots != nil && idx < len(e.slots) {
+		e.slots[idx] = val
+		return true
+	}
+	return false
 }

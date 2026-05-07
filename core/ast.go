@@ -102,6 +102,9 @@ type AssignStatement struct {
 	Names  []string     // variable names: [x] for single, [x, y] for multi-assign
 	Target Expression   // non-nil for index assignment: arr[i] = val
 	Value  Expression
+	// Resolver fields for = reassignment fast path
+	ResolvedScopeDepth int // -1 = unresolved
+	ResolvedSlotIndex  int // -1 = unresolved
 }
 
 func (as *AssignStatement) statementNode()       {}
@@ -137,13 +140,20 @@ func (pas *PointerAssignStatement) String() string {
 }
 
 type Identifier struct {
-	Token Token
-	Value string
+	Token      Token
+	Value      string
+	ScopeDepth int // -1 = unresolved; 0 = current scope, 1 = outer, etc.
+	SlotIndex  int // -1 = unresolved; >= 0 = slot index in that scope
 }
 
 func (i *Identifier) expressionNode()      {}
 func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
 func (i *Identifier) String() string       { return i.Value }
+
+// NewIdentifier creates an Identifier with unresolved scope defaults.
+func NewIdentifier(tok Token, val string) *Identifier {
+	return &Identifier{Token: tok, Value: val, ScopeDepth: -1, SlotIndex: -1}
+}
 
 type StringLiteral struct {
 	Token Token
@@ -411,6 +421,9 @@ type ForStatement struct {
 	IncVarName string // variable name for i = i + N pattern
 	IncDelta   int64  // +1 or -1 for i = i +/- 1
 	HasInc     bool   // true if body is a single i = i +/- 1 assignment
+	// Resolver fields for increment fast path
+	IncScopeDepth int // -1 = unresolved
+	IncSlotIndex  int // -1 = unresolved
 	// Iterator range (for v := range iter(args) { ... })
 	IsIterRange bool       // true if this is a range-over-function
 	IterCall    Expression // the iterator call expression (e.g. iter(args))

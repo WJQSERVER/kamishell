@@ -677,7 +677,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 			} else if shouldTrackType(string(val.Type())) {
 				typeName = string(val.Type())
 			}
-			env.SetWithType(name, val, typeName)
+			env.DeclareSlot(name, val, typeName)
 		} else {
 			// Check if target is a constant (from func declaration)
 			if env.IsConstant(name) {
@@ -696,14 +696,31 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 				copy(copied, arr.Elements)
 				val = &Array{ElemType: arr.ElemType, Elements: copied}
 			}
-			// Fast path: direct lookup in current scope
-			if _, hasIt := env.store[name]; hasIt {
+			// Fast path: use resolver slot if available
+			if node.ResolvedSlotIndex >= 0 {
+				// Type check before slot update
+				scope := env
+				for d := 0; d < node.ResolvedScopeDepth; d++ {
+					if scope.outer != nil {
+						scope = scope.outer
+					}
+				}
+				if typeName, hasType := scope.types[name]; hasType && typeName != "" {
+					if !isTypeCompatible(val, typeName) {
+						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), typeName)}
+					}
+				}
+				env.SetSlot(node.ResolvedScopeDepth, node.ResolvedSlotIndex, val)
+				// Also sync map for backward compatibility
+				scope.store[name] = val
+			} else if _, hasIt := env.store[name]; hasIt {
 				if typeName, hasType := env.types[name]; hasType && typeName != "" {
 					if !isTypeCompatible(val, typeName) {
 						return &Error{Message: fmt.Sprintf("cannot assign %s to variable of type %s", val.Type(), typeName)}
 					}
 				}
 				env.store[name] = val
+				env.SetSlotByName(name, val)
 				if _, hasType := env.types[name]; !hasType && shouldTrackType(string(val.Type())) {
 					env.ensureTypes()
 					env.types[name] = string(val.Type())
@@ -717,6 +734,7 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 				}
 				if scope != nil {
 					scope.store[name] = val
+					scope.SetSlotByName(name, val)
 					if _, hasType := scope.types[name]; !hasType && shouldTrackType(string(val.Type())) {
 						scope.ensureTypes()
 						scope.types[name] = string(val.Type())
@@ -1041,6 +1059,7 @@ func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environ
 	var result Object = NULL
 	incName := fs.IncVarName
 	delta := fs.IncDelta
+	useSlot := fs.IncSlotIndex >= 0
 
 	for {
 		ok, errObj := evalFastForCondition(cond, env)
@@ -1051,16 +1070,41 @@ func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environ
 			break
 		}
 
-		obj, found := env.GetObject(incName)
-		if !found {
-			return &Error{Message: "identifier not found: " + incName}
+		var intObj *Integer
+		if useSlot {
+			obj := env.GetBySlot(fs.IncScopeDepth, fs.IncSlotIndex)
+			if obj == nil {
+				return &Error{Message: "identifier not found: " + incName}
+			}
+			var ok bool
+			intObj, ok = obj.(*Integer)
+			if !ok {
+				return &Error{Message: "type mismatch: for increment requires INTEGER"}
+			}
+			env.recycleInteger(intObj)
+			newVal := env.allocInteger(intObj.Value + delta)
+			env.SetSlot(fs.IncScopeDepth, fs.IncSlotIndex, newVal)
+			// Also sync map for evalFastForCondition compatibility
+			scope := env
+			for d := 0; d < fs.IncScopeDepth; d++ {
+				if scope.outer != nil {
+					scope = scope.outer
+				}
+			}
+			scope.store[incName] = newVal
+		} else {
+			obj, found := env.GetObject(incName)
+			if !found {
+				return &Error{Message: "identifier not found: " + incName}
+			}
+			var ok bool
+			intObj, ok = obj.(*Integer)
+			if !ok {
+				return &Error{Message: "type mismatch: for increment requires INTEGER"}
+			}
+			env.recycleInteger(intObj)
+			env.SetObject(incName, env.allocInteger(intObj.Value+delta))
 		}
-		intObj, ok := obj.(*Integer)
-		if !ok {
-			return &Error{Message: "type mismatch: for increment requires INTEGER"}
-		}
-		env.recycleInteger(intObj)
-		env.SetObject(incName, env.allocInteger(intObj.Value+delta))
 	}
 	return result
 }
@@ -1909,6 +1953,13 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 }
 
 func evalIdentifier(node *Identifier, env *Environment) Object {
+	// Fast path: use slot-based lookup if resolved
+	if node.SlotIndex >= 0 {
+		if obj := env.GetBySlot(node.ScopeDepth, node.SlotIndex); obj != nil {
+			return obj
+		}
+		// Fallback if slot is nil (shouldn't happen but safety)
+	}
 	if node.Value == "env" {
 		return ENVPKG
 	}
@@ -2095,13 +2146,14 @@ func evalLogicalStatement(ls *LogicalStatement, env *Environment, stdin io.Reade
 
 func evalFunctionStatement(fs *FunctionStatement, env *Environment) Object {
 	fn := &Function{
-		Parameters:  fs.Parameters,
-		ReturnTypes: fs.ReturnTypes,
-		Body:        fs.Body,
-		Env:         env,
+		Parameters:   fs.Parameters,
+		ReturnTypes:  fs.ReturnTypes,
+		Body:         fs.Body,
+		Env:          env,
+		SlotCapacity: len(fs.Parameters),
 	}
 	sig := buildFunctionSignature(fn)
-	env.SetWithType(fs.Name, fn, sig)
+	env.DeclareSlot(fs.Name, fn, sig)
 	env.MarkConstant(fs.Name)
 	return NULL
 }
@@ -2285,7 +2337,11 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 		return &Error{Message: fmt.Sprintf("expected %d arguments, got %d", len(fn.Parameters), len(args))}
 	}
 
-	extendEnv := NewFunctionCallEnvironment(fn.Env, len(fn.Parameters))
+	slotCap := fn.SlotCapacity
+	if slotCap <= 0 {
+		slotCap = len(fn.Parameters)
+	}
+	extendEnv := NewFunctionCallEnvironment(fn.Env, slotCap)
 
 	for i, param := range fn.Parameters {
 		if i < len(args) {
@@ -2296,7 +2352,7 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 					return &Error{Message: fmt.Sprintf("parameter %s: expected %s, got %s", param.Name, expected, args[i].Type())}
 				}
 			}
-			extendEnv.SetObject(param.Name, args[i])
+			extendEnv.DeclareSlot(param.Name, args[i], param.TypeName)
 		}
 	}
 
@@ -2582,7 +2638,7 @@ func evalVarStatement(vs *VarStatement, env *Environment, stdin io.Reader, stdou
 		typeName = string(val.Type())
 	}
 
-	env.SetWithType(vs.Name, val, typeName)
+	env.DeclareSlot(vs.Name, val, typeName)
 	return val
 }
 

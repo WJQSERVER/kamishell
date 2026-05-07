@@ -163,6 +163,7 @@ func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Wri
 	l := core.NewLexer(string(content))
 	p := core.NewParser(l)
 	prog := p.ParseProgram()
+	core.Resolve(prog)
 	core.EvalWithIO(prog, buildEnv, stdin, stdout, stderr)
 
 	// 6. Execute build based on the collected state

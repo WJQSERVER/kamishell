@@ -521,7 +521,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 		Left:     &Identifier{Value: initName},
 		Operator: "<",
 		Right: &CallExpression{
-			Function:  &Identifier{Value: "len"},
+			Function:  NewIdentifier(Token{}, "len"),
 			Arguments: []Expression{rangeExpr},
 		},
 	}
@@ -531,7 +531,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 		Token: Token{Type: ASSIGN, Literal: "="},
 		Names:  []string{initName},
 		Value: &InfixExpression{
-			Left:     &Identifier{Value: initName},
+			Left:     NewIdentifier(Token{}, initName),
 			Operator: "+",
 			Right:    &IntegerLiteral{Value: 1},
 		},
@@ -544,7 +544,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 			Names:  []string{vars[1]},
 			Value: &IndexExpression{
 				Left:  rangeExpr,
-				Index: &Identifier{Value: initName},
+				Index: NewIdentifier(Token{}, initName),
 			},
 		}
 		body.Statements = append([]Statement{valAssign}, body.Statements...)
@@ -740,12 +740,12 @@ func (p *Parser) parseExpression(precedence int) Expression {
 }
 
 func (p *Parser) parseIdentifier() Expression {
-	return &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	return NewIdentifier(p.curToken, p.curToken.Literal)
 }
 
 func (p *Parser) parseInterpolation() Expression {
 	p.nextToken() // consume $
-	return &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	return NewIdentifier(p.curToken, p.curToken.Literal)
 }
 
 func (p *Parser) parseIntegerLiteral() Expression {
@@ -925,7 +925,7 @@ func (p *Parser) parseIndexAssignOrCommand() Statement {
 		}
 		target := &IndexExpression{
 			Token: savedPeek,
-			Left:  &Identifier{Token: savedCur, Value: ident},
+			Left:  NewIdentifier(savedCur, ident),
 			Index: indexExpr,
 		}
 		return &AssignStatement{Token: p.curToken, Target: target, Value: val}
@@ -1277,7 +1277,7 @@ func (p *Parser) isMethodCallWithBlock() bool {
 
 func (p *Parser) parseMethodCallBlockStatement() *MethodCallBlockStatement {
 	stmt := &MethodCallBlockStatement{Token: p.curToken}
-	stmt.Object = &Identifier{Token: p.curToken, Value: p.curToken.Literal} // object name
+	stmt.Object = NewIdentifier(p.curToken, p.curToken.Literal) // object name
 
 	p.nextToken() // move to .
 	p.nextToken() // move to method name
