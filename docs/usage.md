@@ -5,7 +5,7 @@
 要求: **Go 1.26** 或更高版本。
 
 ```bash
-go build -o kami ./cmd/kamishell
+go build -o kami .
 ```
 
 ## 2. 交互式模式 (REPL)
