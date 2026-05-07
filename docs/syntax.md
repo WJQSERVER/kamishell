@@ -952,9 +952,19 @@ import "Go/包名"
   - `Contains(s, substr)` → `bool`
   - `HasPrefix(s, prefix)` → `bool`
   - `HasSuffix(s, suffix)` → `bool`
-  - `Replace(s, old, new, n)` → `string`
-  - `Split(s, sep)` → `[]string`（返回字符串数组）
-  - `Join(arr, sep)` → `string`（第一个参数为字符串数组）
+  - `Replace(s, old, new)` → `string`（全局替换）
+  - `Split(s, sep)` → `[]string`（按分隔符拆分）
+  - `Join(arr, sep)` → `string`（用分隔符拼接数组）
+  - `TrimSpace(s)` → `string`（去除首尾空白）
+  - `Trim(s, cutset)` → `string`（去除首尾指定字符）
+  - `TrimPrefix(s, prefix)` → `string`（去除前缀）
+  - `TrimSuffix(s, suffix)` → `string`（去除后缀）
+  - `ToUpper(s)` → `string`（转大写）
+  - `ToLower(s)` → `string`（转小写）
+  - `Fields(s)` → `[]string`（按空白分词）
+  - `Index(s, substr)` → `int`（查找子串位置，-1 表示未找到）
+  - `Count(s, substr)` → `int`（计数子串出现次数）
+  - `Repeat(s, n)` → `string`（重复字符串 n 次）
 - `strconv` — 类型转换（`Itoa`、`Atoi`）
 - `os` — 系统操作（`Getenv`、`Setenv`）
 
@@ -974,7 +984,7 @@ print strings.Contains("hello", "ell")   // true
 print strings.Replace("hello", "l", "L", -1)  // heLLo
 ```
 
-注意：解释模式下仅支持 `goStdlib` 中注册的函数（`Contains`、`HasPrefix`、`HasSuffix`、`Replace`、`Split`、`Join`）。编译模式下支持 Go 标准库的任意函数（直接生成 Go 调用）。
+注意：解释模式下仅支持 `goStdlib` 中注册的函数（上述 16 个）。编译模式下支持 Go 标准库的任意函数（直接生成 Go 调用）。
 
 ## 18. 关键字总览
 

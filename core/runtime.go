@@ -395,6 +395,158 @@ var goStdlib = map[string]map[string]*NativeFunction{
 				return &Array{Elements: elems}
 			},
 		},
+		"TrimSpace": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "TrimSpace requires exactly one argument"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "TrimSpace argument must be a string"}
+				}
+				return &String{Value: strings.TrimSpace(s.Value)}
+			},
+		},
+		"ToUpper": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "ToUpper requires exactly one argument"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "ToUpper argument must be a string"}
+				}
+				return &String{Value: strings.ToUpper(s.Value)}
+			},
+		},
+		"ToLower": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "ToLower requires exactly one argument"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "ToLower argument must be a string"}
+				}
+				return &String{Value: strings.ToLower(s.Value)}
+			},
+		},
+		"TrimPrefix": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "TrimPrefix requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "TrimPrefix first argument must be a string"}
+				}
+				prefix, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "TrimPrefix second argument must be a string"}
+				}
+				return &String{Value: strings.TrimPrefix(s.Value, prefix.Value)}
+			},
+		},
+		"TrimSuffix": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "TrimSuffix requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "TrimSuffix first argument must be a string"}
+				}
+				suffix, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "TrimSuffix second argument must be a string"}
+				}
+				return &String{Value: strings.TrimSuffix(s.Value, suffix.Value)}
+			},
+		},
+		"Fields": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 1 {
+					return &Error{Message: "Fields requires exactly one argument"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Fields argument must be a string"}
+				}
+				parts := strings.Fields(s.Value)
+				elems := make([]Object, len(parts))
+				for i, part := range parts {
+					elems[i] = &String{Value: part}
+				}
+				return &Array{Elements: elems}
+			},
+		},
+		"Index": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Index requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Index first argument must be a string"}
+				}
+				substr, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Index second argument must be a string"}
+				}
+				return getIntegerObject(int64(strings.Index(s.Value, substr.Value)))
+			},
+		},
+		"Count": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Count requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Count first argument must be a string"}
+				}
+				substr, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Count second argument must be a string"}
+				}
+				return getIntegerObject(int64(strings.Count(s.Value, substr.Value)))
+			},
+		},
+		"Trim": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Trim requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Trim first argument must be a string"}
+				}
+				cutset, ok := args[1].(*String)
+				if !ok {
+					return &Error{Message: "Trim second argument must be a string"}
+				}
+				return &String{Value: strings.Trim(s.Value, cutset.Value)}
+			},
+		},
+		"Repeat": &NativeFunction{
+			Fn: func(env *Environment, args ...Object) Object {
+				if len(args) != 2 {
+					return &Error{Message: "Repeat requires exactly two arguments"}
+				}
+				s, ok := args[0].(*String)
+				if !ok {
+					return &Error{Message: "Repeat first argument must be a string"}
+				}
+				count, ok := args[1].(*Integer)
+				if !ok {
+					return &Error{Message: "Repeat second argument must be an integer"}
+				}
+				if count.Value < 0 {
+					return &Error{Message: "Repeat count must be non-negative"}
+				}
+				return &String{Value: strings.Repeat(s.Value, int(count.Value))}
+			},
+		},
 	},
 	"strconv": {
 		"Itoa": &NativeFunction{
