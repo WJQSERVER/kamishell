@@ -1060,6 +1060,8 @@ func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environ
 	incName := fs.IncVarName
 	delta := fs.IncDelta
 	useSlot := fs.IncSlotIndex >= 0
+	condUsesSlot := cond.slotIndex >= 0
+	bothSlots := useSlot && condUsesSlot
 
 	for {
 		ok, errObj := evalFastForCondition(cond, env)
@@ -1084,15 +1086,16 @@ func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environ
 			env.recycleInteger(intObj)
 			newVal := env.allocInteger(intObj.Value + delta)
 			env.SetSlot(fs.IncScopeDepth, fs.IncSlotIndex, newVal)
-			// Sync map for evalFastForCondition compatibility when condition
-			// Identifier is unresolved (slotIndex == -1, reads from map)
-			scope := env
-			for d := 0; d < fs.IncScopeDepth; d++ {
-				if scope.outer != nil {
-					scope = scope.outer
+			if !bothSlots {
+				// Condition reads from map — must sync
+				scope := env
+				for d := 0; d < fs.IncScopeDepth; d++ {
+					if scope.outer != nil {
+						scope = scope.outer
+					}
 				}
+				scope.store[incName] = newVal
 			}
-			scope.store[incName] = newVal
 		} else {
 			obj, found := env.GetObject(incName)
 			if !found {
