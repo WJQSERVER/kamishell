@@ -8,3 +8,4 @@ vendor/
 bench/
 .bench/
 .opencode/
+.test_recompiler/

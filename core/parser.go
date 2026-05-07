@@ -132,6 +132,43 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 			stmt = p.parseExpressionStatement()
 		}
 	case IDENT:
+		// Multi-value assignment: x, y := expr
+		if p.peekToken.Type == COMMA {
+			savedCur := p.curToken
+			savedPeek := p.peekToken
+			savedLexer := p.l.GetPosition()
+			// Scan ahead: IDENT, IDENT [, IDENT ...] := 
+			names := []string{p.curToken.Literal}
+			p.nextToken() // move to ,
+			for p.peekToken.Type == COMMA || p.peekToken.Type == IDENT {
+				if p.curToken.Type == COMMA && p.peekToken.Type == IDENT {
+					p.nextToken() // move to IDENT
+					names = append(names, p.curToken.Literal)
+					if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
+						// Found multi-assign pattern
+						op := p.peekToken
+						p.nextToken() // move to :=
+						p.nextToken() // move to expression
+						val := p.parseExpression(LOWEST)
+						if p.peekToken.Type == SEMICOLON {
+							p.nextToken()
+						}
+						stmt = &AssignStatement{Token: op, Names: names, Value: val}
+						break
+					}
+					continue
+				}
+				p.nextToken()
+			}
+			if stmt == nil {
+				// Not a multi-assign, restore and parse as expression
+				p.curToken = savedCur
+				p.peekToken = savedPeek
+				p.l.SetPosition(savedLexer)
+				stmt = p.parseExpressionStatement()
+			}
+			break
+		}
 		if p.peekToken.Type == COLON_ASSIGN || p.peekToken.Type == ASSIGN {
 			if p.peekToken.Type == ASSIGN && p.curToken.End == p.peekToken.Start {
 				stmt = p.parseInvalidTightAssignStatement()
@@ -159,7 +196,7 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		}
 	case LBRACE:
 		stmt = p.parseBlockStatement()
-	case NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, DOLLAR:
+	case NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, DOLLAR, LPAREN, NIL, LBRACKET, NOT, MINUS:
 		stmt = p.parseExpressionStatement()
 	default:
 		stmt = p.parseCommandStatement()
@@ -240,7 +277,7 @@ func (p *Parser) parseExecStatement() *ExecStatement {
 
 func (p *Parser) parseAssignStatement() *AssignStatement {
 	stmt := &AssignStatement{Token: p.peekToken}
-	stmt.Name = p.curToken.Literal
+	stmt.Names = []string{p.curToken.Literal}
 
 	p.nextToken() // cur is :=
 	p.nextToken() // cur is start of expression
@@ -311,7 +348,15 @@ func (p *Parser) parseIfStatement() *IfStatement {
 		if p.peekToken.Type == SEMICOLON {
 			p.nextToken()
 		}
-		if p.peekToken.Type == LBRACE {
+		if p.peekToken.Type == IF {
+			// else if — parse inner if and wrap in a single-statement block
+			p.nextToken()
+			innerIf := p.parseIfStatement()
+			stmt.Alternative = &BlockStatement{
+				Token:      innerIf.Token,
+				Statements: []Statement{innerIf},
+			}
+		} else if p.peekToken.Type == LBRACE {
 			p.nextToken()
 			stmt.Alternative = p.parseBlockStatement()
 		}
@@ -387,7 +432,7 @@ func (p *Parser) parseForStatement() *ForStatement {
 			// Not range, normal three-clause: curToken is :=, parse value from peekToken
 			p.nextToken() // move to value
 			val := p.parseExpression(LOWEST)
-			stmt.Init = &AssignStatement{Token: Token{Type: COLON_ASSIGN, Literal: ":="}, Name: ident.Value, Value: val}
+			stmt.Init = &AssignStatement{Token: Token{Type: COLON_ASSIGN, Literal: ":="}, Names: []string{ident.Value}, Value: val}
 		} else {
 			stmt.Init = p.buildForClauseStatement(firstExpr)
 		}
@@ -466,7 +511,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	// i := 0
 	stmt.Init = &AssignStatement{
 		Token: Token{Type: COLON_ASSIGN, Literal: ":="},
-		Name:  initName,
+		Names:  []string{initName},
 		Value: &IntegerLiteral{Value: 0},
 	}
 
@@ -476,7 +521,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 		Left:     &Identifier{Value: initName},
 		Operator: "<",
 		Right: &CallExpression{
-			Function:  &Identifier{Value: "len"},
+			Function:  NewIdentifier(Token{}, "len"),
 			Arguments: []Expression{rangeExpr},
 		},
 	}
@@ -484,9 +529,9 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	// i = i + 1
 	stmt.Post = &AssignStatement{
 		Token: Token{Type: ASSIGN, Literal: "="},
-		Name:  initName,
+		Names:  []string{initName},
 		Value: &InfixExpression{
-			Left:     &Identifier{Value: initName},
+			Left:     NewIdentifier(Token{}, initName),
 			Operator: "+",
 			Right:    &IntegerLiteral{Value: 1},
 		},
@@ -496,10 +541,10 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	if len(vars) >= 2 {
 		valAssign := &AssignStatement{
 			Token: Token{Type: COLON_ASSIGN, Literal: ":="},
-			Name:  vars[1],
+			Names:  []string{vars[1]},
 			Value: &IndexExpression{
 				Left:  rangeExpr,
-				Index: &Identifier{Value: initName},
+				Index: NewIdentifier(Token{}, initName),
 			},
 		}
 		body.Statements = append([]Statement{valAssign}, body.Statements...)
@@ -516,7 +561,7 @@ func (p *Parser) buildForClauseStatement(expr Expression) Statement {
 			p.nextToken()
 			p.nextToken()
 			val := p.parseExpression(LOWEST)
-			return &AssignStatement{Token: op, Name: ident.Value, Value: val}
+			return &AssignStatement{Token: op, Names: []string{ident.Value}, Value: val}
 		}
 	}
 	return &ExpressionStatement{Expression: expr}
@@ -536,7 +581,7 @@ func (p *Parser) classifyForIncrement(stmt *ForStatement) {
 		return
 	}
 	leftIdent, leftIsIdent := infix.Left.(*Identifier)
-	if !leftIsIdent || leftIdent.Value != assign.Name {
+	if !leftIsIdent || leftIdent.Value != assign.Names[0] {
 		return
 	}
 	rightLit, rightIsLit := infix.Right.(*IntegerLiteral)
@@ -548,11 +593,11 @@ func (p *Parser) classifyForIncrement(stmt *ForStatement) {
 	}
 	switch infix.Operator {
 	case "+":
-		stmt.IncVarName = assign.Name
+		stmt.IncVarName = assign.Names[0]
 		stmt.IncDelta = rightLit.Value
 		stmt.HasInc = true
 	case "-":
-		stmt.IncVarName = assign.Name
+		stmt.IncVarName = assign.Names[0]
 		stmt.IncDelta = -rightLit.Value
 		stmt.HasInc = true
 	}
@@ -665,6 +710,8 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseDereferenceExpression()
 	case NOT:
 		leftExp = p.parseNotExpression()
+	case MINUS:
+		leftExp = p.parseNegateExpression()
 	case LBRACKET:
 		leftExp = p.parseArrayLiteral()
 	case FUNC:
@@ -676,7 +723,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != LBRACE && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND && precedence < p.peekPrecedence() {
 		p.nextToken()
 		switch p.curToken.Type {
-		case EQ, NEQ, GREATER, LESS, PLUS, MINUS:
+		case EQ, NEQ, GREATER, LESS, GEQ, LEQ, PLUS, MINUS, ASTERISK, SLASH, MODULO:
 			leftExp = p.parseInfixExpression(leftExp)
 		case DOT:
 			leftExp = p.parseMemberExpression(leftExp)
@@ -693,12 +740,12 @@ func (p *Parser) parseExpression(precedence int) Expression {
 }
 
 func (p *Parser) parseIdentifier() Expression {
-	return &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	return NewIdentifier(p.curToken, p.curToken.Literal)
 }
 
 func (p *Parser) parseInterpolation() Expression {
 	p.nextToken() // consume $
-	return &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	return NewIdentifier(p.curToken, p.curToken.Literal)
 }
 
 func (p *Parser) parseIntegerLiteral() Expression {
@@ -729,8 +776,40 @@ func (p *Parser) parseStringLiteral() Expression {
 	lit := &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
 	if strings.IndexByte(lit.Value, '$') < 0 {
 		lit.Obj = &String{Value: lit.Value}
+	} else {
+		lit.Parts = parseStringParts(lit.Value)
 	}
 	return lit
+}
+
+// parseStringParts splits a string containing $var references into segments.
+// "hello $name from $HOME" → [{Text:"hello "}, {Var:"name"}, {Text:" from "}, {Var:"HOME"}]
+func parseStringParts(s string) []StringPart {
+	var parts []StringPart
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '$' {
+			if i > start {
+				parts = append(parts, StringPart{Text: s[start:i]})
+			}
+			i++ // skip $
+			vstart := i
+			for i < len(s) && isIdentChar(s[i]) {
+				i++
+			}
+			parts = append(parts, StringPart{Var: s[vstart:i]})
+			start = i
+			i-- // will be incremented by for loop
+		}
+	}
+	if start < len(s) {
+		parts = append(parts, StringPart{Text: s[start:]})
+	}
+	return parts
+}
+
+func isIdentChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
 }
 
 func (p *Parser) parseNilLiteral() Expression {
@@ -767,10 +846,12 @@ func precedenceForToken(tokenType TokenType) int {
 	switch tokenType {
 	case EQ, NEQ:
 		return EQUALS
-	case GREATER, LESS:
+	case GREATER, LESS, GEQ, LEQ:
 		return LESSGREATER
 	case PLUS, MINUS:
 		return SUM
+	case ASTERISK, SLASH, MODULO:
+		return PRODUCT
 	case DOT:
 		return MEMBER
 	case LPAREN:
@@ -790,15 +871,12 @@ func (p *Parser) parseArrayLiteral() Expression {
 
 func (p *Parser) parseAnonymousFunction() Expression {
 	// curToken = FUNC
-	// Parse as a function literal: func(params) { body }
 	stmt := &FunctionStatement{Token: p.curToken}
 
 	p.nextToken() // move to name or (
 	if p.curToken.Type == LPAREN {
-		// Anonymous function with no name
 		stmt.Parameters = p.parseFunctionParameters()
 	} else {
-		// func name(params) — treat name as part of the function
 		stmt.Name = p.curToken.Literal
 		if p.peekToken.Type == LPAREN {
 			p.nextToken()
@@ -806,16 +884,18 @@ func (p *Parser) parseAnonymousFunction() Expression {
 		}
 	}
 
+	stmt.ReturnTypes = p.parseFunctionReturnTypes()
+
 	if p.peekToken.Type == LBRACE {
 		p.nextToken()
 		stmt.Body = p.parseBlockStatement()
 	}
 
-	// Return as FunctionLiteral expression
 	return &FunctionLiteral{
-		Token:      stmt.Token,
-		Parameters: stmt.Parameters,
-		Body:       stmt.Body,
+		Token:       stmt.Token,
+		Parameters:  stmt.Parameters,
+		ReturnTypes: stmt.ReturnTypes,
+		Body:        stmt.Body,
 	}
 }
 
@@ -877,7 +957,7 @@ func (p *Parser) parseIndexAssignOrCommand() Statement {
 		}
 		target := &IndexExpression{
 			Token: savedPeek,
-			Left:  &Identifier{Token: savedCur, Value: ident},
+			Left:  NewIdentifier(savedCur, ident),
 			Index: indexExpr,
 		}
 		return &AssignStatement{Token: p.curToken, Target: target, Value: val}
@@ -898,6 +978,8 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 		stmt.Parameters = p.parseFunctionParameters()
 	}
 
+	stmt.ReturnTypes = p.parseFunctionReturnTypes()
+
 	if p.peekToken.Type == LBRACE {
 		p.nextToken() // move to {
 		stmt.Body = p.parseBlockStatement()
@@ -906,28 +988,97 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 	return stmt
 }
 
-func (p *Parser) parseFunctionParameters() []string {
+func (p *Parser) parseFunctionParameters() []Parameter {
 	if p.peekToken.Type == RPAREN {
 		p.nextToken()
 		return nil
 	}
 
-	identifiers := make([]string, 0, 4)
+	params := make([]Parameter, 0, 4)
+	names := make([]string, 0, 2)
 
-	p.nextToken()
-	identifiers = append(identifiers, p.curToken.Literal)
+	p.nextToken() // move to first token
+	names = append(names, p.curToken.Literal)
 
-	for p.peekToken.Type == COMMA {
-		p.nextToken()
-		p.nextToken()
-		identifiers = append(identifiers, p.curToken.Literal)
+	for {
+		if p.peekToken.Type == RPAREN || p.peekToken.Type == LBRACE {
+			// End of params — type must have been provided
+			if len(names) > 0 {
+				// Names without type — error
+				return params
+			}
+			break
+		}
+
+		if p.peekToken.Type == COMMA {
+			// Another name in the same group
+			p.nextToken() // skip comma
+			p.nextToken() // move to next name
+			names = append(names, p.curToken.Literal)
+			continue
+		}
+
+		if p.peekToken.Type == IDENT {
+			// Type annotation — apply to all collected names
+			p.nextToken() // move to type
+			typeName := p.curToken.Literal
+			for _, n := range names {
+				params = append(params, Parameter{Name: n, TypeName: typeName})
+			}
+			names = names[:0] // reset names
+
+			// Check for comma (more params) or rparen/lbrace (end)
+			if p.peekToken.Type == COMMA {
+				p.nextToken() // skip comma
+				p.nextToken() // move to next param name
+				names = append(names, p.curToken.Literal)
+				continue
+			}
+			break
+		}
+
+		// Unexpected token
+		break
 	}
 
 	if p.peekToken.Type == RPAREN {
 		p.nextToken()
 	}
 
-	return identifiers
+	return params
+}
+
+func (p *Parser) parseFunctionReturnTypes() []string {
+	// Called after ) has been consumed
+	// peek is either LBRACE (no return type) or IDENT/type (return types)
+	if p.peekToken.Type == LBRACE || p.peekToken.Type == SEMICOLON || p.peekToken.Type == EOF {
+		return nil
+	}
+
+	// Single return type: func foo() int {
+	if p.peekToken.Type == IDENT {
+		p.nextToken()
+		return []string{p.curToken.Literal}
+	}
+
+	// Multi return types: func foo() (int, error) {
+	if p.peekToken.Type == LPAREN {
+		p.nextToken() // skip (
+		types := make([]string, 0, 2)
+		p.nextToken() // move to first type
+		types = append(types, p.curToken.Literal)
+		for p.peekToken.Type == COMMA {
+			p.nextToken() // skip comma
+			p.nextToken() // move to next type
+			types = append(types, p.curToken.Literal)
+		}
+		if p.peekToken.Type == RPAREN {
+			p.nextToken() // skip )
+		}
+		return types
+	}
+
+	return nil
 }
 
 func (p *Parser) parseReturnStatement() *ReturnStatement {
@@ -935,7 +1086,12 @@ func (p *Parser) parseReturnStatement() *ReturnStatement {
 
 	if p.peekToken.Type != SEMICOLON && p.peekToken.Type != RBRACE && p.peekToken.Type != EOF {
 		p.nextToken()
-		stmt.ReturnValue = p.parseExpression(LOWEST)
+		stmt.ReturnValues = []Expression{p.parseExpression(LOWEST)}
+		for p.peekToken.Type == COMMA {
+			p.nextToken() // skip comma
+			p.nextToken() // move to next expression
+			stmt.ReturnValues = append(stmt.ReturnValues, p.parseExpression(LOWEST))
+		}
 		if p.peekToken.Type == SEMICOLON {
 			p.nextToken()
 		}
@@ -1153,7 +1309,7 @@ func (p *Parser) isMethodCallWithBlock() bool {
 
 func (p *Parser) parseMethodCallBlockStatement() *MethodCallBlockStatement {
 	stmt := &MethodCallBlockStatement{Token: p.curToken}
-	stmt.Object = &Identifier{Token: p.curToken, Value: p.curToken.Literal} // object name
+	stmt.Object = NewIdentifier(p.curToken, p.curToken.Literal) // object name
 
 	p.nextToken() // move to .
 	p.nextToken() // move to method name
@@ -1193,12 +1349,13 @@ func (p *Parser) parseVarStatement() *VarStatement {
 	p.nextToken()
 	stmt.Name = p.curToken.Literal
 
-	// Type is required for var
-	if p.peekToken.Type != IDENT {
-		return nil  // var x without type is error
+	// Type is optional if = follows directly (type inferred from value)
+	if p.peekToken.Type == IDENT {
+		p.nextToken()
+		stmt.TypeName = p.curToken.Literal
+	} else if p.peekToken.Type != ASSIGN && p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF {
+		return nil
 	}
-	p.nextToken()
-	stmt.TypeName = p.curToken.Literal
 
 	// Optional value
 	if p.peekToken.Type == ASSIGN {
@@ -1243,6 +1400,13 @@ func (p *Parser) parseDereferenceExpression() Expression {
 
 func (p *Parser) parseNotExpression() Expression {
 	exp := &PrefixExpression{Token: p.curToken, Operator: "!"}
+	p.nextToken()
+	exp.Right = p.parseExpression(PREFIX)
+	return exp
+}
+
+func (p *Parser) parseNegateExpression() Expression {
+	exp := &PrefixExpression{Token: p.curToken, Operator: "-"}
 	p.nextToken()
 	exp.Right = p.parseExpression(PREFIX)
 	return exp

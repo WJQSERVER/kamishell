@@ -15,6 +15,8 @@ func runKami(input string, env *Environment) (string, string, Object) {
 	l := NewLexer(input)
 	p := NewParser(l)
 	program := p.ParseProgram()
+	Fold(program)
+	Resolve(program)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -263,7 +265,7 @@ func TestForThreeClauseCountDown(t *testing.T) {
 
 func TestForThreeClauseWithReturn(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami(`func find(n) { for i := 0; i < n; i = i + 1 { if i == 3 { return i } }; return -1 }; print find(10)`, env)
+	stdout, stderr, _ := runKami(`func find(n any) { for i := 0; i < n; i = i + 1 { if i == 3 { return i } }; return -1 }; print find(10)`, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -642,7 +644,7 @@ func TestRangeStringArray(t *testing.T) {
 
 func TestIterRangeSingleVar(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { print v }`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { print v }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -661,7 +663,7 @@ func TestIterRangeSingleVar(t *testing.T) {
 
 func TestIterRangeDualVar(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func enumerate(arr) { return func(yield) { for i := range arr { if !yield(i, arr[i]) { return } } } }; for k, v := range enumerate([10, 20, 30]) { print k; print v }`
+	input := `func enumerate(arr any) { return func(yield any) { for i := range arr { if !yield(i, arr[i]) { return } } } }; for k, v := range enumerate([10, 20, 30]) { print k; print v }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -680,7 +682,7 @@ func TestIterRangeDualVar(t *testing.T) {
 
 func TestIterRangeBreak(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(100) { if v == 5 { break }; print v }`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(100) { if v == 5 { break }; print v }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -694,7 +696,7 @@ func TestIterRangeBreak(t *testing.T) {
 
 func TestIterRangeContinue(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { if v == 2 { continue }; print v }`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(5) { if v == 2 { continue }; print v }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -713,7 +715,7 @@ func TestIterRangeContinue(t *testing.T) {
 
 func TestIterRangeEmpty(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func empty() { return func(yield) { } }; for v := range empty() { print v }; print "done"`
+	input := `func empty() { return func(yield any) { } }; for v := range empty() { print v }; print "done"`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -725,7 +727,7 @@ func TestIterRangeEmpty(t *testing.T) {
 
 func TestIterRangeWithReturn(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; func find(target) { for v := range countTo(10) { if v == target { return v } }; return -1 }; print find(7)`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; func find(target any) { for v := range countTo(10) { if v == target { return v } }; return -1 }; print find(7)`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -737,7 +739,7 @@ func TestIterRangeWithReturn(t *testing.T) {
 
 func TestIterRangeNested(t *testing.T) {
 	env := NewEmptyEnvironment()
-	input := `func countTo(n) { return func(yield) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(3) { for w := range countTo(2) { print v; print w } }`
+	input := `func countTo(n any) { return func(yield any) { i := 0; for i < n { if !yield(i) { return }; i = i + 1 } } }; for v := range countTo(3) { for w := range countTo(2) { print v; print w } }`
 	stdout, stderr, _ := runKami(input, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
@@ -874,6 +876,65 @@ func TestVarWithTypeZeroValue(t *testing.T) {
 	}
 }
 
+func TestVarTypeInference(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `var title = "kami"; var count = 42; var ok = true; print title; print count; print ok`
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "kami" {
+		t.Errorf("expected 'kami', got %q", lines[0])
+	}
+	if lines[1] != "42" {
+		t.Errorf("expected '42', got %q", lines[1])
+	}
+	if lines[2] != "true" {
+		t.Errorf("expected 'true', got %q", lines[2])
+	}
+}
+
+func TestVarTypeInferenceReassignment(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `var x = 10; x = 20; print x`
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "20" {
+		t.Errorf("expected '20', got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestVarTypeInferenceRejectsTypeMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`var x = 10; x = "hello"`, env)
+	if !strings.Contains(stderr, "cannot assign") {
+		t.Errorf("expected type mismatch error, got %q", stderr)
+	}
+}
+
+func TestVarTypeInferenceArray(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `var arr = [1, 2, 3]; print len(arr); print arr[1]`
+	stdout, stderr, _ := runKami(input, env)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if lines[0] != "3" || lines[1] != "2" {
+		t.Errorf("expected '3' and '2', got %v", lines)
+	}
+}
+
 func TestVarTypeMismatch(t *testing.T) {
 	env := NewEmptyEnvironment()
 	_, stderr, _ := runKami("var count int = true", env)
@@ -917,8 +978,8 @@ func TestNilDoesNotBecomeTrackedVariableType(t *testing.T) {
 func TestVarNilDoesNotFreezeNullType(t *testing.T) {
 	env := NewEmptyEnvironment()
 	stdout, stderr, _ := runKami("var x = nil", env)
-	if !strings.Contains(stderr, "invalid var statement") {
-		t.Errorf("expected error about invalid var statement, got stderr: %q", stderr)
+	if !strings.Contains(stderr, "untyped nil cannot be used with var") {
+		t.Errorf("expected error about untyped nil, got stderr: %q", stderr)
 	}
 	if strings.TrimSpace(stdout) != "" {
 		t.Errorf("expected empty stdout, got %q", stdout)
@@ -978,7 +1039,7 @@ func TestAssignmentWithoutSpacesReportsSyntaxError(t *testing.T) {
 
 func TestUserFunctionKeepsIntegerArguments(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("func add(a, b) { print a + b }; add(1, 2)", env)
+	stdout, stderr, _ := runKami("func add(a any, b any) { print a + b }; add(1, 2)", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -989,7 +1050,7 @@ func TestUserFunctionKeepsIntegerArguments(t *testing.T) {
 
 func TestUserFunctionKeepsBooleanArguments(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("func pick(flag) { if flag == true { print \"yes\" } else { print \"no\" } }; pick(true)", env)
+	stdout, stderr, _ := runKami("func pick(flag any) { if flag == true { print \"yes\" } else { print \"no\" } }; pick(true)", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -1000,7 +1061,7 @@ func TestUserFunctionKeepsBooleanArguments(t *testing.T) {
 
 func TestCommandAndExecUserFunctionUseStringArguments(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("func describe(v) { print v }; describe 7; exec \"describe 7\"", env)
+	stdout, stderr, _ := runKami("func describe(v any) { print v }; describe 7; exec \"describe 7\"", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -1084,7 +1145,7 @@ func TestPointerAssignComplexExpression(t *testing.T) {
 
 func TestPointerAssignWithFunction(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami("func inc(p) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x", env)
+	stdout, stderr, _ := runKami("func inc(p any) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x", env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -1172,7 +1233,7 @@ func TestSwitchNested(t *testing.T) {
 
 func TestSwitchWithReturn(t *testing.T) {
 	env := NewEmptyEnvironment()
-	stdout, stderr, _ := runKami(`func pick(x) { switch x { case 1: return "one" case 2: return "two" default: return "other" } }; print pick(2)`, env)
+	stdout, stderr, _ := runKami(`func pick(x any) { switch x { case 1: return "one" case 2: return "two" default: return "other" } }; print pick(2)`, env)
 	if stderr != "" {
 		t.Errorf("unexpected stderr: %s", stderr)
 	}
@@ -1266,5 +1327,189 @@ func TestSwitchIntMultipleValues(t *testing.T) {
 	}
 	if strings.TrimSpace(stdout) != "matched" {
 		t.Errorf("expected matched, got %q", stdout)
+	}
+}
+
+// ============================================================
+// Type safety tests
+// ============================================================
+
+func TestFuncConstantCannotReassign(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func add(a int, b int) int { return a + b }; add = func(a int, b int) int { return a * b }`, env)
+	if !strings.Contains(stderr, "cannot assign to constant") {
+		t.Errorf("expected constant reassignment error, got %q", stderr)
+	}
+}
+
+func TestFuncLiteralSignatureMatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`f := func(a int, b int) int { return a + b }; f = func(a int, b int) int { return a * b }; print f(3, 4)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "12" {
+		t.Errorf("expected 12, got %q", stdout)
+	}
+}
+
+func TestFuncLiteralSignatureMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`f := func(a int, b int) int { return a + b }; f = func(x string) { print x }`, env)
+	if !strings.Contains(stderr, "cannot assign") {
+		t.Errorf("expected signature mismatch error, got %q", stderr)
+	}
+}
+
+func TestFuncLiteralParamCountMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`f := func(a int, b int) int { return a + b }; f = func(a int) int { return a }`, env)
+	if !strings.Contains(stderr, "cannot assign") {
+		t.Errorf("expected signature mismatch error, got %q", stderr)
+	}
+}
+
+func TestFuncLiteralReturnTypeMismatch(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`f := func(a int) int { return a }; f = func(a int) string { return "x" }`, env)
+	if !strings.Contains(stderr, "cannot assign") {
+		t.Errorf("expected signature mismatch error, got %q", stderr)
+	}
+}
+
+func TestFuncLiteralNilAssignment(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`f := func(a int) int { return a }; f = nil; print f`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "nil" {
+		t.Errorf("expected nil, got %q", stdout)
+	}
+}
+
+func TestParamTypeCheckRejectsWrongType(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func add(a int, b int) int { return a + b }; add("hello", 2)`, env)
+	if !strings.Contains(stderr, "expected INTEGER") {
+		t.Errorf("expected type check error, got %q", stderr)
+	}
+}
+
+func TestParamTypeCheckAcceptsCorrectType(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func add(a int, b int) int { return a + b }; print add(3, 4)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "7" {
+		t.Errorf("expected 7, got %q", stdout)
+	}
+}
+
+func TestParamArityCheckRejectsWrongCount(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func add(a int, b int) int { return a + b }; add(1)`, env)
+	if !strings.Contains(stderr, "expected 2 arguments, got 1") {
+		t.Errorf("expected arity error, got %q", stderr)
+	}
+}
+
+func TestParamArityCheckRejectsTooMany(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func add(a int, b int) int { return a + b }; add(1, 2, 3)`, env)
+	if !strings.Contains(stderr, "expected 2 arguments, got 3") {
+		t.Errorf("expected arity error, got %q", stderr)
+	}
+}
+
+func TestUntypedParamsAreDynamic(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func echo(v any) { print v }; echo(42); echo("hello")`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 2 || lines[0] != "42" || lines[1] != "hello" {
+		t.Errorf("expected 42 and hello, got %v", lines)
+	}
+}
+
+func TestStringParamTypeCheck(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func greet(name string) { print "hello " + name }; greet("world")`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "hello world" {
+		t.Errorf("expected 'hello world', got %q", stdout)
+	}
+}
+
+func TestStringParamTypeRejectsInt(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func greet(name string) { print "hello " + name }; greet(42)`, env)
+	if !strings.Contains(stderr, "expected STRING") {
+		t.Errorf("expected type check error, got %q", stderr)
+	}
+}
+
+func TestBoolParamTypeCheck(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func check(flag bool) { if flag { print "yes" } else { print "no" } }; check(true)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "yes" {
+		t.Errorf("expected yes, got %q", stdout)
+	}
+}
+
+func TestMultiParamShorthand(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func add(a, b int) int { return a + b }; print add(3, 4)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "7" {
+		t.Errorf("expected 7, got %q", stdout)
+	}
+}
+
+func TestMultiParamShorthandTypeCheck(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func add(a, b int) int { return a + b }; add("x", 2)`, env)
+	if !strings.Contains(stderr, "expected INTEGER") {
+		t.Errorf("expected type check error, got %q", stderr)
+	}
+}
+
+func TestMultiParamShorthandThreeParams(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func sum(a, b, c int) int { return a + b + c }; print sum(1, 2, 3)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "6" {
+		t.Errorf("expected 6, got %q", stdout)
+	}
+}
+
+func TestMultiParamShorthandMixedTypes(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`func greet(name string, age int) { print name + " is " }; greet("alice", 30)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if !strings.Contains(stdout, "alice") {
+		t.Errorf("expected alice in output, got %q", stdout)
+	}
+}
+
+func TestMultiParamShorthandArityCheck(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`func add(a, b int) int { return a + b }; add(1)`, env)
+	if !strings.Contains(stderr, "expected 2 arguments, got 1") {
+		t.Errorf("expected arity error, got %q", stderr)
 	}
 }

@@ -22,6 +22,7 @@ const (
 	BREAK_OBJ        ObjectType = "BREAK"
 	CONTINUE_OBJ     ObjectType = "CONTINUE"
 	ARRAY_OBJ        ObjectType = "ARRAY"
+	TUPLE_OBJ        ObjectType = "TUPLE"
 )
 
 var (
@@ -42,24 +43,22 @@ func (i *Integer) Inspect() string  { return strconv.FormatInt(i.Value, 10) }
 func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
 
 const (
-	integerCacheMin int64 = -128
-	integerCacheMax int64 = 1024
+	integerCacheMin int64 = -4096
+	integerCacheMax int64 = 12287 // total 16k entries = 16384
 )
 
-var integerCache = initIntegerCache()
+var integerCache []Integer
 
-func initIntegerCache() []*Integer {
-	size := integerCacheMax - integerCacheMin + 1
-	cache := make([]*Integer, size)
-	for i := range cache {
-		cache[i] = &Integer{Value: integerCacheMin + int64(i)}
+func init() {
+	integerCache = make([]Integer, integerCacheMax-integerCacheMin+1)
+	for i := range integerCache {
+		integerCache[i].Value = integerCacheMin + int64(i)
 	}
-	return cache
 }
 
 func getIntegerObject(value int64) *Integer {
 	if value >= integerCacheMin && value <= integerCacheMax {
-		return integerCache[value-integerCacheMin]
+		return &integerCache[value-integerCacheMin]
 	}
 	return &Integer{Value: value}
 }
@@ -121,13 +120,33 @@ func (e *Error) Inspect() string {
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
 
 type Function struct {
-	Parameters []string
-	Body       *BlockStatement
-	Env        *Environment
+	Parameters   []Parameter
+	ReturnTypes  []string
+	Body         *BlockStatement
+	Env          *Environment
+	SlotCapacity int // number of slots needed for parameters (set by Resolver)
 }
 
 func (f *Function) Inspect() string  { return "func" }
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
+
+type Tuple struct {
+	Elements []Object
+}
+
+func (t *Tuple) Type() ObjectType { return TUPLE_OBJ }
+func (t *Tuple) Inspect() string {
+	var out strings.Builder
+	out.WriteString("(")
+	for i, el := range t.Elements {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(el.Inspect())
+	}
+	out.WriteString(")")
+	return out.String()
+}
 
 type NativeFunction struct {
 	Fn func(env *Environment, args ...Object) Object

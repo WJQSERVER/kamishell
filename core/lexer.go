@@ -136,11 +136,21 @@ func (l *Lexer) NextToken() Token {
 			start := l.position
 			l.readChar()
 			tok = Token{Type: REDIRECT, Literal: "->", Start: start, End: l.readPosition}
+		} else if l.peekChar() == '=' {
+			start := l.position
+			l.readChar()
+			tok = Token{Type: GEQ, Literal: ">=", Start: start, End: l.readPosition}
 		} else {
 			tok = Token{Type: GREATER, Literal: ">", Start: l.position, End: l.position + 1}
 		}
 	case '<':
-		tok = Token{Type: LESS, Literal: "<", Start: l.position, End: l.position + 1}
+		if l.peekChar() == '=' {
+			start := l.position
+			l.readChar()
+			tok = Token{Type: LEQ, Literal: "<=", Start: start, End: l.readPosition}
+		} else {
+			tok = Token{Type: LESS, Literal: "<", Start: l.position, End: l.position + 1}
+		}
 	case '!':
 		if l.peekChar() == '=' {
 			start := l.position
@@ -161,6 +171,10 @@ func (l *Lexer) NextToken() Token {
 		}
 	case '*':
 		tok = Token{Type: ASTERISK, Literal: "*", Start: l.position, End: l.position + 1}
+	case '/':
+		tok = Token{Type: SLASH, Literal: "/", Start: l.position, End: l.position + 1}
+	case '%':
+		tok = Token{Type: MODULO, Literal: "%", Start: l.position, End: l.position + 1}
 	case ';':
 		tok = Token{Type: SEMICOLON, Literal: ";", Start: l.position, End: l.position + 1}
 	case ',':

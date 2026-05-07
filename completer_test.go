@@ -139,6 +139,8 @@ type testEnv struct{}
 
 func (e *testEnv) Get(key string) (any, bool) { return nil, false }
 func (e *testEnv) Set(key string, val any)    {}
+func (e *testEnv) SetString(name string, val string) {}
+func (e *testEnv) GetString(name string) (string, bool) { return "", false }
 
 // discardWriter discards all writes
 type discardWriter struct{}

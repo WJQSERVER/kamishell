@@ -14,8 +14,24 @@ func BenchmarkEvalLoopProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `i := 0; for i < 100 { i = i + 1 }; print i`)
 }
 
+func BenchmarkEvalLoopNoErrRead(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 100 { i = i + 1 }`)
+}
+
+func BenchmarkEvalMultiStatementBlock(b *testing.B) {
+	benchmarkEvalProgram(b, `x := 1; y := 2; z := 3; w := x + y + z`)
+}
+
 func BenchmarkEvalLoopLargeProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `i := 0; for i < 1000 { i = i + 1 }; print i`)
+}
+
+func BenchmarkEvalLoopVeryLargeProgram(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 10000 { i = i + 1 }`)
+}
+
+func BenchmarkEvalLoopBeyondCache(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 20000; for i < 30000 { i = i + 1 }`)
 }
 
 func BenchmarkEvalLoopWithPrintProgram(b *testing.B) {
@@ -45,7 +61,7 @@ func BenchmarkEvalInterpolatedStringProgram(b *testing.B) {
 func BenchmarkExecuteCommandUserFunction(b *testing.B) {
 	env := NewEmptyEnvironment()
 	fn := &Function{
-		Parameters: []string{"value"},
+		Parameters: []Parameter{{Name: "value", TypeName: "any"}},
 		Body: &BlockStatement{Statements: []Statement{
 			&ExpressionStatement{Expression: &Identifier{Value: "value"}},
 		}},
