@@ -1084,7 +1084,8 @@ func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environ
 			env.recycleInteger(intObj)
 			newVal := env.allocInteger(intObj.Value + delta)
 			env.SetSlot(fs.IncScopeDepth, fs.IncSlotIndex, newVal)
-			// Also sync map for evalFastForCondition compatibility
+			// Sync map for evalFastForCondition compatibility when condition
+			// Identifier is unresolved (slotIndex == -1, reads from map)
 			scope := env
 			for d := 0; d < fs.IncScopeDepth; d++ {
 				if scope.outer != nil {
@@ -1110,12 +1111,14 @@ func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environ
 }
 
 type forConditionFastPath struct {
-	varName  string
-	op       string
-	kind     uint8
-	intConst int64
-	fltConst float64
-	swap     bool
+	varName    string
+	op         string
+	kind       uint8
+	intConst   int64
+	fltConst   float64
+	swap       bool
+	scopeDepth int // -1 = use map, >= 0 = use slot
+	slotIndex  int // -1 = use map, >= 0 = use slot
 }
 
 const (
@@ -1135,41 +1138,50 @@ func buildForConditionFastPath(expr Expression) (forConditionFastPath, bool) {
 	if leftIsIdent {
 		switch right := infix.Right.(type) {
 		case *IntegerLiteral:
-			return makeForIntFastPath(leftIdent.Value, right.Value, infix.Operator, false)
+			return makeForIntFastPath(leftIdent.Value, right.Value, infix.Operator, false, leftIdent.ScopeDepth, leftIdent.SlotIndex)
 		case *FloatLiteral:
-			return makeForFloatFastPath(leftIdent.Value, right.Value, infix.Operator, false)
+			return makeForFloatFastPath(leftIdent.Value, right.Value, infix.Operator, false, leftIdent.ScopeDepth, leftIdent.SlotIndex)
 		}
 	}
 
 	if rightIsIdent {
 		switch left := infix.Left.(type) {
 		case *IntegerLiteral:
-			return makeForIntFastPath(rightIdent.Value, left.Value, infix.Operator, true)
+			return makeForIntFastPath(rightIdent.Value, left.Value, infix.Operator, true, rightIdent.ScopeDepth, rightIdent.SlotIndex)
 		case *FloatLiteral:
-			return makeForFloatFastPath(rightIdent.Value, left.Value, infix.Operator, true)
+			return makeForFloatFastPath(rightIdent.Value, left.Value, infix.Operator, true, rightIdent.ScopeDepth, rightIdent.SlotIndex)
 		}
 	}
 
 	return forConditionFastPath{}, false
 }
 
-func makeForIntFastPath(name string, constant int64, op string, swap bool) (forConditionFastPath, bool) {
+func makeForIntFastPath(name string, constant int64, op string, swap bool, scopeDepth, slotIndex int) (forConditionFastPath, bool) {
 	if !supportsFastCompareOperator(op) {
 		return forConditionFastPath{}, false
 	}
-	return forConditionFastPath{varName: name, intConst: constant, op: op, kind: forCondInt, swap: swap}, true
+	return forConditionFastPath{varName: name, intConst: constant, op: op, kind: forCondInt, swap: swap, scopeDepth: scopeDepth, slotIndex: slotIndex}, true
 }
 
-func makeForFloatFastPath(name string, constant float64, op string, swap bool) (forConditionFastPath, bool) {
+func makeForFloatFastPath(name string, constant float64, op string, swap bool, scopeDepth, slotIndex int) (forConditionFastPath, bool) {
 	if !supportsFastCompareOperator(op) {
 		return forConditionFastPath{}, false
 	}
-	return forConditionFastPath{varName: name, fltConst: constant, op: op, kind: forCondFloat, swap: swap}, true
+	return forConditionFastPath{varName: name, fltConst: constant, op: op, kind: forCondFloat, swap: swap, scopeDepth: scopeDepth, slotIndex: slotIndex}, true
 }
 
 func evalFastForCondition(spec forConditionFastPath, env *Environment) (bool, *Error) {
-	obj, ok := env.GetObject(spec.varName)
-	if !ok {
+	var obj Object
+	if spec.slotIndex >= 0 {
+		obj = env.GetBySlot(spec.scopeDepth, spec.slotIndex)
+	} else {
+		var ok bool
+		obj, ok = env.GetObject(spec.varName)
+		if !ok {
+			return false, &Error{Message: "identifier not found: " + spec.varName}
+		}
+	}
+	if obj == nil {
 		return false, &Error{Message: "identifier not found: " + spec.varName}
 	}
 
