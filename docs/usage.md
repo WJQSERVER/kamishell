@@ -91,11 +91,39 @@ http --headers https://example.com
 ./my_script.sh
 ```
 
-## 5. 调试与开发
+## 5. 编译模式
+
+Kamishell 支持将 `.km` 脚本编译为原生 Go 二进制文件，消除解释器开销。
+
+### 编译为二进制
+
+```bash
+# 编译为二进制文件（默认输出名为 app）
+./kami --compile myapp script.km
+
+# 指定输出文件名
+./kami --compile server build.km
+```
+
+### 仅生成 Go 源码
+
+```bash
+# 生成 .go 文件，不编译
+./kami --source output.go script.km
+```
+
+### 编译模式说明
+
+- 编译器将 Kamishell 脚本转换为等效的 Go 代码
+- 生成的代码直接调用 Go 标准库，无解释器开销
+- 类型信息在编译期推断，生成的代码避免 `any` 类型开销
+- 支持所有已实现的语法特性（函数、循环、并发等）
+
+## 6. 调试与开发
 
 - 运行测试: `go test ./...`
 - 性能评估: `go test -bench=. ./...`
 
-## 6. 深入了解
+## 7. 深入了解
 
 - [分词器实现细节](tokenizer.md): 了解 Kamishell 如何解析命令以及处理交互层面的单词边界。

@@ -245,6 +245,7 @@ w := 100 / 5     // 除法
 - `>=` 大于等于
 - `<=` 小于等于
 - `!` 逻辑非（前缀）
+- `-` 取负（前缀，支持整数和浮点）
 
 ### 逻辑非 `!`
 
@@ -255,6 +256,18 @@ print !x          // false
 if !false {
     print "ok"
 }
+```
+
+### 取负 `-`
+
+前缀 `-` 对整数和浮点数取负，支持嵌套：
+
+```go
+print -5          // -5
+print --5         // 5（双重取负）
+print -3.14       // -3.14
+x := 10
+print -x          // -10
 ```
 
 ### 拼接规则
@@ -280,7 +293,7 @@ y := (a + b) / 2
 
 ## 7. 控制结构
 
-### `if` / `else`
+### `if` / `else` / `else if`
 
 ```go
 x := 10
@@ -291,11 +304,25 @@ if x > 5 {
 }
 ```
 
+支持 `else if` 链式写法：
+
+```go
+x := 15
+if x > 10 {
+    print "big"
+} else if x > 5 {
+    print "medium"
+} else {
+    print "small"
+}
+```
+
 说明：
 
 - 条件不需要括号
 - 块必须使用 `{ ... }`
 - `else` 可选
+- `else if` 可无限链式拼接
 
 ### `switch` / `case`
 
@@ -496,7 +523,55 @@ arr := []
 print len(arr)   // 0
 ```
 
-## 9. 函数
+## 9. 指针
+
+Kamishell 支持引用语义的指针操作，用于在函数间共享和修改变量。
+
+### 取地址 `&`
+
+使用 `&变量名` 获取变量的引用：
+
+```go
+x := 10
+p := &x
+```
+
+### 解引用 `*`
+
+使用 `*指针` 读取指针指向的值：
+
+```go
+x := 10
+p := &x
+print *p   // 10
+```
+
+### 指针赋值 `*p = val`
+
+通过指针修改原始变量的值：
+
+```go
+x := 10
+p := &x
+*p = 20
+print x   // 20
+```
+
+### 传递指针给函数
+
+指针可以传递给函数，函数内通过指针修改外部变量：
+
+```go
+func increment(p) {
+    *p = *p + 1
+}
+
+x := 10
+increment(&x)
+print x   // 11
+```
+
+## 10. 函数
 
 ### `func` 定义函数
 
@@ -676,7 +751,7 @@ result := add(3, 4)
 print result   // 7
 ```
 
-## 10. 命令执行
+## 11. 命令执行
 
 ### 直接命令执行
 
@@ -705,7 +780,7 @@ go build
 exec "go run main.go"
 ```
 
-## 11. 管道、重定向与逻辑链
+## 12. 管道、重定向与逻辑链
 
 ### `|` 管道
 
@@ -737,7 +812,7 @@ mkdir build && cd build
 ls missing || print "not found"
 ```
 
-## 12. 并发与后台执行
+## 13. 并发与后台执行
 
 ### `&` 后台执行
 
@@ -796,7 +871,7 @@ wait           // 等待所有任务完成
 wait(10)       // 等待最多 10 秒
 ```
 
-## 13. 错误处理
+## 14. 错误处理
 
 运行时会维护一个特殊变量 `err`。
 
@@ -810,7 +885,7 @@ if err != nil {
 }
 ```
 
-## 14. 脚本内 `env` 包
+## 15. 脚本内 `env` 包
 
 当前内置了脚本级 `env` 包，用来保存脚本内部键值状态，不和普通变量混用。
 
@@ -826,7 +901,7 @@ print env.Get("GOOS")
 env.Unset("GOOS")
 ```
 
-## 15. `.km` / make DSL
+## 16. `.km` / make DSL
 
 Kamishell 内置了 `make` 构建系统，使用 `.km` 脚本。
 
@@ -859,7 +934,7 @@ target_env "app" "CGO_ENABLED=0"
 
 更详细的构建说明见 `docs/make.md`。
 
-## 16. Go 标准库导入
+## 17. Go 标准库导入
 
 Kami 支持通过 `import` 语法导入 Go 标准库函数，编译时直接解析为原生 Go 调用。
 
@@ -873,7 +948,13 @@ import "Go/包名"
 
 - `fmt` — 格式化输出（`Println`、`Printf`、`Sprintf`）
 - `math` — 数学函数（`Sqrt`、`Abs`）
-- `strings` — 字符串处理（`Contains`、`HasPrefix`、`HasSuffix`、`Replace`、`Split`、`Join`）
+- `strings` — 字符串处理
+  - `Contains(s, substr)` → `bool`
+  - `HasPrefix(s, prefix)` → `bool`
+  - `HasSuffix(s, suffix)` → `bool`
+  - `Replace(s, old, new, n)` → `string`
+  - `Split(s, sep)` → `[]string`（返回字符串数组）
+  - `Join(arr, sep)` → `string`（第一个参数为字符串数组）
 - `strconv` — 类型转换（`Itoa`、`Atoi`）
 - `os` — 系统操作（`Getenv`、`Setenv`）
 
@@ -895,7 +976,7 @@ print strings.Replace("hello", "l", "L", -1)  // heLLo
 
 注意：解释模式下仅支持 `goStdlib` 中注册的函数（`Contains`、`HasPrefix`、`HasSuffix`、`Replace`、`Split`、`Join`）。编译模式下支持 Go 标准库的任意函数（直接生成 Go 调用）。
 
-## 17. 关键字总览
+## 18. 关键字总览
 
 ### 已实现关键字
 
@@ -924,12 +1005,13 @@ print strings.Replace("hello", "l", "L", -1)  // heLLo
 | `:=` | 短变量声明 |
 | `=` | 赋值 |
 | `+` | 加法 / 字符串拼接 |
-| `-` | 减法 / 重定向箭头（`->`） |
+| `-` | 减法 / 取负（前缀） / 重定向箭头（`->`） |
 | `*` | 乘法 / 指针解引用 |
 | `/` | 除法 |
+| `%` | 取模 |
 | `!` | 逻辑非 |
 | `==` / `!=` | 等于 / 不等于 |
-| `>` / `<` | 大于 / 小于 |
+| `>` / `<` / `>=` / `<=` | 大于 / 小于 / 大于等于 / 小于等于 |
 | `\|` | 管道 |
 | `->` | 覆盖重定向 |
 | `>>` | 追加重定向 |
@@ -950,7 +1032,7 @@ print strings.Replace("hello", "l", "L", -1)  // heLLo
 - `target_link_libraries`
 - `target_env`
 
-## 18. 当前未实现或未完整实现
+## 19. 当前未实现或未完整实现
 
 下面这些名字可能出现在文档、帮助系统或规划里，但当前不能当成稳定能力使用：
 
@@ -960,7 +1042,7 @@ print strings.Replace("hello", "l", "L", -1)  // heLLo
 - 字符串 range（按字符迭代）
 - 命名返回参数（Go 的 `func foo() (result int, err error)` 语法）
 
-## 19. 综合示例
+## 20. 综合示例
 
 ```go
 // 数组 + range + break/continue
