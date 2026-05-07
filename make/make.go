@@ -163,6 +163,7 @@ func Make(args []string, env builtin.Environment, stdin io.Reader, stdout io.Wri
 	l := core.NewLexer(string(content))
 	p := core.NewParser(l)
 	prog := p.ParseProgram()
+	core.Fold(prog)
 	core.Resolve(prog)
 	core.EvalWithIO(prog, buildEnv, stdin, stdout, stderr)
 

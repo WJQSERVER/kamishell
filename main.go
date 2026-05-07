@@ -179,6 +179,7 @@ func runInput(input string, env *core.Environment, isRepl bool) {
 	p := core.NewParser(l)
 
 	program := p.ParseProgram()
+	core.Fold(program)
 	core.Resolve(program)
 	result := core.Eval(program, env)
 	if result != nil {
