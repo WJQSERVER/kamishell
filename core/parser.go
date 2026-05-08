@@ -632,6 +632,10 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		if p.curToken.Type == IDENT {
 			// In command context, treat bare words as strings
 			stmt.Arguments = append(stmt.Arguments, &StringLiteral{Token: p.curToken, Value: p.curToken.Literal})
+		} else if p.curToken.Type == SLASH {
+			// In command context, SLASH might be the start of an absolute path
+			path := p.parseCommandPath()
+			stmt.Arguments = append(stmt.Arguments, &StringLiteral{Token: p.curToken, Value: path})
 		} else {
 			arg := p.parseExpression(CALL)
 			if arg != nil {
@@ -648,6 +652,17 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 	}
 
 	return stmt
+}
+
+// parseCommandPath reads a path that starts with / in command context.
+// It consumes tokens like / or /ident or /ident/ident etc.
+func (p *Parser) parseCommandPath() string {
+	path := "/"
+	for p.peekToken.Type == IDENT || p.peekToken.Type == SLASH {
+		p.nextToken()
+		path += p.curToken.Literal
+	}
+	return path
 }
 
 func (p *Parser) tryParseKeyValueArgument() (Expression, bool) {
