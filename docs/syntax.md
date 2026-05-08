@@ -763,6 +763,20 @@ pwd
 go build
 ```
 
+### 参数中的特殊字符
+
+命令参数中的 `-`（flag）、`.`（文件扩展名）、`:`、`@` 等特殊字符在裸写时可能被误解析。
+**脚本文件（`.km`）中**，含 `://` 的 URL 等参数建议用 `exec` 或引号包裹：
+
+```bash
+# ✅ 推荐：exec 或引号
+exec "git clone https://github.com/user/repo.git"
+git clone "https://github.com/user/repo.git"
+
+# ❌ 裸写 URL 会被 :// 中的 // 截断为注释
+git clone https://github.com/user/repo.git
+```
+
 ### 命令查找顺序
 
 当前大致按以下顺序解析：
@@ -778,6 +792,16 @@ go build
 
 ```go
 exec "go run main.go"
+```
+
+适用场景：
+- URL 参数（`://` 会触发注释截断）
+- 含特殊字符的外部命令
+- 动态拼接的命令字符串
+
+```bash
+exec "git clone https://github.com/user/repo.git"
+exec "curl http://localhost:8080/api"
 ```
 
 ## 12. 管道、重定向与逻辑链
