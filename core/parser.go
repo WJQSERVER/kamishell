@@ -178,8 +178,13 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		} else if p.peekToken.Type == LBRACKET {
 			stmt = p.parseIndexAssignOrCommand()
 		} else if p.peekToken.Type == DOT {
-			// Check for IDENT.IDENT { pattern (method call with block)
-			if p.isMethodCallWithBlock() {
+			// When there is whitespace between IDENT and DOT, treat as a command
+			// with dot-starting arguments (e.g. "cd ..", "cd .", "cd ../foo").
+			// No space means member access (e.g. "obj.method").
+			hasSpace := p.peekToken.Start > p.curToken.End
+			if hasSpace {
+				stmt = p.parseCommandStatement()
+			} else if p.isMethodCallWithBlock() {
 				mcbStmt := p.parseMethodCallBlockStatement()
 				if mcbStmt != nil {
 					stmt = mcbStmt

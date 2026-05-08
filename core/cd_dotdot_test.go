@@ -89,14 +89,14 @@ func TestCdDotDot_ParserProducesExpressionNotCommand(t *testing.T) {
 func TestCdDotDot_MoreDots(t *testing.T) {
 	// Verify the same problem with other dot-containing paths
 	cases := []struct {
-		input      string
-		wantIsCmd  bool
-		wantNArgs  int
+		input     string
+		wantIsCmd bool
+		wantNArgs int
 	}{
-		{`cd ..`, false, -1},
-		{`cd ../foo`, false, -1},  // lexer may split differently
-		{`cd /tmp`, true, 1},     // absolute path works fine
-		{`cd .`, false, -1},      // single dot also fails
+		{`cd ..`, true, 1},
+		{`cd ../foo`, true, 1},
+		{`cd /tmp`, true, 1},
+		{`cd .`, true, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
@@ -298,4 +298,29 @@ func mustGetwd(t *testing.T) string {
 func symlinkEval(path string) string {
 	resolved, _ := filepath.EvalSymlinks(path)
 	return resolved
+}
+
+func TestCdDotDot_TokenPositions(t *testing.T) {
+	cases := []string{"cd ..", "cd..", "cd .", "cd.", "cd ../foo"}
+	for _, input := range cases {
+		l := NewLexer(input)
+		var tokens []Token
+		for {
+			tok := l.NextToken()
+			tokens = append(tokens, tok)
+			if tok.Type == EOF {
+				break
+			}
+		}
+		t.Logf("Input %q:", input)
+		for i, tok := range tokens {
+			t.Logf("  [%d] Type=%-10s Literal=%-15q Start=%d End=%d", i, tok.Type, tok.Literal, tok.Start, tok.End)
+		}
+		// Check gap between first two tokens
+		if len(tokens) >= 2 {
+			gap := tokens[1].Start - tokens[0].End
+			t.Logf("  Gap between tokens[0] and tokens[1] = %d (0=no space, >0=has space)", gap)
+		}
+		t.Log("")
+	}
 }
