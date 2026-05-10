@@ -672,3 +672,556 @@ func TestParsePrefixNegationStatement(t *testing.T) {
 		t.Errorf("expected operator -, got %q", prefix.Operator)
 	}
 }
+
+// --- Exec Keyword Form (target behavior) ---
+// These tests constrain the expected behavior of the new exec implementation.
+// They should FAIL or produce compilation errors until the implementation is done.
+
+// 关键字形式：基本裸词
+func TestParseExecBareWordBasic(t *testing.T) {
+	input := `exec echo hello`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg0, ok := stmt.Args[0].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[0] is not *StringLiteral. got=%T", stmt.Args[0])
+	}
+	if arg0.Value != "echo" {
+		t.Errorf("expected arg[0] %q, got %q", "echo", arg0.Value)
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "hello" {
+		t.Errorf("expected arg[1] %q, got %q", "hello", arg1.Value)
+	}
+}
+
+// 关键字形式：多参数
+func TestParseExecBareWordMultipleArgs(t *testing.T) {
+	input := `exec ls -la /tmp`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 3 {
+		t.Fatalf("expected 3 args, got %d", len(stmt.Args))
+	}
+
+	expected := []string{"ls", "-la", "/tmp"}
+	for i, exp := range expected {
+		arg, ok := stmt.Args[i].(*StringLiteral)
+		if !ok {
+			t.Fatalf("arg[%d] is not *StringLiteral. got=%T", i, stmt.Args[i])
+		}
+		if arg.Value != exp {
+			t.Errorf("expected arg[%d] %q, got %q", i, exp, arg.Value)
+		}
+	}
+}
+
+// 关键字形式：无参数
+func TestParseExecBareWordNoArgs(t *testing.T) {
+	input := `exec`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 0 {
+		t.Fatalf("expected 0 args, got %d", len(stmt.Args))
+	}
+}
+
+// 关键字形式：空参数后跟分号
+func TestParseExecBareWordEmptyWithSemicolon(t *testing.T) {
+	input := `exec; print 1`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 0 {
+		t.Fatalf("expected 0 args, got %d", len(stmt.Args))
+	}
+}
+
+// 关键字形式：双引号剥离
+func TestParseExecBareWordDoubleQuotes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`exec echo "my document.txt"`, []string{"echo", "my document.txt"}},
+		{`exec grep "pattern with spaces" file.txt`, []string{"grep", "pattern with spaces", "file.txt"}},
+		{`exec curl -H "Content-Type: application/json" url`, []string{"curl", "-H", "Content-Type: application/json", "url"}},
+	}
+
+	for _, tt := range tests {
+		l := NewLexer(tt.input)
+		p := NewParser(l)
+		program := p.ParseProgram()
+
+		stmt, ok := program.Statements[0].(*ExecStatement)
+		if !ok {
+			t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+		}
+
+		if len(stmt.Args) != len(tt.expected) {
+			t.Fatalf("expected %d args, got %d", len(tt.expected), len(stmt.Args))
+		}
+
+		for i, expected := range tt.expected {
+			arg, ok := stmt.Args[i].(*StringLiteral)
+			if !ok {
+				t.Fatalf("arg[%d] is not *StringLiteral. got=%T", i, stmt.Args[i])
+			}
+			if arg.Value != expected {
+				t.Errorf("expected arg[%d] %q, got %q", i, expected, arg.Value)
+			}
+		}
+	}
+}
+
+// 关键字形式：单引号剥离
+func TestParseExecBareWordSingleQuotes(t *testing.T) {
+	input := `exec echo 'my document.txt'`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "my document.txt" {
+		t.Errorf("expected arg[1] %q, got %q", "my document.txt", arg1.Value)
+	}
+}
+
+// 关键字形式：分号终止
+func TestParseExecBareWordSemicolon(t *testing.T) {
+	input := `exec echo hello; print 1`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+}
+
+// 关键字形式：&& 终止
+func TestParseExecBareWordLogicalAnd(t *testing.T) {
+	input := `exec echo hello && print 1`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	logicStmt, ok := program.Statements[0].(*LogicalStatement)
+	if !ok {
+		t.Fatalf("stmt is not *LogicalStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := logicStmt.Left.(*ExecStatement)
+	if !ok {
+		t.Fatalf("left is not *ExecStatement. got=%T", logicStmt.Left)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：|| 终止
+func TestParseExecBareWordLogicalOr(t *testing.T) {
+	input := `exec echo hello || print 1`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	logicStmt, ok := program.Statements[0].(*LogicalStatement)
+	if !ok {
+		t.Fatalf("stmt is not *LogicalStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := logicStmt.Left.(*ExecStatement)
+	if !ok {
+		t.Fatalf("left is not *ExecStatement. got=%T", logicStmt.Left)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：管道终止
+func TestParseExecBareWordPipe(t *testing.T) {
+	input := `exec echo hello | cat`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	pipeStmt, ok := program.Statements[0].(*PipeStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PipeStatement. got=%T", program.Statements[0])
+	}
+
+	if len(pipeStmt.Commands) != 2 {
+		t.Fatalf("expected 2 commands, got %d", len(pipeStmt.Commands))
+	}
+
+	execStmt, ok := pipeStmt.Commands[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("command[0] is not *ExecStatement. got=%T", pipeStmt.Commands[0])
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：重定向终止
+func TestParseExecBareWordRedirect(t *testing.T) {
+	input := `exec echo hello -> out.txt`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	redirectStmt, ok := program.Statements[0].(*RedirectStatement)
+	if !ok {
+		t.Fatalf("stmt is not *RedirectStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := redirectStmt.Source.(*ExecStatement)
+	if !ok {
+		t.Fatalf("source is not *ExecStatement. got=%T", redirectStmt.Source)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：追加重定向终止
+func TestParseExecBareWordAppend(t *testing.T) {
+	input := `exec echo hello >> out.txt`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	redirectStmt, ok := program.Statements[0].(*RedirectStatement)
+	if !ok {
+		t.Fatalf("stmt is not *RedirectStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := redirectStmt.Source.(*ExecStatement)
+	if !ok {
+		t.Fatalf("source is not *ExecStatement. got=%T", redirectStmt.Source)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：后台执行终止
+func TestParseExecBareWordBackground(t *testing.T) {
+	input := `exec echo hello &`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	bgStmt, ok := program.Statements[0].(*BackgroundStatement)
+	if !ok {
+		t.Fatalf("stmt is not *BackgroundStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := bgStmt.Stmt.(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", bgStmt.Stmt)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：变量插值（$HOME）
+func TestParseExecBareWordVariableInterpolation(t *testing.T) {
+	input := `x := "world"; exec echo $x`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[1].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[1])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+
+	// $x should be detected for interpolation
+	if arg1.Parts == nil && arg1.Obj == nil {
+		t.Fatal("expected $x to be detected for interpolation")
+	}
+}
+
+// 关键字形式：双引号内变量展开
+func TestParseExecBareWordDoubleQuoteInterpolation(t *testing.T) {
+	input := `x := "world"; exec echo "$x"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[1].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[1])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+
+	// "$x" should be detected for interpolation
+	if arg1.Parts == nil && arg1.Obj == nil {
+		t.Fatal("expected $x in double quotes to be detected for interpolation")
+	}
+}
+
+// 关键字形式：URL 正确处理
+func TestParseExecBareWordURL(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`exec curl http://localhost:8080`, []string{"curl", "http://localhost:8080"}},
+		{`exec wget https://example.com/file.txt`, []string{"wget", "https://example.com/file.txt"}},
+	}
+
+	for _, tt := range tests {
+		l := NewLexer(tt.input)
+		p := NewParser(l)
+		program := p.ParseProgram()
+
+		stmt, ok := program.Statements[0].(*ExecStatement)
+		if !ok {
+			t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+		}
+
+		if len(stmt.Args) != len(tt.expected) {
+			t.Fatalf("expected %d args, got %d", len(tt.expected), len(stmt.Args))
+		}
+
+		for i, expected := range tt.expected {
+			arg, ok := stmt.Args[i].(*StringLiteral)
+			if !ok {
+				t.Fatalf("arg[%d] is not *StringLiteral. got=%T", i, stmt.Args[i])
+			}
+			if arg.Value != expected {
+				t.Errorf("expected arg[%d] %q, got %q", i, expected, arg.Value)
+			}
+		}
+	}
+}
+
+// 关键字形式：不展开 glob
+func TestParseExecBareWordNoGlobExpansion(t *testing.T) {
+	input := `exec echo *.go`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "*.go" {
+		t.Errorf("expected arg[1] %q, got %q", "*.go", arg1.Value)
+	}
+}
+
+// 关键字形式：不展开 home
+func TestParseExecBareWordNoHomeExpansion(t *testing.T) {
+	input := `exec echo ~`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "~" {
+		t.Errorf("expected arg[1] %q, got %q", "~", arg1.Value)
+	}
+}
+
+// 关键字形式：单引号内变量不展开
+func TestParseExecBareWordSingleQuoteNoInterpolation(t *testing.T) {
+	input := `exec echo '$HOME'`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "$HOME" {
+		t.Errorf("expected arg[1] %q, got %q", "$HOME", arg1.Value)
+	}
+	// Single quotes should NOT trigger interpolation
+	if arg1.Parts != nil {
+		t.Fatal("expected no interpolation in single quotes")
+	}
+}
+
+// 弃用形式：exec "..." 应该报错或产生警告
+func TestParseExecDeprecatedStringForm(t *testing.T) {
+	input := `exec "echo hello"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	// Should have parser errors
+	if len(p.Errors()) == 0 {
+		t.Fatal("expected parser errors for deprecated exec \"...\" form")
+	}
+}
+
+// 弃用形式：exec "" 应该报错
+func TestParseExecDeprecatedEmptyString(t *testing.T) {
+	input := `exec ""`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	// Should have parser errors
+	if len(p.Errors()) == 0 {
+		t.Fatal("expected parser errors for deprecated exec \"\" form")
+	}
+}

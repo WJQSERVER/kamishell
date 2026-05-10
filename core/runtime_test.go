@@ -76,6 +76,180 @@ func TestExecStatement(t *testing.T) {
 	}
 }
 
+// --- Exec Keyword Form Runtime Tests (target behavior) ---
+// These tests constrain the expected behavior of the new exec implementation.
+// They should FAIL until the implementation is done.
+
+// 关键字形式：基本裸词执行
+func TestExecBareWordBasic(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{`exec echo hello`},
+		{`exec ls -la`},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		if evaluated != NULL && isError(evaluated) {
+			t.Errorf("exec failed for input %s: %s", tt.input, evaluated.Inspect())
+		}
+	}
+}
+
+// 关键字形式：带引号的参数
+func TestExecBareWordWithQuotes(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{`exec echo "my document.txt"`},
+		{`exec echo 'my document.txt'`},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		if evaluated != NULL && isError(evaluated) {
+			t.Errorf("exec failed for input %s: %s", tt.input, evaluated.Inspect())
+		}
+	}
+}
+
+// 关键字形式：带变量插值
+func TestExecBareWordWithVariable(t *testing.T) {
+	input := `x := "hello"; exec echo $x`
+	evaluated := testEval(input)
+	if evaluated != NULL && isError(evaluated) {
+		t.Errorf("exec failed for input %s: %s", input, evaluated.Inspect())
+	}
+}
+
+// 关键字形式：URL 正确处理
+func TestExecBareWordURL(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{`exec curl http://localhost:8080`},
+		{`exec wget https://example.com/file.txt`},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		// These should not error (even if the command fails)
+		if isError(evaluated) {
+			err, ok := evaluated.(*Error)
+			if ok && err.Message == "exec expects a string" {
+				t.Errorf("exec should not require string argument for bare word form: %s", tt.input)
+			}
+		}
+	}
+}
+
+// 关键字形式：无参数返回 NULL
+func TestExecBareWordNoArgs(t *testing.T) {
+	input := `exec`
+	evaluated := testEval(input)
+	if evaluated != NULL {
+		t.Errorf("expected NULL for exec with no args, got %v", evaluated)
+	}
+}
+
+// --- Exec Function Form Runtime Tests (target behavior) ---
+// These tests constrain the expected behavior of the exec() function.
+// They should FAIL until the implementation is done.
+
+// 函数形式：基本字符串执行
+func TestExecFunctionBasic(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{`exec("echo hello")`},
+		{`exec("ls -la")`},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		if evaluated != NULL && isError(evaluated) {
+			t.Errorf("exec failed for input %s: %s", tt.input, evaluated.Inspect())
+		}
+	}
+}
+
+// 函数形式：带引号的参数
+func TestExecFunctionWithQuotes(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{`exec("echo \"my document.txt\"")`},
+		{`exec("echo 'my document.txt'")`},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		if evaluated != NULL && isError(evaluated) {
+			t.Errorf("exec failed for input %s: %s", tt.input, evaluated.Inspect())
+		}
+	}
+}
+
+// 函数形式：带变量
+func TestExecFunctionWithVariable(t *testing.T) {
+	input := `cmd := "echo hello"; exec(cmd)`
+	evaluated := testEval(input)
+	if evaluated != NULL && isError(evaluated) {
+		t.Errorf("exec failed for input %s: %s", input, evaluated.Inspect())
+	}
+}
+
+// 函数形式：空字符串报错
+func TestExecFunctionEmptyString(t *testing.T) {
+	input := `exec("")`
+	evaluated := testEval(input)
+	if !isError(evaluated) {
+		t.Errorf("expected error for exec with empty string, got %v", evaluated)
+	}
+}
+
+// 函数形式：非字符串参数报错
+func TestExecFunctionNonStringArg(t *testing.T) {
+	input := `exec(123)`
+	evaluated := testEval(input)
+	if !isError(evaluated) {
+		t.Errorf("expected error for exec with non-string arg, got %v", evaluated)
+	}
+	err, ok := evaluated.(*Error)
+	if !ok {
+		t.Fatalf("expected *Error, got %T", evaluated)
+	}
+	if !strings.Contains(err.Message, "string") {
+		t.Errorf("expected error message to contain 'string', got %q", err.Message)
+	}
+}
+
+// 函数形式：nil 参数报错
+func TestExecFunctionNilArg(t *testing.T) {
+	input := `exec(nil)`
+	evaluated := testEval(input)
+	if !isError(evaluated) {
+		t.Errorf("expected error for exec with nil arg, got %v", evaluated)
+	}
+	err, ok := evaluated.(*Error)
+	if !ok {
+		t.Fatalf("expected *Error, got %T", evaluated)
+	}
+	if !strings.Contains(err.Message, "string") {
+		t.Errorf("expected error message to contain 'string', got %q", err.Message)
+	}
+}
+
+// 函数形式：参数数量错误报错
+func TestExecFunctionWrongArgCount(t *testing.T) {
+	input := `exec("echo", "hello")`
+	evaluated := testEval(input)
+	if !isError(evaluated) {
+		t.Errorf("expected error for exec with wrong arg count, got %v", evaluated)
+	}
+}
+
 func TestInterpolation(t *testing.T) {
 	input := `x := "world"; print $x`
 	// Since testEval returns the result of the last statement, and print returns NULL
