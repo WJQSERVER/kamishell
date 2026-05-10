@@ -58,9 +58,9 @@ var KeywordsDoc = map[string]KeywordInfo{
 		Details:     "导入 Go 标准库函数，编译时直接解析为原生 Go 调用。已支持的包：fmt、math、strings、strconv、os。",
 	},
 	"exec": {
-		Description: "执行字符串命令",
-		Usage:       "exec \"命令字符串\"",
-		Details:     "将字符串作为 shell 命令执行。常用于动态执行命令或避开关键字冲突。",
+		Description: "执行外部命令",
+		Usage:       "exec <command> [args...] 或 exec(cmd)",
+		Details:     "关键字形式：exec echo hello - 直接执行命令，参数按空格分割，支持引号。函数形式：exec(cmd) - 执行字符串命令。注意：exec \"...\" 已弃用。",
 	},
 	"export": {
 		Description: "设置环境变量",

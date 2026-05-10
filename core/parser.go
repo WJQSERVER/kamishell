@@ -22,6 +22,7 @@ type Parser struct {
 	l         *Lexer
 	curToken  Token
 	peekToken Token
+	errors    []string
 }
 
 func NewParser(l *Lexer) *Parser {
@@ -30,6 +31,14 @@ func NewParser(l *Lexer) *Parser {
 	p.nextToken()
 	p.nextToken()
 	return p
+}
+
+func (p *Parser) Errors() []string {
+	return p.errors
+}
+
+func (p *Parser) addError(msg string) {
+	p.errors = append(p.errors, msg)
 }
 
 func (p *Parser) nextToken() {
@@ -273,10 +282,54 @@ func (p *Parser) parsePrintStatement() *PrintStatement {
 func (p *Parser) parseExecStatement() *ExecStatement {
 	stmt := &ExecStatement{Token: p.curToken}
 	p.nextToken()
-	stmt.CommandStr = p.parseExpression(LOWEST)
-	if p.peekToken.Type == SEMICOLON {
-		p.nextToken()
+
+	// Function call form: exec(cmd)
+	if p.curToken.Type == LPAREN {
+		p.nextToken() // move past (
+		if p.curToken.Type == STRING {
+			stmt.CommandStr = p.parseExpression(LOWEST)
+		} else if p.curToken.Type == RPAREN {
+			// exec() with no args
+			stmt.CommandStr = nil
+		} else {
+			stmt.CommandStr = p.parseExpression(LOWEST)
+		}
+		if p.peekToken.Type == RPAREN {
+			p.nextToken() // move past )
+		}
+		if p.peekToken.Type == SEMICOLON {
+			p.nextToken()
+		}
+		return stmt
 	}
+
+	// Deprecated string form: exec "..."
+	if p.curToken.Type == STRING {
+		p.addError("exec \"...\" is deprecated, use exec <command> <args> or exec(cmd) instead")
+		stmt.CommandStr = p.parseExpression(LOWEST)
+		if p.peekToken.Type == SEMICOLON {
+			p.nextToken()
+		}
+		return stmt
+	}
+
+	// Bare word form: exec echo hello
+	words, delim, nextPos := p.scanCommandWordsWithQuotes(p.curToken.Start)
+	for _, word := range words {
+		lit := &StringLiteral{
+			Token: Token{Type: STRING, Literal: word.Value},
+			Value: word.Value,
+		}
+		if word.SingleQuote || strings.IndexByte(word.Value, '$') < 0 {
+			lit.Obj = &String{Value: word.Value}
+		} else {
+			lit.Parts = parseStringParts(word.Value)
+		}
+		stmt.Args = append(stmt.Args, lit)
+	}
+
+	p.peekToken = delim
+	p.setLexerPosition(nextPos, delim.Type)
 	return stmt
 }
 
@@ -641,6 +694,12 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 	return stmt
 }
 
+// commandWord represents a parsed command argument with quote information.
+type commandWord struct {
+	Value       string
+	SingleQuote bool // true if the word was single-quoted (no interpolation)
+}
+
 func (p *Parser) scanCommandWords(start int) ([]string, Token, int) {
 	if p.l == nil {
 		return nil, Token{Type: EOF, Start: p.curToken.End, End: p.curToken.End}, p.curToken.End
@@ -669,6 +728,48 @@ func (p *Parser) scanCommandWords(start int) ([]string, Token, int) {
 		}
 
 		word, nextPos, ok := scanCommandWord(input, i)
+		if !ok {
+			// Defensive progress in malformed inputs.
+			i++
+			skipSpaces()
+			continue
+		}
+		words = append(words, word)
+		i = nextPos
+		skipSpaces()
+	}
+
+	return words, Token{Type: EOF, Start: n, End: n}, n
+}
+
+func (p *Parser) scanCommandWordsWithQuotes(start int) ([]commandWord, Token, int) {
+	if p.l == nil {
+		return nil, Token{Type: EOF, Start: p.curToken.End, End: p.curToken.End}, p.curToken.End
+	}
+	input := p.l.input
+	n := len(input)
+	i := start
+	words := make([]commandWord, 0, 4)
+
+	skipSpaces := func() {
+		for i < n {
+			switch input[i] {
+			case ' ', '\t', '\r':
+				i++
+			default:
+				return
+			}
+		}
+	}
+
+	skipSpaces()
+	for i < n {
+		delim, nextPos, ok := scanCommandDelimiter(input, i)
+		if ok {
+			return words, delim, nextPos
+		}
+
+		word, nextPos, ok := scanCommandWordWithQuote(input, i)
 		if !ok {
 			// Defensive progress in malformed inputs.
 			i++
@@ -809,6 +910,52 @@ func scanQuotedCommandWord(input string, i int) (string, int, bool) {
 
 	// Unterminated quote: keep the accumulated content as a best-effort argument.
 	return out.String(), i, true
+}
+
+func scanCommandWordWithQuote(input string, i int) (commandWord, int, bool) {
+	n := len(input)
+	if i >= n {
+		return commandWord{}, i, false
+	}
+
+	if input[i] == '\'' {
+		word, nextPos, ok := scanQuotedCommandWord(input, i)
+		if !ok {
+			return commandWord{}, i, false
+		}
+		return commandWord{Value: word, SingleQuote: true}, nextPos, true
+	}
+
+	if input[i] == '"' {
+		word, nextPos, ok := scanQuotedCommandWord(input, i)
+		if !ok {
+			return commandWord{}, i, false
+		}
+		return commandWord{Value: word, SingleQuote: false}, nextPos, true
+	}
+
+	var out strings.Builder
+	for i < n {
+		if delim, _, ok := scanCommandDelimiter(input, i); ok && delim.Type != EOF {
+			break
+		}
+		ch := input[i]
+		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
+			break
+		}
+		if ch == '\\' && i+1 < n {
+			out.WriteByte(input[i+1])
+			i += 2
+			continue
+		}
+		out.WriteByte(ch)
+		i++
+	}
+
+	if out.Len() == 0 {
+		return commandWord{}, i, false
+	}
+	return commandWord{Value: out.String(), SingleQuote: false}, i, true
 }
 
 func newCommandArgLiteral(value string) *StringLiteral {

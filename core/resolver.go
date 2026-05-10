@@ -97,7 +97,12 @@ func (r *resolver) resolveStatement(stmt Statement) {
 	case *GoStatement:
 		r.resolveGoNode(s.Node)
 	case *ExecStatement:
-		r.resolveExpression(s.CommandStr)
+		if s.CommandStr != nil {
+			r.resolveExpression(s.CommandStr)
+		}
+		for _, arg := range s.Args {
+			r.resolveExpression(arg)
+		}
 	case *ImportStatement:
 		// no-op
 	case *WaitStatement:

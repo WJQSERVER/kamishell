@@ -162,6 +162,27 @@ func init() {
 			return &Error{Message: msg}
 		},
 	}
+
+	// exec(cmd string) — execute a command string
+	NativeFns["exec"] = &NativeFunction{
+		Fn: func(env *Environment, args ...Object) Object {
+			if len(args) != 1 {
+				return &Error{Message: "exec() expects exactly one argument"}
+			}
+			cmdStr, ok := args[0].(*String)
+			if !ok {
+				return &Error{Message: "exec() expects a string argument"}
+			}
+			if cmdStr.Value == "" {
+				return &Error{Message: "exec() command string is empty"}
+			}
+			words := scanShellWords(cmdStr.Value)
+			if len(words) == 0 {
+				return NULL
+			}
+			return executeCommandWithStrings(words[0], words[1:], env, os.Stdin, os.Stdout, os.Stderr)
+		},
+	}
 }
 
 // Go标准库映射表
@@ -1718,21 +1739,143 @@ func evalArrayInfixExpression(operator string, left, right *Array) Object {
 }
 
 func evalExecStatement(es *ExecStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
-	val := EvalWithIO(es.CommandStr, env, stdin, stdout, stderr)
-	if isError(val) {
-		return val
-	}
-	cmdStr, ok := val.(*String)
-	if !ok {
-		return &Error{Message: "exec expects a string"}
-	}
-
-	fields := strings.Fields(cmdStr.Value)
-	if len(fields) == 0 {
-		return NULL
+	// Bare word form: exec echo hello
+	if len(es.Args) > 0 {
+		strArgs, errObj := evalCommandArgsAsStrings(es.Args, env, stdin, stdout, stderr)
+		if errObj != nil {
+			return errObj
+		}
+		if len(strArgs) == 0 {
+			return NULL
+		}
+		return executeCommandWithStrings(strArgs[0], strArgs[1:], env, stdin, stdout, stderr)
 	}
 
-	return executeCommandWithStrings(fields[0], fields[1:], env, stdin, stdout, stderr)
+	// Function call form: exec("echo hello") or exec(cmd)
+	if es.CommandStr != nil {
+		val := EvalWithIO(es.CommandStr, env, stdin, stdout, stderr)
+		if isError(val) {
+			return val
+		}
+		cmdStr, ok := val.(*String)
+		if !ok {
+			return &Error{Message: "exec expects a string"}
+		}
+
+		if cmdStr.Value == "" {
+			return &Error{Message: "exec() command string is empty"}
+		}
+
+		fields := scanShellWords(cmdStr.Value)
+		if len(fields) == 0 {
+			return NULL
+		}
+
+		return executeCommandWithStrings(fields[0], fields[1:], env, stdin, stdout, stderr)
+	}
+
+	return NULL
+}
+
+// scanShellWords splits a string into shell words, handling quotes.
+// This is used by exec() function form to parse command strings.
+func scanShellWords(s string) []string {
+	n := len(s)
+	i := 0
+	words := make([]string, 0, 4)
+
+	skipSpaces := func() {
+		for i < n {
+			switch s[i] {
+			case ' ', '\t', '\r':
+				i++
+			default:
+				return
+			}
+		}
+	}
+
+	skipSpaces()
+	for i < n {
+		word, nextPos, ok := scanShellWord(s, i)
+		if !ok {
+			i++
+			skipSpaces()
+			continue
+		}
+		words = append(words, word)
+		i = nextPos
+		skipSpaces()
+	}
+	return words
+}
+
+func scanShellWord(s string, i int) (string, int, bool) {
+	n := len(s)
+	if i >= n {
+		return "", i, false
+	}
+	if s[i] == '"' || s[i] == '\'' {
+		return scanQuotedShellWord(s, i)
+	}
+	var out strings.Builder
+	for i < n {
+		ch := s[i]
+		if ch == ' ' || ch == '\t' || ch == '\r' {
+			break
+		}
+		if ch == '\\' && i+1 < n {
+			out.WriteByte(s[i+1])
+			i += 2
+			continue
+		}
+		out.WriteByte(ch)
+		i++
+	}
+	if out.Len() == 0 {
+		return "", i, false
+	}
+	return out.String(), i, true
+}
+
+func scanQuotedShellWord(s string, i int) (string, int, bool) {
+	n := len(s)
+	quote := s[i]
+	i++
+	var out strings.Builder
+	for i < n {
+		ch := s[i]
+		if ch == quote {
+			return out.String(), i + 1, true
+		}
+		if quote == '"' && ch == '\\' && i+1 < n {
+			i++
+			switch s[i] {
+			case 'n':
+				out.WriteByte('\n')
+			case 't':
+				out.WriteByte('\t')
+			case 'r':
+				out.WriteByte('\r')
+			case '"':
+				out.WriteByte('"')
+			case '\\':
+				out.WriteByte('\\')
+			default:
+				out.WriteByte(s[i])
+			}
+			i++
+			continue
+		}
+		if quote == '\'' && ch == '\\' && i+1 < n && s[i+1] == '\'' {
+			out.WriteByte('\'')
+			i += 2
+			continue
+		}
+		out.WriteByte(ch)
+		i++
+	}
+	return out.String(), i, true
 }
 
 func evalPipeStatement(ps *PipeStatement, env *Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) Object {
