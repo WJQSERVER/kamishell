@@ -1178,6 +1178,12 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 }
 
 func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
+	// Attempt constant folding: if both operands are compile-time literals,
+	// compute the result directly and avoid runtime dispatch.
+	if folded, ok := tryFoldInfix(e.Left, e.Right, e.Operator); ok {
+		return folded
+	}
+
 	left := c.compileExpression(e.Left)
 	right := c.compileExpression(e.Right)
 
@@ -1264,6 +1270,11 @@ func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
 }
 
 func (c *compiler) compilePrefixExpression(e *core.PrefixExpression) string {
+	// Attempt constant folding for unary operators on literals.
+	if folded, ok := tryFoldPrefix(e.Right, e.Operator); ok {
+		return folded
+	}
+
 	right := c.compileExpression(e.Right)
 	switch e.Operator {
 	case "!":
@@ -2665,6 +2676,147 @@ func compileIntLiteral(expr core.Expression) (string, bool) {
 func compileFloatLiteral(expr core.Expression) (string, bool) {
 	if fl, ok := expr.(*core.FloatLiteral); ok {
 		return fmt.Sprintf("%v", fl.Value), true
+	}
+	return "", false
+}
+
+// tryFoldInfix attempts to fold an infix expression whose operands are both
+// compile-time literals.  Returns the folded Go source string and true on
+// success, or ("", false) when folding is not possible.
+func tryFoldInfix(left, right core.Expression, op string) (string, bool) {
+	lInt, lIsInt := left.(*core.IntegerLiteral)
+	rInt, rIsInt := right.(*core.IntegerLiteral)
+	lFloat, lIsFloat := left.(*core.FloatLiteral)
+	rFloat, rIsFloat := right.(*core.FloatLiteral)
+	lStr, lIsStr := left.(*core.StringLiteral)
+	rStr, rIsStr := right.(*core.StringLiteral)
+	lBool, lIsBool := left.(*core.BooleanLiteral)
+	rBool, rIsBool := right.(*core.BooleanLiteral)
+
+	switch op {
+	case "+":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("int64(%d)", lInt.Value+rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("float64(%v)", lFloat.Value+rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return strconv.Quote(lStr.Value + rStr.Value), true
+		}
+	case "-":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("int64(%d)", lInt.Value-rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("float64(%v)", lFloat.Value-rFloat.Value), true
+		}
+	case "*":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("int64(%d)", lInt.Value*rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("float64(%v)", lFloat.Value*rFloat.Value), true
+		}
+	case "/":
+		if lIsInt && rIsInt && rInt.Value != 0 {
+			return fmt.Sprintf("int64(%d)", lInt.Value/rInt.Value), true
+		}
+		if lIsFloat && rIsFloat && rFloat.Value != 0 {
+			return fmt.Sprintf("float64(%v)", lFloat.Value/rFloat.Value), true
+		}
+	case "%":
+		if lIsInt && rIsInt && rInt.Value != 0 {
+			return fmt.Sprintf("int64(%d)", lInt.Value%rInt.Value), true
+		}
+	case "==":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value == rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value == rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value == rStr.Value), true
+		}
+		if lIsBool && rIsBool {
+			return fmt.Sprintf("%v", lBool.Value == rBool.Value), true
+		}
+	case "!=":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value != rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value != rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value != rStr.Value), true
+		}
+		if lIsBool && rIsBool {
+			return fmt.Sprintf("%v", lBool.Value != rBool.Value), true
+		}
+	case "<":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value < rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value < rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value < rStr.Value), true
+		}
+	case ">":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value > rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value > rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value > rStr.Value), true
+		}
+	case "<=":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value <= rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value <= rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value <= rStr.Value), true
+		}
+	case ">=":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value >= rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value >= rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value >= rStr.Value), true
+		}
+	}
+	return "", false
+}
+
+// tryFoldPrefix attempts to fold a unary prefix expression on a compile-time
+// literal.  Returns the folded Go source string and true on success.
+func tryFoldPrefix(operand core.Expression, op string) (string, bool) {
+	switch op {
+	case "-":
+		if il, ok := operand.(*core.IntegerLiteral); ok {
+			return fmt.Sprintf("int64(%d)", -il.Value), true
+		}
+		if fl, ok := operand.(*core.FloatLiteral); ok {
+			return fmt.Sprintf("float64(%v)", -fl.Value), true
+		}
+	case "!":
+		if bl, ok := operand.(*core.BooleanLiteral); ok {
+			if bl.Value {
+				return "false", true
+			}
+			return "true", true
+		}
 	}
 	return "", false
 }

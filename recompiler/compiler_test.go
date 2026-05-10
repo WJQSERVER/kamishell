@@ -485,3 +485,105 @@ func TestCompileExecBareWordMultipleArgs(t *testing.T) {
 		t.Fatalf("expected 'hello world', got: %q", out)
 	}
 }
+func TestConstantFoldIntArithmetic(t *testing.T) {
+	// All arithmetic on two int literals should be folded at compile time.
+	source := `a := 3 + 4
+b := 10 - 3
+c := 6 * 7
+d := 20 / 4
+e := 17 % 5
+print a`
+	src := compileSource(t, source)
+	assertSourceContains(t, src, "int64(7)")
+	assertSourceContains(t, src, "int64(42)")
+	assertSourceContains(t, src, "int64(5)")
+	assertSourceContains(t, src, "int64(2)")
+	// The folded literals should appear as literal values, not runtime calls
+	// Should NOT contain runtime dispatch for these
+	assertSourceNotContains(t, src, "recompiler.Add")
+	assertSourceNotContains(t, src, "recompiler.Sub")
+	assertSourceNotContains(t, src, "recompiler.Mul")
+	assertSourceNotContains(t, src, "recompiler.Div")
+	assertSourceNotContains(t, src, "recompiler.Mod")
+}
+
+func TestConstantFoldFloatArithmetic(t *testing.T) {
+	source := `a := 1.5 + 2.5
+b := 10.0 - 3.0
+c := 2.5 * 4.0
+d := 9.0 / 3.0
+print a`
+	src := compileSource(t, source)
+	assertSourceContains(t, src, "float64(4)")
+	assertSourceContains(t, src, "float64(7)")
+	assertSourceContains(t, src, "float64(10)")
+	assertSourceContains(t, src, "float64(3)")
+	assertSourceNotContains(t, src, "recompiler.Add")
+}
+
+func TestConstantFoldStringConcat(t *testing.T) {
+	source := `a := "hello" + " " + "world"
+print a`
+	src := compileSource(t, source)
+	// Inner "hello"+" " folds to "hello ", then native concat with "world"
+	assertSourceContains(t, src, `"hello "`)
+	assertSourceNotContains(t, src, "recompiler.Add")
+}
+
+func TestConstantFoldComparison(t *testing.T) {
+	source := `a := 3 == 3
+b := 3 != 4
+c := 3 < 4
+d := 5 > 2
+e := 5 >= 5
+f := "abc" == "abc"
+g := true != false
+print a`
+	src := compileSource(t, source)
+	assertSourceContains(t, src, "var a bool = true")
+	assertSourceContains(t, src, "var b bool = true")
+	assertSourceContains(t, src, "var c bool = true")
+	assertSourceContains(t, src, "var d bool = true")
+	assertSourceContains(t, src, "var e bool = true")
+	assertSourceContains(t, src, "var f bool = true")
+	assertSourceContains(t, src, "var g bool = true")
+	assertSourceNotContains(t, src, "recompiler.Eq")
+	assertSourceNotContains(t, src, "recompiler.NotEq")
+}
+
+func TestConstantFoldUnaryMinus(t *testing.T) {
+	source := `a := -42
+b := -3.14
+print a`
+	src := compileSource(t, source)
+	assertSourceContains(t, src, "int64(-42)")
+	assertSourceContains(t, src, "float64(-3.14)")
+}
+
+func TestConstantFoldUnaryNot(t *testing.T) {
+	source := `a := !true
+b := !false
+print a`
+	src := compileSource(t, source)
+	assertSourceContains(t, src, "var a bool = false")
+	assertSourceContains(t, src, "var b bool = true")
+}
+
+func TestConstantFoldMixedWithVariables(t *testing.T) {
+	// Variable + literal should NOT be folded (only literal-literal pairs)
+	source := `x := 10
+y := x + 5
+print y`
+	src := compileSource(t, source)
+	// x + 5 should use native + (both int), but not folded
+	assertSourceContains(t, src, "+ int64(5)")
+}
+
+func TestConstantFoldDivisionByZeroNotFolded(t *testing.T) {
+	// Division by zero should NOT be folded (safety)
+	source := `a := 10 / 0
+print a`
+	src := compileSource(t, source)
+	// Should still have runtime division expression, not a single folded literal
+	assertSourceContains(t, src, "/ int64(0)")
+}
