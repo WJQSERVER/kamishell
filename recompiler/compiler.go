@@ -294,11 +294,15 @@ func analyzeEnvDependencies(program *core.Program) map[string]bool {
 				}
 			case *core.BackgroundStatement:
 				walkStatements([]core.Statement{s.Stmt}, outerVars)
-			case *core.ExecStatement:
-				// exec "echo $msg" — CommandStr may contain $var references
-				if s.CommandStr != nil {
-					walkExpression(s.CommandStr, outerVars)
-				}
+		case *core.ExecStatement:
+			// exec "echo $msg" — CommandStr may contain $var references
+			if s.CommandStr != nil {
+				walkExpression(s.CommandStr, outerVars)
+			}
+			// exec echo $msg — Args may contain $var references
+			for _, arg := range s.Args {
+				walkExpression(arg, outerVars)
+			}
 			case *core.BlockStatement:
 				walkStatements(s.Statements, outerVars)
 			}
@@ -2172,10 +2176,31 @@ func (c *compiler) compileMethodCallBlockStatement(s *core.MethodCallBlockStatem
 func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 	c.usesEnv = true
 	c.addImport("os", "")
-	c.addImport("strings", "")
 	c.addImport("os/exec", "")
+
+	// Bare word form: exec echo hello
+	if len(s.Args) > 0 {
+		var strArgs []string
+		for _, arg := range s.Args {
+			strArgs = append(strArgs, c.evalCommandArg(arg))
+		}
+		argStr := fmt.Sprintf("[]string{%s}", strings.Join(strArgs, ", "))
+
+		c.line("{")
+		c.indent()
+		c.line("kamiErr = nil")
+		c.line("c := exec.Command(%s[0], %s[1:]...)", argStr, argStr)
+		c.line("c.Stdin = os.Stdin; c.Stdout = os.Stdout; c.Stderr = os.Stderr")
+		c.line("if err := c.Run(); err != nil { kamiErr = err }")
+		c.line("if kamiErr != nil { kamiEnv.SetString(\"err\", kamiErr.Error()) }")
+		c.dedent()
+		c.line("}")
+		return
+	}
+
+	// Function/deprecated form: exec("echo hello") or exec "echo hello"
+	c.addImport("strings", "")
 	c.addImport("kamishell/recompiler", "")
-	c.addImport("fmt", "")
 	cmd := c.compileExpression(s.CommandStr)
 	c.line("{")
 	c.indent()
@@ -2192,7 +2217,7 @@ func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 	c.line("if err := c.Run(); err != nil { kamiErr = err }")
 	c.dedent()
 	c.line("}")
-	c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
+	c.line("if kamiErr != nil { kamiEnv.SetString(\"err\", kamiErr.Error()) }")
 	c.dedent()
 	c.line("}")
 }
