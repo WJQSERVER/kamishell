@@ -390,3 +390,98 @@ if x % y == 1 {
 		t.Fatalf("expected 'correct', got: %q", out)
 	}
 }
+
+// --- Exec Recompiler Tests ---
+// These tests constrain the expected behavior of exec in recompiler mode.
+
+// 裸词形式：基本执行
+func TestCompileExecBareWordBasic(t *testing.T) {
+	source := `exec echo hello`
+	binary, _ := compileAndBuild(t, "exec_bare", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "hello" {
+		t.Fatalf("expected 'hello', got: %q", out)
+	}
+}
+
+// 裸词形式：带引号
+func TestCompileExecBareWordWithQuotes(t *testing.T) {
+	source := `exec echo "my document.txt"`
+	binary, _ := compileAndBuild(t, "exec_quotes", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "my document.txt" {
+		t.Fatalf("expected 'my document.txt', got: %q", out)
+	}
+}
+
+// 裸词形式：带变量
+func TestCompileExecBareWordWithVariable(t *testing.T) {
+	source := `msg := "hello world"
+exec echo $msg`
+	binary, _ := compileAndBuild(t, "exec_var", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "hello world" {
+		t.Fatalf("expected 'hello world', got: %q", out)
+	}
+}
+
+// 裸词形式：$var 依赖分析
+func TestCompileExecBareWordDollarVarDependency(t *testing.T) {
+	source := `msg := "hello"
+exec echo $msg`
+	src := compileSource(t, source)
+	// msg is used in exec echo $msg via $var, so it needs env sync
+	assertSourceContains(t, src, `kamiEnv.SetString("msg", msg)`)
+}
+
+// 函数形式：基本执行
+func TestCompileExecFunctionBasic(t *testing.T) {
+	source := `exec("echo hello")`
+	binary, _ := compileAndBuild(t, "exec_func", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "hello" {
+		t.Fatalf("expected 'hello', got: %q", out)
+	}
+}
+
+// 函数形式：带变量
+func TestCompileExecFunctionWithVariable(t *testing.T) {
+	source := `cmd := "echo hello"
+exec(cmd)`
+	binary, _ := compileAndBuild(t, "exec_func_var", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "hello" {
+		t.Fatalf("expected 'hello', got: %q", out)
+	}
+}
+
+// 弃用字符串形式：基本执行
+func TestCompileExecDeprecatedStringForm(t *testing.T) {
+	source := `exec "echo hello"`
+	binary, _ := compileAndBuild(t, "exec_deprecated", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "hello" {
+		t.Fatalf("expected 'hello', got: %q", out)
+	}
+}
+
+// 弃用字符串形式：带变量
+func TestCompileExecDeprecatedStringFormWithVariable(t *testing.T) {
+	source := `msg := "hello"
+exec "echo $msg"`
+	binary, _ := compileAndBuild(t, "exec_deprecated_var", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "hello" {
+		t.Fatalf("expected 'hello', got: %q", out)
+	}
+}
+
+// 裸词形式：多参数
+func TestCompileExecBareWordMultipleArgs(t *testing.T) {
+	source := `exec printf "hello %s" world`
+	binary, _ := compileAndBuild(t, "exec_multi_args", source)
+	out := runBinary(t, binary)
+	if strings.TrimSpace(out) != "hello world" {
+		t.Fatalf("expected 'hello world', got: %q", out)
+	}
+}
