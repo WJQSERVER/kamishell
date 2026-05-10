@@ -45,6 +45,7 @@ type compiler struct {
 	buf            strings.Builder
 	imports        map[string]string
 	symbols        map[string]goType
+	readVars       map[string]bool // variables that are actually read (for unused elimination)
 	funcDefs       []string
 	knownFuncs     map[string]bool
 	funcReturns    map[string]goType   // function name -> first return type (for type inference)
@@ -537,6 +538,7 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 
 	comp := &compiler{
 		symbols: make(map[string]goType),
+		readVars: make(map[string]bool),
 		envSync: envSync,
 	}
 
@@ -555,6 +557,14 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 	}
 
 	comp.line("")
+	// Emit "_ = name" for declared-but-never-read variables to satisfy Go's
+	// "declared and not used" check. Variables that need env sync are always
+	// considered "used" because kamiEnv.SetString reads them.
+	for name := range comp.symbols {
+		if !comp.readVars[name] && (comp.envSync == nil || !comp.envSync[name]) {
+			comp.buf.WriteString(fmt.Sprintf("\t_ = %s\n", name))
+		}
+	}
 	comp.dedent()
 	comp.buf.WriteString("}\n")
 
@@ -1293,6 +1303,7 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 	}
 	// Check if it's a declared local variable first
 	if c.hasVar(name) {
+		c.readVars[name] = true
 		return name
 	}
 	// Special: 'err' maps to kamiErr for auto error tracking
@@ -1685,6 +1696,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 	// Build closure body with sub-compiler that inherits all context
 	sub := &compiler{
 		symbols:        make(map[string]goType),
+		readVars:       c.readVars,
 		imports:        c.imports,
 		knownFuncs:     c.knownFuncs,
 		funcReturns:    c.funcReturns,
@@ -2438,6 +2450,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	// Generate function body with a sub-compiler
 	sub := &compiler{
 		symbols:        make(map[string]goType),
+		readVars:       c.readVars,
 		imports:        c.imports,
 		knownFuncs:     c.knownFuncs,
 		funcReturns:    c.funcReturns,
