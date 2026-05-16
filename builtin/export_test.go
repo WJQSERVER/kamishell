@@ -20,6 +20,19 @@ func (e *testEnv) Get(name string) (any, bool) {
 	return v, ok
 }
 
+func (e *testEnv) SetString(name string, val string) {
+	e.data[name] = val
+}
+
+func (e *testEnv) GetString(name string) (string, bool) {
+	v, ok := e.data[name]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
+}
+
 func newTestEnv() *testEnv {
 	return &testEnv{data: make(map[string]any)}
 }
@@ -45,6 +58,20 @@ func (e *osEnv) Get(name string) (any, bool) {
 		return os.LookupEnv(name)
 	}
 	return v, ok
+}
+
+func (e *osEnv) SetString(name string, val string) {
+	e.data[name] = val
+	os.Setenv(name, val)
+}
+
+func (e *osEnv) GetString(name string) (string, bool) {
+	v, ok := e.data[name]
+	if !ok {
+		return os.LookupEnv(name)
+	}
+	s, ok := v.(string)
+	return s, ok
 }
 
 func TestExportSetsVariable(t *testing.T) {

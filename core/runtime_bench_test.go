@@ -14,6 +14,30 @@ func BenchmarkEvalLoopProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `i := 0; for i < 100 { i = i + 1 }; print i`)
 }
 
+func BenchmarkEvalLoopNoErrRead(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 100 { i = i + 1 }`)
+}
+
+func BenchmarkEvalMultiStatementBlock(b *testing.B) {
+	benchmarkEvalProgram(b, `x := 1; y := 2; z := 3; w := x + y + z`)
+}
+
+func BenchmarkEvalLoopLargeProgram(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 1000 { i = i + 1 }; print i`)
+}
+
+func BenchmarkEvalLoopVeryLargeProgram(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 10000 { i = i + 1 }`)
+}
+
+func BenchmarkEvalLoopBeyondCache(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 20000; for i < 30000 { i = i + 1 }`)
+}
+
+func BenchmarkEvalLoopWithPrintProgram(b *testing.B) {
+	benchmarkEvalProgram(b, `i := 0; for i < 100 { print i; i = i + 1 }`)
+}
+
 func BenchmarkEvalFunctionCallProgram(b *testing.B) {
 	benchmarkEvalProgram(b, `func greet(name) { print name }; greet("kami")`)
 }
@@ -37,7 +61,7 @@ func BenchmarkEvalInterpolatedStringProgram(b *testing.B) {
 func BenchmarkExecuteCommandUserFunction(b *testing.B) {
 	env := NewEmptyEnvironment()
 	fn := &Function{
-		Parameters: []string{"value"},
+		Parameters: []Parameter{{Name: "value", TypeName: "any"}},
 		Body: &BlockStatement{Statements: []Statement{
 			&ExpressionStatement{Expression: &Identifier{Value: "value"}},
 		}},
@@ -114,4 +138,170 @@ func mustParseBenchmarkProgram(b *testing.B, input string) *Program {
 		b.Fatal("expected parsed program")
 	}
 	return program
+}
+
+// Pointer operation benchmarks
+
+func BenchmarkPointerAddressOf(b *testing.B) {
+	// Benchmark &x (address-of)
+	program := mustParseBenchmarkProgram(b, `x := 42; p := &x; print *p`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`x := 42; p := &x; print *p`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkPointerDereference(b *testing.B) {
+	// Benchmark *p (dereference) - read only
+	program := mustParseBenchmarkProgram(b, `x := 42; p := &x; val := *p; print val`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`x := 42; p := &x; val := *p; print val`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkPointerAssign(b *testing.B) {
+	// Benchmark *p = val (pointer assignment)
+	program := mustParseBenchmarkProgram(b, `x := 42; p := &x; *p = 100; print x`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`x := 42; p := &x; *p = 100; print x`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkPointerPassToFunction(b *testing.B) {
+	// Benchmark passing pointer to function
+	program := mustParseBenchmarkProgram(b, `func inc(p) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`func inc(p) { *p = *p + 1 }; x := 0; p := &x; inc(p); print x`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkPointerVsDirectAssign(b *testing.B) {
+	// Compare: direct assignment vs pointer assignment
+	b.Run("DirectAssign", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 0; x = 100; print x`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+	b.Run("PointerAssign", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 0; p := &x; *p = 100; print x`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+}
+
+func BenchmarkEvalSwitchProgram(b *testing.B) {
+	program := mustParseBenchmarkProgram(b, `x := 3; switch x { case 1: print "one" case 2: print "two" case 3: print "three" case 4: print "four" default: print "other" }`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(`x := 3; switch x { case 1: print "one" case 2: print "two" case 3: print "three" case 4: print "four" default: print "other" }`)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkEvalSwitchVsIfChain(b *testing.B) {
+	b.Run("Switch", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 5; switch x { case 1: print "1" case 2: print "2" case 3: print "3" case 4: print "4" case 5: print "5" default: print "?" }`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+	b.Run("IfChain", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 5; if x == 1 { print "1" } else { if x == 2 { print "2" } else { if x == 3 { print "3" } else { if x == 4 { print "4" } else { if x == 5 { print "5" } else { print "?" } } } } }`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+}
+
+func BenchmarkEvalSwitchLargeIntProgram(b *testing.B) {
+	program := mustParseBenchmarkProgram(b, `x := 20; switch x { case 1: print "1" case 2: print "2" case 3: print "3" case 4: print "4" case 5: print "5" case 6: print "6" case 7: print "7" case 8: print "8" case 9: print "9" case 10: print "10" case 11: print "11" case 12: print "12" case 13: print "13" case 14: print "14" case 15: print "15" case 16: print "16" case 17: print "17" case 18: print "18" case 19: print "19" case 20: print "20" default: print "?" }`)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkEvalSwitchLargeStringProgram(b *testing.B) {
+	program := mustParseBenchmarkProgram(b, `x := "case20"; switch x { case "case1": print "1" case "case2": print "2" case "case3": print "3" case "case4": print "4" case "case5": print "5" case "case6": print "6" case "case7": print "7" case "case8": print "8" case "case9": print "9" case "case10": print "10" case "case11": print "11" case "case12": print "12" case "case13": print "13" case "case14": print "14" case "case15": print "15" case "case16": print "16" case "case17": print "17" case "case18": print "18" case "case19": print "19" case "case20": print "20" default: print "?" }`)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env := NewEmptyEnvironment()
+		result := EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		if isError(result) {
+			b.Fatalf("unexpected error: %s", result.Inspect())
+		}
+	}
+}
+
+func BenchmarkEvalSwitchVsIfChainLarge(b *testing.B) {
+	b.Run("Switch20Ints", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 20; switch x { case 1: print "1" case 2: print "2" case 3: print "3" case 4: print "4" case 5: print "5" case 6: print "6" case 7: print "7" case 8: print "8" case 9: print "9" case 10: print "10" case 11: print "11" case 12: print "12" case 13: print "13" case 14: print "14" case 15: print "15" case 16: print "16" case 17: print "17" case 18: print "18" case 19: print "19" case 20: print "20" default: print "?" }`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
+	b.Run("IfChain20Ints", func(b *testing.B) {
+		program := mustParseBenchmarkProgram(b, `x := 20; if x == 1 { print "1" } else { if x == 2 { print "2" } else { if x == 3 { print "3" } else { if x == 4 { print "4" } else { if x == 5 { print "5" } else { if x == 6 { print "6" } else { if x == 7 { print "7" } else { if x == 8 { print "8" } else { if x == 9 { print "9" } else { if x == 10 { print "10" } else { if x == 11 { print "11" } else { if x == 12 { print "12" } else { if x == 13 { print "13" } else { if x == 14 { print "14" } else { if x == 15 { print "15" } else { if x == 16 { print "16" } else { if x == 17 { print "17" } else { if x == 18 { print "18" } else { if x == 19 { print "19" } else { if x == 20 { print "20" } else { print "?" } } } } } } } } } } } } } } } } } } } }`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			env := NewEmptyEnvironment()
+			EvalWithIO(program, env, strings.NewReader(""), io.Discard, io.Discard)
+		}
+	})
 }

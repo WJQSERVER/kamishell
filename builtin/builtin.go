@@ -7,11 +7,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 type Environment interface {
 	Set(name string, val any)
 	Get(name string) (any, bool)
+	SetString(name string, val string)
+	GetString(name string) (string, bool)
 }
 
 type Inspector interface {
@@ -88,20 +91,19 @@ type Job struct {
 
 var (
 	Jobs      = make(map[int]*Job)
-	NextJobID = 1
+	nextJobID atomic.Int64
 	JobsMu    sync.Mutex
 )
 
 func RegisterJob(cmd string) int {
+	id := int(nextJobID.Add(1))
 	JobsMu.Lock()
-	defer JobsMu.Unlock()
-	id := NextJobID
 	Jobs[id] = &Job{
 		ID:      id,
 		Command: cmd,
 		Status:  "Running",
 	}
-	NextJobID++
+	JobsMu.Unlock()
 	return id
 }
 

@@ -5,3 +5,7 @@ kamishell
 __debug_bin
 kami
 vendor/
+bench/
+.bench/
+.opencode/
+.test_recompiler/

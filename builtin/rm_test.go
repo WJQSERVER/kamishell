@@ -24,6 +24,15 @@ func (m *rmMockEnv) Get(name string) (any, bool) {
 	val, ok := m.store[name]
 	return val, ok
 }
+func (m *rmMockEnv) SetString(name string, val string) { m.store[name] = val }
+func (m *rmMockEnv) GetString(name string) (string, bool) {
+	val, ok := m.store[name]
+	if !ok {
+		return "", false
+	}
+	s, ok := val.(string)
+	return s, ok
+}
 
 func TestRm(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "rm_test")

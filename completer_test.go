@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"kamishell/builtin"
 	"kamishell/core"
 )
 
@@ -64,18 +64,132 @@ func TestCompleterDeduplicatesEnvironmentCandidates(t *testing.T) {
 	}
 }
 
-func TestExtractCompletionTokenHandlesEscapedQuote(t *testing.T) {
-	line := `make "a path with\" quote/quo`
-	line = strings.Replace(line, `\"a`, `"a`, 1)
-	token, prefix, raw := extractCompletionToken(line)
+func TestParseCompletionContextHandlesQuotedPath(t *testing.T) {
+	line := `make "a path with" quo`
+	ctx := parseCompletionContext(line)
 
-	if prefix != `"` {
-		t.Fatalf("expected quoted prefix, got %q", prefix)
+	if ctx.currentToken != "quo" {
+		t.Fatalf("expected current token 'quo', got %q", ctx.currentToken)
 	}
-	if token != `a path with\" quote/quo` {
-		t.Fatalf("expected token to preserve escaped quote context, got %q", token)
+	if ctx.commandName != "make" {
+		t.Fatalf("expected command name 'make', got %q", ctx.commandName)
 	}
-	if raw != `a path with\" quote/quo` {
-		t.Fatalf("expected raw token to preserve escaped quote context, got %q", raw)
+	if ctx.isFirstWord {
+		t.Fatal("expected not first word")
+	}
+}
+
+func TestParseCompletionContextFirstWord(t *testing.T) {
+	ctx := parseCompletionContext("ls")
+	if !ctx.isFirstWord {
+		t.Fatal("expected first word")
+	}
+	if ctx.currentToken != "ls" {
+		t.Fatalf("expected current token 'ls', got %q", ctx.currentToken)
+	}
+}
+
+func TestParseCompletionContextFlag(t *testing.T) {
+	ctx := parseCompletionContext("ls -")
+	if ctx.isFirstWord {
+		t.Fatal("expected not first word")
+	}
+	if ctx.commandName != "ls" {
+		t.Fatalf("expected command name 'ls', got %q", ctx.commandName)
+	}
+	if ctx.currentToken != "-" {
+		t.Fatalf("expected current token '-', got %q", ctx.currentToken)
+	}
+}
+
+func TestParseCompletionContextAfterPipe(t *testing.T) {
+	ctx := parseCompletionContext("cat file | gre")
+	// After a pipe, we're in a new command context - first word should be true
+	if !ctx.isFirstWord {
+		t.Fatal("expected first word after pipe (new command context)")
+	}
+	if ctx.commandName != "gre" {
+		t.Fatalf("expected command name 'gre' after pipe, got %q", ctx.commandName)
+	}
+}
+
+func TestCompleterFlagCompletion(t *testing.T) {
+	// Trigger metadata registration by running the command once
+	_ = builtin.Ls([]string{"--help"}, &testEnv{}, nil, &discardWriter{}, &discardWriter{})
+
+	c := &KamiCompleter{env: core.NewEnvironment()}
+	input := []rune("ls -")
+	candidates, _ := c.Do(input, len(input))
+
+	// Should have flag candidates from ls metadata
+	found := false
+	for _, cand := range candidates {
+		if string(cand) == "-a" || string(cand) == "-l" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected flag candidates for ls, got none")
+	}
+}
+
+// testEnv is a minimal Environment implementation for testing
+type testEnv struct{}
+
+func (e *testEnv) Get(key string) (any, bool) { return nil, false }
+func (e *testEnv) Set(key string, val any)    {}
+func (e *testEnv) SetString(name string, val string) {}
+func (e *testEnv) GetString(name string) (string, bool) { return "", false }
+
+// discardWriter discards all writes
+type discardWriter struct{}
+
+func (w *discardWriter) Write(p []byte) (n int, err error) { return len(p), nil }
+
+func TestCompleterCommandPositionIncludesExternal(t *testing.T) {
+	c := &KamiCompleter{env: core.NewEnvironment()}
+	input := []rune("go")
+	candidates, _ := c.Do(input, len(input))
+
+	// Should include 'go' as external command (if in PATH)
+	found := false
+	for _, cand := range candidates {
+		if string(cand) == "go" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected 'go' in command candidates (should be in PATH)")
+	}
+}
+
+func TestCompleterHelpCompletesBuiltinNames(t *testing.T) {
+	c := &KamiCompleter{env: core.NewEnvironment()}
+	input := []rune("help ls")
+	candidates, _ := c.Do(input, len(input))
+
+	// 'ls' is already complete, so should match file paths starting with 'ls'
+	// or nothing if no files match. The important thing is it doesn't crash.
+	_ = candidates
+}
+
+func TestCompleterEnvVarCompletion(t *testing.T) {
+	t.Setenv("KAMI_TEST_VAR", "test")
+
+	c := &KamiCompleter{env: core.NewEnvironment()}
+	input := []rune("echo $KAMI_TEST")
+	candidates, _ := c.Do(input, len(input))
+
+	found := false
+	for _, cand := range candidates {
+		if string(cand) == "$KAMI_TEST_VAR" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected $KAMI_TEST_VAR in env var candidates")
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"reflect"
 )
 
 func init() {
@@ -15,6 +14,7 @@ func init() {
 		Help:        "显示名称是函数、变量、内建命令还是外部可执行文件。",
 		Action:      Type,
 	})
+	SetArgCompleter("type", completeCommandNames)
 }
 
 func Type(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -30,23 +30,9 @@ func Type(args []string, env Environment, stdin io.Reader, stdout io.Writer, std
 		found := false
 
 		// 1. Check functions and other environment variables
-		val, ok := env.Get(name)
-		if ok {
-			v := reflect.ValueOf(val)
-			method := v.MethodByName("Type")
-			if method.IsValid() {
-				results := method.Call(nil)
-				if len(results) > 0 {
-					typeStr := fmt.Sprintf("%v", results[0].Interface())
-					if typeStr == "FUNCTION" {
-						fmt.Fprintf(stdout, "%s is a function\n", name)
-						found = true
-					} else {
-						fmt.Fprintf(stdout, "%s is a variable of type %s\n", name, typeStr)
-						found = true
-					}
-				}
-			}
+		if _, ok := env.GetString(name); ok {
+			fmt.Fprintf(stdout, "%s is a variable\n", name)
+			found = true
 		}
 
 		if found {

@@ -90,6 +90,41 @@ func BenchmarkEnvironmentAssignNested(b *testing.B) {
 	}
 }
 
+func BenchmarkSetObjectNoRefStore(b *testing.B) {
+	env := NewEmptyEnvironment()
+	val := getIntegerObject(42)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env.SetObject("x", val)
+	}
+}
+
+func BenchmarkSetObjectWithRefStore(b *testing.B) {
+	env := NewEmptyEnvironment()
+	env.GetRef("x") // initializes refStore
+	val := getIntegerObject(42)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env.SetObject("x", val)
+	}
+}
+
+func BenchmarkSetObjectRefStoreMiss(b *testing.B) {
+	env := NewEmptyEnvironment()
+	env.GetRef("other") // initializes refStore with a different key
+	val := getIntegerObject(42)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		env.SetObject("x", val) // "x" not in refStore — map miss
+	}
+}
+
 func BenchmarkEvalAssignmentNested(b *testing.B) {
 	program := mustParseBenchmarkProgram(b, `answer = 42`)
 	root := NewEmptyEnvironment()

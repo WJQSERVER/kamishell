@@ -13,27 +13,36 @@ const (
 	FLOAT  TokenType = "FLOAT"
 
 	// Operators
-	ASSIGN       TokenType = "="
+	ASSIGN TokenType = "="
 	COLON_ASSIGN TokenType = ":="
-	PIPE         TokenType = "|"
-	GREATER      TokenType = ">"
-	LESS         TokenType = "<"
-	APPEND       TokenType = ">>"
-	AND          TokenType = "&&"
-	AMPERSAND    TokenType = "&"
-	OR           TokenType = "||"
-	NOT          TokenType = "!"
-	EQ           TokenType = "=="
-	NEQ          TokenType = "!="
-	PLUS         TokenType = "+"
-	SEMICOLON    TokenType = ";"
-	COMMA        TokenType = ","
-	DOT          TokenType = "."
-	LPAREN       TokenType = "("
-	RPAREN       TokenType = ")"
-	LBRACE       TokenType = "{"
-	RBRACE       TokenType = "}"
-	DOLLAR       TokenType = "$"
+	PIPE TokenType = "|"
+	GREATER TokenType = ">"
+	LESS TokenType = "<"
+	APPEND TokenType = ">>"
+	REDIRECT TokenType = "->"
+	AND TokenType = "&&"
+	AMPERSAND TokenType = "&"
+	OR TokenType = "||"
+	NOT TokenType = "!"
+	EQ TokenType = "=="
+	NEQ TokenType = "!="
+	GEQ TokenType = ">="
+	LEQ TokenType = "<="
+	PLUS TokenType = "+"
+	MINUS TokenType = "-"
+	ASTERISK TokenType = "*"
+	SLASH TokenType = "/"
+	MODULO TokenType = "%"
+	SEMICOLON TokenType = ";"
+	COMMA TokenType = ","
+	DOT TokenType = "."
+	LPAREN TokenType = "("
+	RPAREN TokenType = ")"
+	LBRACE TokenType = "{"
+	RBRACE TokenType = "}"
+	LBRACKET TokenType = "["
+	RBRACKET TokenType = "]"
+	DOLLAR TokenType = "$"
 
 	// Keywords
 	IF        TokenType = "IF"
@@ -49,6 +58,14 @@ const (
 	NIL       TokenType = "NIL"
 	TRUE_TOK  TokenType = "TRUE"
 	FALSE_TOK TokenType = "FALSE"
+	IMPORT    TokenType = "IMPORT"
+	WAIT      TokenType = "WAIT"
+	SWITCH    TokenType = "SWITCH"
+	CASE      TokenType = "CASE"
+	DEFAULT   TokenType = "DEFAULT"
+	BREAK     TokenType = "BREAK"
+	CONTINUE  TokenType = "CONTINUE"
+	COLON     TokenType = ":"
 )
 
 type Token struct {
@@ -86,6 +103,20 @@ func LookupIdent(ident string) TokenType {
 		return TRUE_TOK
 	case "false":
 		return FALSE_TOK
+	case "import":
+		return IMPORT
+	case "wait":
+		return WAIT
+	case "switch":
+		return SWITCH
+	case "case":
+		return CASE
+	case "default":
+		return DEFAULT
+	case "break":
+		return BREAK
+	case "continue":
+		return CONTINUE
 	default:
 		return IDENT
 	}

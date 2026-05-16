@@ -1,18 +1,33 @@
 package core
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 type ObjectType string
 
 const (
-	INTEGER_OBJ  ObjectType = "INTEGER"
-	FLOAT_OBJ    ObjectType = "FLOAT"
-	BOOLEAN_OBJ  ObjectType = "BOOLEAN"
-	STRING_OBJ   ObjectType = "STRING"
-	NULL_OBJ     ObjectType = "NULL"
-	ERROR_OBJ    ObjectType = "ERROR"
-	FUNCTION_OBJ ObjectType = "FUNCTION"
-	PACKAGE_OBJ  ObjectType = "PACKAGE"
+	INTEGER_OBJ      ObjectType = "INTEGER"
+	FLOAT_OBJ        ObjectType = "FLOAT"
+	BOOLEAN_OBJ      ObjectType = "BOOLEAN"
+	STRING_OBJ       ObjectType = "STRING"
+	NULL_OBJ         ObjectType = "NULL"
+	RETURN_VALUE_OBJ ObjectType = "RETURN_VALUE"
+	ERROR_OBJ        ObjectType = "ERROR"
+	FUNCTION_OBJ     ObjectType = "FUNCTION"
+	PACKAGE_OBJ      ObjectType = "PACKAGE"
+	WAITGROUP_OBJ    ObjectType = "WAITGROUP"
+	TASK_OBJ         ObjectType = "TASK"
+	BREAK_OBJ        ObjectType = "BREAK"
+	CONTINUE_OBJ     ObjectType = "CONTINUE"
+	ARRAY_OBJ        ObjectType = "ARRAY"
+	TUPLE_OBJ        ObjectType = "TUPLE"
+)
+
+var (
+	BREAK_SIGNAL    = &BreakSignal{}
+	CONTINUE_SIGNAL = &ContinueSignal{}
 )
 
 type Object interface {
@@ -28,24 +43,22 @@ func (i *Integer) Inspect() string  { return strconv.FormatInt(i.Value, 10) }
 func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
 
 const (
-	integerCacheMin int64 = -128
-	integerCacheMax int64 = 1024
+	integerCacheMin int64 = -4096
+	integerCacheMax int64 = 12287 // total 16k entries = 16384
 )
 
-var integerCache = initIntegerCache()
+var integerCache []Integer
 
-func initIntegerCache() []*Integer {
-	size := integerCacheMax - integerCacheMin + 1
-	cache := make([]*Integer, size)
-	for i := range cache {
-		cache[i] = &Integer{Value: integerCacheMin + int64(i)}
+func init() {
+	integerCache = make([]Integer, integerCacheMax-integerCacheMin+1)
+	for i := range integerCache {
+		integerCache[i].Value = integerCacheMin + int64(i)
 	}
-	return cache
 }
 
 func getIntegerObject(value int64) *Integer {
 	if value >= integerCacheMin && value <= integerCacheMax {
-		return integerCache[value-integerCacheMin]
+		return &integerCache[value-integerCacheMin]
 	}
 	return &Integer{Value: value}
 }
@@ -85,6 +98,13 @@ type Null struct{}
 func (n *Null) Inspect() string  { return "nil" }
 func (n *Null) Type() ObjectType { return NULL_OBJ }
 
+type ReturnValue struct {
+	Value Object
+}
+
+func (rv *ReturnValue) Inspect() string  { return rv.Value.Inspect() }
+func (rv *ReturnValue) Type() ObjectType { return RETURN_VALUE_OBJ }
+
 type Error struct {
 	Message string
 	Code    int
@@ -100,13 +120,33 @@ func (e *Error) Inspect() string {
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
 
 type Function struct {
-	Parameters []string
-	Body       *BlockStatement
-	Env        *Environment
+	Parameters   []Parameter
+	ReturnTypes  []string
+	Body         *BlockStatement
+	Env          *Environment
+	SlotCapacity int // number of slots needed for parameters (set by Resolver)
 }
 
 func (f *Function) Inspect() string  { return "func" }
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
+
+type Tuple struct {
+	Elements []Object
+}
+
+func (t *Tuple) Type() ObjectType { return TUPLE_OBJ }
+func (t *Tuple) Inspect() string {
+	var out strings.Builder
+	out.WriteString("(")
+	for i, el := range t.Elements {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(el.Inspect())
+	}
+	out.WriteString(")")
+	return out.String()
+}
 
 type NativeFunction struct {
 	Fn func(env *Environment, args ...Object) Object
@@ -121,3 +161,61 @@ type Package struct {
 
 func (p *Package) Type() ObjectType { return PACKAGE_OBJ }
 func (p *Package) Inspect() string  { return p.Name }
+
+type WaitGroup struct {
+	Wg any // *sync.WaitGroup - using interface{} to avoid import cycle
+}
+
+func (wg *WaitGroup) Type() ObjectType { return WAITGROUP_OBJ }
+func (wg *WaitGroup) Inspect() string  { return "WaitGroup" }
+
+type Task struct {
+	ID     int
+	Done   chan struct{}
+	Result Object
+}
+
+func (t *Task) Type() ObjectType { return TASK_OBJ }
+func (t *Task) Inspect() string  { return "Task" }
+
+type Pointer struct {
+	Ref *EnvEntry
+	Env *Environment
+}
+
+func (p *Pointer) Type() ObjectType { return "POINTER" }
+func (p *Pointer) Inspect() string {
+	if p.Ref == nil {
+		return "<nil pointer>"
+	}
+	return p.Ref.Value.Inspect()
+}
+
+type BreakSignal struct{}
+
+func (b *BreakSignal) Type() ObjectType { return BREAK_OBJ }
+func (b *BreakSignal) Inspect() string  { return "break" }
+
+type ContinueSignal struct{}
+
+func (c *ContinueSignal) Type() ObjectType { return CONTINUE_OBJ }
+func (c *ContinueSignal) Inspect() string  { return "continue" }
+
+type Array struct {
+	ElemType ObjectType
+	Elements []Object
+}
+
+func (a *Array) Type() ObjectType { return ARRAY_OBJ }
+func (a *Array) Inspect() string {
+	var out strings.Builder
+	out.WriteString("[")
+	for i, el := range a.Elements {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(el.Inspect())
+	}
+	out.WriteString("]")
+	return out.String()
+}

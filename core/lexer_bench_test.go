@@ -6,7 +6,7 @@ import (
 
 func BenchmarkNextToken(b *testing.B) {
 	input := `print "hello";
-	files := ls -la;
+	files := ls "-la";
 	if err != nil {
 		exit 1
 	}`

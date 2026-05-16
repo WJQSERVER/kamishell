@@ -16,6 +16,7 @@ func init() {
 		Help:        "切换当前工作目录；不带参数时跳转到 HOME，`cd -` 跳回 OLDPWD。",
 		Action:      Cd,
 	})
+	SetArgCompleter("cd", completeDirectoryPaths)
 }
 
 func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -23,9 +24,9 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	fs := flag.NewFlagSet("cd", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	logical := fs.Bool("L", true, "handle the directory operand dot-dot component logically")
-	_ = logical
-	physical := fs.Bool("P", false, "handle the directory operand dot-dot component physically")
+	m := RegisterMeta("cd")
+	BoolFlag(fs, m, "L", "L", true, "handle the directory operand dot-dot component logically")
+	physical := BoolFlag(fs, m, "P", "P", false, "handle the directory operand dot-dot component physically")
 
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -53,23 +54,31 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 	}
 
 	if dir == "-" {
-		oldpwd, ok := env.Get("OLDPWD")
+		oldpwd, ok := env.GetString("OLDPWD")
 		if !ok {
 			fmt.Fprintln(stderr, "cd: OLDPWD not set")
 			return 1
 		}
-		if s, ok := oldpwd.(string); ok {
-			dir = s
-		} else if ins, ok := oldpwd.(Inspector); ok {
-			dir = ins.Inspect()
-		}
+		dir = oldpwd
 		fmt.Fprintln(stdout, dir)
 	}
 
-	// Calculate new PWD
+	// Capture current cwd for OLDPWD and logical path computation.
 	curDir, err := os.Getwd()
 	if err == nil {
-		env.Set("OLDPWD", curDir)
+		env.SetString("OLDPWD", curDir)
+	}
+
+	// In logical mode (-L, default), compute target path BEFORE os.Chdir.
+	// Otherwise relative paths like ".." would be resolved against the new cwd
+	// (after chdir), causing PWD to drift one level too far.
+	logicalTarget := ""
+	if !usePhysical {
+		if filepath.IsAbs(dir) {
+			logicalTarget = filepath.Clean(dir)
+		} else if curDir != "" {
+			logicalTarget = filepath.Clean(filepath.Join(curDir, dir))
+		}
 	}
 
 	err = os.Chdir(dir)
@@ -84,11 +93,8 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		return 1
 	}
 	if !usePhysical {
-		// Logical path calculation is complex in general,
-		// but we can try to use filepath.Abs or join if it's relative.
-		absDir, err := filepath.Abs(dir)
-		if err == nil {
-			newDir = absDir
+		if logicalTarget != "" {
+			newDir = logicalTarget
 		}
 	} else {
 		physDir, err := filepath.EvalSymlinks(newDir)
@@ -97,6 +103,6 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		}
 	}
 
-	env.Set("PWD", newDir)
+	env.SetString("PWD", newDir)
 	return 0
 }

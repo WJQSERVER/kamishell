@@ -35,7 +35,7 @@ var KeywordsDoc = map[string]KeywordInfo{
 	"range": {
 		Description: "迭代集合",
 		Usage:       "for 变量 := range 集合 { ... }",
-		Details:     "（计划中）用于迭代数组、映射或其他可迭代对象。",
+		Details:     "用于迭代数组或迭代器。支持数组 range（for i, v := range arr）和迭代器 range-over-func（for v := range iter(args)）。",
 	},
 	"go": {
 		Description: "启动 Goroutine (异步执行)",
@@ -53,14 +53,14 @@ var KeywordsDoc = map[string]KeywordInfo{
 		Details:     "定义一个不可修改的常量值。",
 	},
 	"import": {
-		Description: "导入模块",
-		Usage:       "import \"模块路径\"",
-		Details:     "（计划中）用于加载外部脚本或库。",
+		Description: "导入 Go 标准库",
+		Usage:       "import \"Go/包名\"",
+		Details:     "导入 Go 标准库函数，编译时直接解析为原生 Go 调用。已支持的包：fmt、math、strings、strconv、os。",
 	},
 	"exec": {
-		Description: "执行字符串命令",
-		Usage:       "exec \"命令字符串\"",
-		Details:     "将字符串作为 shell 命令执行。常用于动态执行命令或避开关键字冲突。",
+		Description: "执行外部命令",
+		Usage:       "exec <command> [args...] 或 exec(cmd)",
+		Details:     "关键字形式：exec echo hello - 直接执行命令，参数按空格分割，支持引号。函数形式：exec(cmd) - 执行字符串命令。注意：exec \"...\" 已弃用。",
 	},
 	"export": {
 		Description: "设置环境变量",

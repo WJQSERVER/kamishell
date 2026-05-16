@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"github.com/WJQSERVER-STUDIO/go-utils/iox"
 	"os"
 )
 
@@ -57,32 +58,19 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 	fs := flag.NewFlagSet("cat", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
+	m := RegisterMeta("cat")
 	opts := &catOptions{}
-	fs.BoolVar(&opts.number, "n", false, "number all output lines")
-	fs.BoolVar(&opts.number, "number", false, "number all output lines")
-	fs.BoolVar(&opts.numberNonblank, "b", false, "number nonempty output lines")
-	fs.BoolVar(&opts.numberNonblank, "number-nonblank", false, "number nonempty output lines")
-	fs.BoolVar(&opts.squeezeBlank, "s", false, "suppress repeated empty output lines")
-	fs.BoolVar(&opts.squeezeBlank, "squeeze-blank", false, "suppress repeated empty output lines")
-	fs.BoolVar(&opts.showEnds, "E", false, "display $ at end of each line")
-	fs.BoolVar(&opts.showEnds, "show-ends", false, "display $ at end of each line")
-	fs.BoolVar(&opts.showTabs, "T", false, "display TAB characters as ^I")
-	fs.BoolVar(&opts.showTabs, "show-tabs", false, "display TAB characters as ^I")
-	fs.BoolVar(&opts.showNonprinting, "v", false, "use ^ and M- notation for non-printing characters")
-	fs.BoolVar(&opts.showNonprinting, "show-nonprinting", false, "use ^ and M- notation for non-printing characters")
+	BoolFlagVar(fs, m, &opts.number, "number", "n", false, "number all output lines")
+	BoolFlagVar(fs, m, &opts.numberNonblank, "number-nonblank", "b", false, "number nonempty output lines")
+	BoolFlagVar(fs, m, &opts.squeezeBlank, "squeeze-blank", "s", false, "suppress repeated empty output lines")
+	BoolFlagVar(fs, m, &opts.showEnds, "show-ends", "E", false, "display $ at end of each line")
+	BoolFlagVar(fs, m, &opts.showTabs, "show-tabs", "T", false, "display TAB characters as ^I")
+	BoolFlagVar(fs, m, &opts.showNonprinting, "show-nonprinting", "v", false, "use ^ and M- notation for non-printing characters")
 
-	// -A, --show-all 等价于 -vET
-	showAll := fs.Bool("A", false, "equivalent to -vET")
-	fs.BoolVar(showAll, "show-all", false, "equivalent to -vET")
-
-	// -e 等价于 -vE
-	equivVE := fs.Bool("e", false, "equivalent to -vE")
-
-	// -t 等价于 -vT
-	equivVT := fs.Bool("t", false, "equivalent to -vT")
-
-	// -u 是 POSIX 兼容性选项，忽略
-	_ = fs.Bool("u", false, "ignored; for POSIX compatibility")
+	showAll := BoolFlag(fs, m, "show-all", "A", false, "equivalent to -vET")
+	equivVE := BoolFlag(fs, m, "e", "e", false, "equivalent to -vE")
+	equivVT := BoolFlag(fs, m, "t", "t", false, "equivalent to -vT")
+	BoolFlag(fs, m, "u", "u", false, "ignored; for POSIX compatibility")
 
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -143,7 +131,7 @@ func Cat(args []string, env Environment, stdin io.Reader, stdout io.Writer, stde
 
 func catReader(r io.Reader, stdout, stderr io.Writer, opts *catOptions) int {
 	if !requiresFormattedCatOutput(opts) {
-		if _, err := io.Copy(stdout, r); err != nil {
+		if _, err := iox.Copy(stdout, r); err != nil {
 			fmt.Fprintf(stderr, "cat: %v\n", err)
 			return 1
 		}
