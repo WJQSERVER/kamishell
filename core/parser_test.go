@@ -1230,3 +1230,205 @@ func TestParseExecDeprecatedEmptyString(t *testing.T) {
 		t.Fatal("expected parser errors for deprecated exec \"\" form")
 	}
 }
+
+// --- Redirect + Pipe / Append / Background ---
+
+// redirect IDENT target 后接 pipe：应该产生 RedirectStatement 包裹 PipeStatement
+func TestParseRedirectIdentTargetThenPipe(t *testing.T) {
+	input := `print "hello" -> out | cat`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	// Bug diagnosis: IDENT branch in parseRedirectStatement does extra p.nextToken(),
+	// consuming the PIPE token. Result: 2 statements instead of 1.
+	//   [0] RedirectStatement: print "hello" -> "out"
+	//   [1] CommandStatement: cat   (should be part of pipe)
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement (pipe should wrap redirect+cat), got %d — PIPE token consumed by redirect IDENT branch",
+			len(program.Statements))
+	}
+
+	pipeStmt, ok := program.Statements[0].(*PipeStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PipeStatement (pipe lost after redirect IDENT target). got=%T", program.Statements[0])
+	}
+
+	if len(pipeStmt.Commands) != 2 {
+		t.Fatalf("expected 2 pipeline commands, got %d", len(pipeStmt.Commands))
+	}
+
+	redirectStmt, ok := pipeStmt.Commands[0].(*RedirectStatement)
+	if !ok {
+		t.Fatalf("pipe.Commands[0] is not *RedirectStatement. got=%T", pipeStmt.Commands[0])
+	}
+
+	if redirectStmt.Source == nil {
+		t.Fatal("redirect source is nil")
+	}
+
+	catCmd, ok := pipeStmt.Commands[1].(*CommandStatement)
+	if !ok {
+		t.Fatalf("pipe.Commands[1] is not *CommandStatement. got=%T", pipeStmt.Commands[1])
+	}
+
+	if catCmd.Name != "cat" {
+		t.Errorf("expected command name 'cat', got %q", catCmd.Name)
+	}
+}
+
+// redirect STRING target 后接 pipe：expression 分支不受 bug 影响
+func TestParseRedirectStringTargetThenPipe(t *testing.T) {
+	input := `print "hello" -> "out" | cat`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	pipeStmt, ok := program.Statements[0].(*PipeStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PipeStatement. got=%T", program.Statements[0])
+	}
+
+	if len(pipeStmt.Commands) != 2 {
+		t.Fatalf("expected 2 pipeline commands, got %d", len(pipeStmt.Commands))
+	}
+}
+
+// redirect IDENT target 后接 append：应该产生两个重定向
+func TestParseRedirectIdentTargetThenAppend(t *testing.T) {
+	input := `print "hello" -> out >> log`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement (append should wrap inner redirect), got %d — >> token consumed by redirect IDENT branch",
+			len(program.Statements))
+	}
+
+	appendStmt, ok := program.Statements[0].(*RedirectStatement)
+	if !ok {
+		t.Fatalf("stmt is not *RedirectStatement. got=%T", program.Statements[0])
+	}
+
+	if !appendStmt.Append {
+		t.Fatal("expected outer redirect to be append (>>)")
+	}
+
+	innerRedirect, ok := appendStmt.Source.(*RedirectStatement)
+	if !ok {
+		t.Fatalf("append source is not *RedirectStatement (chained redirect lost). got=%T", appendStmt.Source)
+	}
+
+	if innerRedirect.Append {
+		t.Fatal("expected inner redirect to be overwrite (->)")
+	}
+}
+
+// redirect IDENT target 后接 background：应该产生 BackgroundStatement
+func TestParseRedirectIdentTargetThenBackground(t *testing.T) {
+	input := `print "hello" -> out &`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	bgStmt, ok := program.Statements[0].(*BackgroundStatement)
+	if !ok {
+		t.Fatalf("stmt is not *BackgroundStatement (& lost after redirect IDENT target). got=%T", program.Statements[0])
+	}
+
+	redirectStmt, ok := bgStmt.Stmt.(*RedirectStatement)
+	if !ok {
+		t.Fatalf("background stmt is not *RedirectStatement. got=%T", bgStmt.Stmt)
+	}
+
+	if redirectStmt.Source == nil {
+		t.Fatal("redirect source is nil")
+	}
+}
+
+// redirect IDENT target 后接逻辑运算符：应该产生 LogicalStatement
+func TestParseRedirectIdentTargetThenLogicalAnd(t *testing.T) {
+	input := `print "hello" -> out && print "done"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement (logical should wrap redirect+print), got %d — && token consumed by redirect IDENT branch",
+			len(program.Statements))
+	}
+
+	logicalStmt, ok := program.Statements[0].(*LogicalStatement)
+	if !ok {
+		t.Fatalf("stmt is not *LogicalStatement (&& lost after redirect IDENT target). got=%T", program.Statements[0])
+	}
+
+	if logicalStmt.Operator != "&&" {
+		t.Errorf("expected operator &&, got %q", logicalStmt.Operator)
+	}
+
+	redirectStmt, ok := logicalStmt.Left.(*RedirectStatement)
+	if !ok {
+		t.Fatalf("left is not *RedirectStatement. got=%T", logicalStmt.Left)
+	}
+
+	if redirectStmt.Source == nil {
+		t.Fatal("redirect source is nil")
+	}
+}
+
+// exec 裸词 + redirect + pipe：也受 IDENT 分支影响
+func TestParseExecBareWordRedirectThenPipe(t *testing.T) {
+	input := `exec echo hello -> out | cat`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement (pipe should wrap exec-redirect+cat), got %d — PIPE token consumed by redirect IDENT branch",
+			len(program.Statements))
+	}
+
+	pipeStmt, ok := program.Statements[0].(*PipeStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PipeStatement (pipe lost after exec redirect). got=%T", program.Statements[0])
+	}
+
+	if len(pipeStmt.Commands) != 2 {
+		t.Fatalf("expected 2 pipeline commands, got %d", len(pipeStmt.Commands))
+	}
+}
