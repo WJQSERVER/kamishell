@@ -210,6 +210,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		}
 	case LBRACE:
 		stmt = p.parseBlockStatement()
+	case RBRACE:
+		return nil
 	case NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, DOLLAR, LPAREN, NIL, LBRACKET, NOT, MINUS:
 		stmt = p.parseExpressionStatement()
 	default:
@@ -1290,6 +1292,7 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 	if p.peekToken.Type == LBRACE {
 		p.nextToken() // move to {
 		stmt.Body = p.parseBlockStatement()
+		p.nextToken() // move past }
 	}
 
 	return stmt
@@ -1308,10 +1311,23 @@ func (p *Parser) parseFunctionParameters() []Parameter {
 	names = append(names, p.curToken.Literal)
 
 	for {
-		if p.peekToken.Type == RPAREN || p.peekToken.Type == LBRACE {
+		if p.peekToken.Type == RPAREN {
 			// End of params — type must have been provided
 			if len(names) > 0 {
-				// Names without type — error
+				// Names without type — convert to untyped params
+				p.nextToken() // consume )
+				for _, n := range names {
+					params = append(params, Parameter{Name: n})
+				}
+				return params
+			}
+			break
+		}
+		if p.peekToken.Type == LBRACE {
+			if len(names) > 0 {
+				for _, n := range names {
+					params = append(params, Parameter{Name: n})
+				}
 				return params
 			}
 			break
