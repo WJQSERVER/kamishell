@@ -1673,3 +1673,46 @@ func TestExecDeprecatedStringFormIntegration(t *testing.T) {
 		t.Errorf("expected hello, got %q", stdout)
 	}
 }
+
+// ============================================================
+// Unicode string interpolation — P1
+// ============================================================
+
+// Unicode 变量名在字符串插值中应正常工作
+func TestStringInterpolationUnicodeVar(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `名称 := "kami"; print "hello $名称"`
+	stdout, stderr, _ := runKami(input, env)
+
+	t.Logf("Input: %q", input)
+	t.Logf("Stdout: %q", stdout)
+	t.Logf("Stderr: %q", stderr)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	// Bug: parseStringParts uses isIdentChar (ASCII-only), so $名称
+	// produces Var:"" instead of Var:"名称". Runtime os.Expand may
+	// handle it differently, causing inconsistency.
+	if strings.TrimSpace(stdout) != "hello kami" {
+		t.Errorf("expected 'hello kami', got %q — parseStringParts isIdentChar may not support Unicode", strings.TrimSpace(stdout))
+	}
+}
+
+// Unicode 变量名作为独立 $var 插值
+func TestStandaloneInterpolationUnicodeVar(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `名称 := "kami"; print $名称`
+	stdout, stderr, _ := runKami(input, env)
+
+	t.Logf("Input: %q", input)
+	t.Logf("Stdout: %q", stdout)
+	t.Logf("Stderr: %q", stderr)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "kami" {
+		t.Errorf("expected 'kami', got %q", strings.TrimSpace(stdout))
+	}
+}

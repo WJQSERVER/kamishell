@@ -182,3 +182,119 @@ func TestFloatVsInteger(t *testing.T) {
 		}
 	}
 }
+
+// ============================================================
+// ASI (Automatic Semicolon Insertion) — P1
+// ============================================================
+
+// RBRACKET 后换行应插入分号（当前遗漏）
+func TestASIAfterRBRACKET(t *testing.T) {
+	input := "arr[0]\nprint \"next\""
+	l := NewLexer(input)
+
+	l.NextToken() // IDENT "arr"
+	l.NextToken() // LBRACKET
+	tok3 := l.NextToken() // NUMBER "0"
+	tok4 := l.NextToken() // RBRACKET
+
+	t.Logf("tok3: %q %q", tok3.Type, tok3.Literal)
+	t.Logf("tok4: %q %q", tok4.Type, tok4.Literal)
+
+	// After RBRACKET + newline, ASI should insert SEMICOLON
+	tok5 := l.NextToken()
+	t.Logf("tok5: %q %q (should be SEMICOLON)", tok5.Type, tok5.Literal)
+
+	if tok5.Type != SEMICOLON {
+		t.Errorf("expected SEMICOLON after RBRACKET+newline, got %q — ASI missing RBRACKET in isCompletable()", tok5.Type)
+	}
+}
+
+// RBRACE 后换行应插入分号（已支持）
+func TestASIAfterRBRACE(t *testing.T) {
+	input := "if true {}\nprint \"next\""
+	l := NewLexer(input)
+
+	// Skip to after RBRACE
+	for {
+		tok := l.NextToken()
+		if tok.Type == RBRACE {
+			break
+		}
+	}
+
+	tok := l.NextToken()
+	if tok.Type != SEMICOLON {
+		t.Errorf("expected SEMICOLON after RBRACE+newline, got %q", tok.Type)
+	}
+}
+
+// RPAREN 后换行应插入分号（已支持）
+func TestASIAfterRPAREN(t *testing.T) {
+	input := "print(1)\nprint \"next\""
+	l := NewLexer(input)
+
+	// Skip to after RPAREN
+	for {
+		tok := l.NextToken()
+		if tok.Type == RPAREN {
+			break
+		}
+	}
+
+	tok := l.NextToken()
+	if tok.Type != SEMICOLON {
+		t.Errorf("expected SEMICOLON after RPAREN+newline, got %q", tok.Type)
+	}
+}
+
+// ============================================================
+// Unicode & UTF-8 — P1
+// ============================================================
+
+// Unicode 标识符后换行应触发 ASI
+func TestASIWithUnicodeIdentifier(t *testing.T) {
+	input := "变量\nprint \"next\""
+	l := NewLexer(input)
+
+	tok1 := l.NextToken() // IDENT "变量"
+	if tok1.Type != IDENT || tok1.Literal != "变量" {
+		t.Fatalf("expected IDENT '变量', got %q %q", tok1.Type, tok1.Literal)
+	}
+
+	tok2 := l.NextToken() // should be SEMICOLON (ASI)
+	if tok2.Type != SEMICOLON {
+		t.Errorf("expected SEMICOLON after Unicode IDENT+newline, got %q", tok2.Type)
+	}
+}
+
+// 字符串中含转义后紧跟多字节 UTF-8 字符
+func TestStringEscapeThenMultibyteUTF8(t *testing.T) {
+	input := "\"hello\\n世界\""
+	l := NewLexer(input)
+
+	tok := l.NextToken()
+	if tok.Type != STRING {
+		t.Fatalf("expected STRING, got %q", tok.Type)
+	}
+
+	expected := "hello\n世界"
+	if tok.Literal != expected {
+		t.Errorf("expected %q, got %q — readString may corrupt multibyte UTF-8 after escape", expected, tok.Literal)
+	}
+}
+
+// 字符串中含转义后紧跟多字节 UTF-8（emoji）
+func TestStringEscapeThenEmoji(t *testing.T) {
+	input := "\"hello\\n😀\""
+	l := NewLexer(input)
+
+	tok := l.NextToken()
+	if tok.Type != STRING {
+		t.Fatalf("expected STRING, got %q", tok.Type)
+	}
+
+	expected := "hello\n😀"
+	if tok.Literal != expected {
+		t.Errorf("expected %q, got %q — readString may corrupt 4-byte UTF-8 emoji after escape", expected, tok.Literal)
+	}
+}

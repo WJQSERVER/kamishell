@@ -1432,3 +1432,157 @@ func TestParseExecBareWordRedirectThenPipe(t *testing.T) {
 		t.Fatalf("expected 2 pipeline commands, got %d", len(pipeStmt.Commands))
 	}
 }
+
+// ============================================================
+// Silent error swallowing — P0
+// ============================================================
+
+// parseGroupedExpression 缺少右括号：应产生 parser error
+func TestParseGroupedExprMissingRParen(t *testing.T) {
+	input := `(1 + 2`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseGroupedExpression returns nil silently when ) is missing.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ')', got 0 errors — parseGroupedExpression swallows error silently")
+	}
+}
+
+// parseGroupedExpression 缺少右括号，后跟更多 token
+func TestParseGroupedExprMissingRParenWithContinuation(t *testing.T) {
+	input := `(1 + 2; print "hello"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements, %d errors", input, len(program.Statements), len(p.Errors()))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+	for _, e := range p.Errors() {
+		t.Logf("  Error: %s", e)
+	}
+
+	// Should have at least one error for the missing )
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ')', got 0 errors")
+	}
+}
+
+// parseGroupedExpression 缺少右括号，作为 if 条件
+func TestParseGroupedExprMissingRParenInIfCondition(t *testing.T) {
+	input := `if (x > 5 { print "big" }`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: condition parsing silently fails, if statement gets nil condition.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ')' in if condition, got 0 errors")
+	}
+}
+
+// parseGroupedExpression 正常情况不应报错
+func TestParseGroupedExprValid(t *testing.T) {
+	input := `(1 + 2); print "ok"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("unexpected parser errors: %v", p.Errors())
+	}
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+}
+
+// parseMemberExpression 属性不是标识符（数字）：应产生 parser error
+func TestParseMemberExprNonIdentProperty(t *testing.T) {
+	input := `obj.123`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseMemberExpression returns nil silently when property is not IDENT.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for non-ident member property '.123', got 0 errors — parseMemberExpression swallows error silently")
+	}
+}
+
+// parseMemberExpression 属性是关键字
+func TestParseMemberExprKeywordProperty(t *testing.T) {
+	input := `obj.if`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseMemberExpression returns nil when property is a keyword token (IF).
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for keyword member property '.if', got 0 errors")
+	}
+}
+
+// parseMemberExpression 正常情况不应报错
+func TestParseMemberExprValid(t *testing.T) {
+	input := `obj.method`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("unexpected parser errors: %v", p.Errors())
+	}
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+}
+
+// parseExpressionList 数组缺少右方括号：应产生 parser error
+func TestParseArrayMissingRBracket(t *testing.T) {
+	input := `[1, 2, 3`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseExpressionList returns without error when ] is missing.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ']', got 0 errors — parseExpressionList swallows error silently")
+	}
+}
+
+// parseExpressionList 函数调用缺少右括号
+func TestParseCallMissingRParen(t *testing.T) {
+	input := `foo(1, 2`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseExpressionList returns without error when ) is missing.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ')' in call, got 0 errors — parseExpressionList swallows error silently")
+	}
+}
+
+// parseExpressionList 空数组不应报错
+func TestParseArrayValid(t *testing.T) {
+	input := `[1, 2, 3]; print "ok"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("unexpected parser errors: %v", p.Errors())
+	}
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+}
