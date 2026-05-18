@@ -6,7 +6,10 @@ import "kamishell/builtin"
 // because they are maintained by the runtime via SetObject/SetWithType
 // outside of the normal declaration flow.
 var reservedNames = map[string]bool{
-	"err": true,
+	"err":  true,
+	"env":  true,
+	"sync": true,
+	"param": true,
 }
 
 // Resolve performs a variable resolution pass on the parsed AST.

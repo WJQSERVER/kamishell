@@ -250,7 +250,7 @@ func (l *Lexer) NextToken() Token {
 
 func (l *Lexer) isCompletable() bool {
 	switch l.prevToken {
-	case IDENT, NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, NIL, RETURN, RPAREN, RBRACE:
+	case IDENT, NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, NIL, RETURN, RPAREN, RBRACE, RBRACKET:
 		return true
 	}
 	return false

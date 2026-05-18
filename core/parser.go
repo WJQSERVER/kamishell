@@ -3,6 +3,8 @@ package core
 import (
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -1102,8 +1104,19 @@ func parseStringParts(s string) []StringPart {
 			}
 			i++ // skip $
 			vstart := i
-			for i < len(s) && isIdentChar(s[i]) {
-				i++
+			for i < len(s) {
+				if s[i] < utf8.RuneSelf {
+					if !isASCIIIdentChar(s[i]) {
+						break
+					}
+					i++
+				} else {
+					r, size := utf8.DecodeRuneInString(s[i:])
+					if r == utf8.RuneError || !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+						break
+					}
+					i += size
+				}
 			}
 			parts = append(parts, StringPart{Var: s[vstart:i]})
 			start = i
@@ -1117,6 +1130,10 @@ func parseStringParts(s string) []StringPart {
 }
 
 func isIdentChar(b byte) bool {
+	return isASCIIIdentChar(b)
+}
+
+func isASCIIIdentChar(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
 }
 
@@ -1699,6 +1716,7 @@ func (p *Parser) parseGroupedExpression() Expression {
 	exp := p.parseExpression(LOWEST)
 
 	if p.peekToken.Type != RPAREN {
+		p.addError("expected ')' to close grouped expression, got " + string(p.peekToken.Type))
 		return nil
 	}
 	p.nextToken()
@@ -1739,6 +1757,7 @@ func (p *Parser) parseMemberExpression(left Expression) Expression {
 
 	p.nextToken()
 	if p.curToken.Type != IDENT {
+		p.addError("expected identifier after '.', got " + string(p.curToken.Type))
 		return nil
 	}
 
@@ -1771,6 +1790,8 @@ func (p *Parser) parseExpressionList(end TokenType) []Expression {
 
 	if p.peekToken.Type == end {
 		p.nextToken()
+	} else {
+		p.addError("expected " + string(end) + " to close expression list, got " + string(p.peekToken.Type))
 	}
 
 	return args

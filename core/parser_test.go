@@ -1501,9 +1501,11 @@ func TestParseGroupedExprValid(t *testing.T) {
 	}
 }
 
-// parseMemberExpression 属性不是标识符（数字）：应产生 parser error
+// parseMemberExpression 属性不是标识符（数字字面量）：应产生 parser error
+// Note: obj.123 is tokenized as IDENT FLOAT by lexer (.123 → float literal),
+// so parseMemberExpression is never entered. Use obj.( to trigger the bug.
 func TestParseMemberExprNonIdentProperty(t *testing.T) {
-	input := `obj.123`
+	input := `obj.()`
 	l := NewLexer(input)
 	p := NewParser(l)
 	_ = p.ParseProgram()
@@ -1511,7 +1513,7 @@ func TestParseMemberExprNonIdentProperty(t *testing.T) {
 	// Bug: parseMemberExpression returns nil silently when property is not IDENT.
 	// Expected: at least one parser error.
 	if len(p.Errors()) == 0 {
-		t.Fatalf("expected parser error for non-ident member property '.123', got 0 errors — parseMemberExpression swallows error silently")
+		t.Fatalf("expected parser error for non-ident member property '.()', got 0 errors — parseMemberExpression swallows error silently")
 	}
 }
 
