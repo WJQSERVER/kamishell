@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"kamishell/builtin"
@@ -637,6 +638,122 @@ var goStdlib = map[string]map[string]*NativeFunction{
 	},
 }
 
+// ---------------------------------------------------------------------------
+// Simplified Public API
+// ---------------------------------------------------------------------------
+
+// RunOption configures the execution behavior.
+type RunOption func(*runConfig)
+
+type runConfig struct {
+	env     *Environment
+	timeout time.Duration
+}
+
+func defaultRunConfig() *runConfig {
+	return &runConfig{
+		env: NewSandboxEnvironment(),
+	}
+}
+
+// WithEnvironment sets a custom execution environment.
+func WithEnvironment(env *Environment) RunOption {
+	return func(c *runConfig) { c.env = env }
+}
+
+// WithTimeout sets an execution timeout. Zero means no timeout.
+func WithTimeout(d time.Duration) RunOption {
+	return func(c *runConfig) { c.timeout = d }
+}
+
+// SandboxMode disables external commands on the current environment.
+// Use WithEnvironment + SandboxMode to combine a custom env with sandbox constraints.
+func SandboxMode() RunOption {
+	return func(c *runConfig) {
+		c.env.SetAllowExternalCmd(false)
+	}
+}
+
+// Parse parses input into an AST program without executing it.
+// Returns parse errors as a slice of errors.
+func Parse(input string) (*Program, []error) {
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	var errs []error
+	if perrs := p.Errors(); len(perrs) > 0 {
+		errs = make([]error, len(perrs))
+		for i, e := range perrs {
+			errs[i] = fmt.Errorf("parse error: %s", e)
+		}
+	}
+	for _, stmt := range program.Statements {
+		if inv, ok := stmt.(*InvalidStatement); ok {
+			errs = append(errs, fmt.Errorf("parse error: %s", inv.Message))
+		}
+	}
+	if len(errs) > 0 {
+		return program, errs
+	}
+
+	Fold(program)
+	Resolve(program)
+	return program, nil
+}
+
+// Run executes a Kamishell script with the default sandbox environment.
+// Returns the result object and any error.
+func Run(input string, opts ...RunOption) (Object, error) {
+	return RunWithIO(input, os.Stdin, os.Stdout, os.Stderr, opts...)
+}
+
+// RunWithIO executes a Kamishell script with explicit IO and options.
+func RunWithIO(input string, stdin io.Reader, stdout io.Writer, stderr io.Writer, opts ...RunOption) (Object, error) {
+	cfg := defaultRunConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	// Lex + Parse
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if perrs := p.Errors(); len(perrs) > 0 {
+		return nil, fmt.Errorf("parse errors: %v", perrs)
+	}
+	for _, stmt := range program.Statements {
+		if inv, ok := stmt.(*InvalidStatement); ok {
+			return nil, fmt.Errorf("parse error: %s", inv.Message)
+		}
+	}
+
+	Fold(program)
+	Resolve(program)
+
+	// Setup cancellation context
+	var cancel context.CancelFunc
+	ctx := context.Background()
+	if cfg.timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, cfg.timeout)
+		defer cancel()
+	}
+	cfg.env.SetContext(ctx)
+
+	result := EvalWithIO(program, cfg.env, stdin, stdout, stderr)
+
+	if cfg.timeout > 0 {
+		if ctx.Err() != nil {
+			return result, fmt.Errorf("execution cancelled: %v", ctx.Err())
+		}
+	}
+	if isError(result) {
+		return result, fmt.Errorf("%s", result.Inspect())
+	}
+	return result, nil
+}
+
 func Eval(node Node, env *Environment) Object {
 	return EvalWithIO(node, env, os.Stdin, os.Stdout, os.Stderr)
 }
@@ -1111,6 +1228,9 @@ func evalIterRangeStatement(fs *ForStatement, env *Environment, stdin io.Reader,
 	var iterResult Object
 	yield := &NativeFunction{
 		Fn: func(_ *Environment, args ...Object) Object {
+			if env.Cancelled() {
+				return FALSE
+			}
 			expected := len(fs.IterVars)
 			if expected == 0 {
 				expected = 1
@@ -1192,6 +1312,9 @@ func evalForStatement(fs *ForStatement, env *Environment, stdin io.Reader, stdou
 	}
 
 	for {
+		if env.Cancelled() {
+			return &Error{Message: "execution cancelled"}
+		}
 		if fs.Condition != nil {
 			if hasFastCondition {
 				ok, errObj := evalFastForCondition(fastCondition, env)
@@ -1256,6 +1379,9 @@ func evalForInlinedInc(fs *ForStatement, cond forConditionFastPath, env *Environ
 	bothSlots := useSlot && condUsesSlot
 
 	for {
+		if env.Cancelled() {
+			return &Error{Message: "execution cancelled"}
+		}
 		ok, errObj := evalFastForCondition(cond, env)
 		if errObj != nil {
 			return errObj
@@ -2076,6 +2202,9 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 
 	// 3. Check for builtins
 	if cmd, ok := builtin.Builtins[name]; ok {
+		if !env.IsBuiltinAllowed(name) {
+			return &Error{Message: fmt.Sprintf("builtin %q is not allowed in sandbox", name)}
+		}
 		strArgs, errObj := evalCommandArgsAsStrings(args, env, stdin, stdout, stderr)
 		if errObj != nil {
 			return errObj
@@ -2088,6 +2217,9 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	}
 
 	// 4. External command
+	if env.IsSandboxed() && !env.allowExternalCmd {
+		return &Error{Message: fmt.Sprintf("external command %q is not allowed in sandbox", name)}
+	}
 	strArgs, errObj := evalCommandArgsAsStrings(args, env, stdin, stdout, stderr)
 	if errObj != nil {
 		return errObj
@@ -2260,11 +2392,18 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 	}
 
 	if cmd, ok := builtin.Builtins[name]; ok {
+		if !env.IsBuiltinAllowed(name) {
+			return &Error{Message: fmt.Sprintf("builtin %q is not allowed in sandbox", name)}
+		}
 		exitCode := cmd.Action(args, env, stdin, stdout, stderr)
 		if exitCode != 0 {
 			return &Error{Message: fmt.Sprintf("builtin %s failed", name), Code: exitCode, Op: name}
 		}
 		return NULL
+	}
+
+	if env.IsSandboxed() && !env.allowExternalCmd {
+		return &Error{Message: fmt.Sprintf("external command %q is not allowed in sandbox", name)}
 	}
 
 	cmd := exec.Command(name, args...)
@@ -2666,6 +2805,13 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 		return &Error{Message: fmt.Sprintf("expected %d arguments, got %d", len(fn.Parameters), len(args))}
 	}
 
+	// Recursion depth check (tracked on root environment)
+	root := env.root()
+	if root.maxRecursionDepth > 0 && root.currentRecursion >= root.maxRecursionDepth {
+		return &Error{Message: fmt.Sprintf("max recursion depth exceeded (%d)", root.maxRecursionDepth)}
+	}
+	root.currentRecursion++
+
 	slotCap := fn.SlotCapacity
 	if slotCap <= 0 {
 		slotCap = len(fn.Parameters)
@@ -2678,6 +2824,7 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 			if param.TypeName != "" {
 				expected := kamiTypeNameToObjectType(param.TypeName)
 				if expected != "" && args[i].Type() != NULL_OBJ && args[i].Type() != expected {
+					root.currentRecursion--
 					return &Error{Message: fmt.Sprintf("parameter %s: expected %s, got %s", param.Name, expected, args[i].Type())}
 				}
 			}
@@ -2686,6 +2833,7 @@ func applyFunction(fn *Function, args []Object, env *Environment, stdin io.Reade
 	}
 
 	result := EvalWithIO(fn.Body, extendEnv, stdin, stdout, stderr)
+	root.currentRecursion--
 	if returnValue, ok := result.(*ReturnValue); ok {
 		return returnValue.Value
 	}

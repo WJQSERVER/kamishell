@@ -1,6 +1,9 @@
 package core
 
-import "maps"
+import (
+	"context"
+	"maps"
+)
 
 import "os"
 import "strings"
@@ -24,6 +27,16 @@ func NewEnvironment() *Environment {
 		t[key] = string(STRING_OBJ)
 	}
 	return &Environment{store: s, types: t}
+}
+
+func NewSandboxEnvironment() *Environment {
+	return &Environment{
+		store:             make(map[string]Object),
+		types:             make(map[string]string),
+		sandboxed:         true,
+		allowExternalCmd:  false,
+		maxRecursionDepth: 100,
+	}
 }
 
 func NewEnclosedEnvironment(outer *Environment) *Environment {
@@ -62,6 +75,18 @@ type Environment struct {
 	// Slot-based fast storage for resolved variables
 	slots      []Object         // indexed storage (fast path)
 	slotByName map[string]int   // name → slot index (for SetObject sync)
+
+	// Cancellation signal (set on root env by RunWithIO)
+	ctx context.Context
+	// Recursion depth tracking (root env only)
+	currentRecursion int
+
+	// Sandbox controls
+	sandboxed         bool     // marks this as a sandbox environment
+	allowExternalCmd  bool     // allow external command execution via exec.Command
+	allowedBuiltins   []string // builtin whitelist (nil = all allowed)
+	blockedBuiltins   []string // builtin blacklist
+	maxRecursionDepth int      // max function call recursion depth (0 = unlimited)
 }
 
 func (e *Environment) Clone() *Environment {
@@ -69,8 +94,19 @@ func (e *Environment) Clone() *Environment {
 		return nil
 	}
 	clone := &Environment{
-		store:        make(map[string]Object, len(e.store)),
-		packageStore: clonePackageStore(e.packageStore),
+		store:             make(map[string]Object, len(e.store)),
+		packageStore:      clonePackageStore(e.packageStore),
+		sandboxed:         e.sandboxed,
+		allowExternalCmd:  e.allowExternalCmd,
+		maxRecursionDepth: e.maxRecursionDepth,
+	}
+	if len(e.allowedBuiltins) > 0 {
+		clone.allowedBuiltins = make([]string, len(e.allowedBuiltins))
+		copy(clone.allowedBuiltins, e.allowedBuiltins)
+	}
+	if len(e.blockedBuiltins) > 0 {
+		clone.blockedBuiltins = make([]string, len(e.blockedBuiltins))
+		copy(clone.blockedBuiltins, e.blockedBuiltins)
 	}
 	if len(e.types) > 0 {
 		clone.types = make(map[string]string, len(e.types))
@@ -216,6 +252,83 @@ func (e *Environment) IsConstant(name string) bool {
 		return false
 	}
 	return e.constants[name]
+}
+
+// root walks the outer chain to find the root environment.
+func (e *Environment) root() *Environment {
+	r := e
+	for r.outer != nil {
+		r = r.outer
+	}
+	return r
+}
+
+// SetContext attaches a cancellation context to the root environment.
+func (e *Environment) SetContext(ctx context.Context) {
+	e.root().ctx = ctx
+}
+
+// Cancelled returns true if the root context has been cancelled (timeout or manual).
+func (e *Environment) Cancelled() bool {
+	ctx := e.root().ctx
+	if ctx == nil {
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// IsSandboxed returns true if this is a sandbox environment.
+func (e *Environment) IsSandboxed() bool { return e.sandboxed }
+
+// SetAllowExternalCmd controls whether external commands are allowed.
+func (e *Environment) SetAllowExternalCmd(allow bool) { e.allowExternalCmd = allow }
+
+// SetAllowedBuiltins sets the builtin whitelist (nil = all allowed).
+func (e *Environment) SetAllowedBuiltins(names []string) {
+	if len(names) > 0 {
+		e.allowedBuiltins = make([]string, len(names))
+		copy(e.allowedBuiltins, names)
+	} else {
+		e.allowedBuiltins = nil
+	}
+}
+
+// SetBlockedBuiltins sets the builtin blacklist.
+func (e *Environment) SetBlockedBuiltins(names []string) {
+	if len(names) > 0 {
+		e.blockedBuiltins = make([]string, len(names))
+		copy(e.blockedBuiltins, names)
+	} else {
+		e.blockedBuiltins = nil
+	}
+}
+
+// SetMaxRecursionDepth sets the maximum function call recursion depth.
+func (e *Environment) SetMaxRecursionDepth(depth int) { e.maxRecursionDepth = depth }
+
+// IsBuiltinAllowed checks if a builtin command is allowed in this environment.
+func (e *Environment) IsBuiltinAllowed(name string) bool {
+	if e.sandboxed && e.allowedBuiltins != nil {
+		for _, n := range e.allowedBuiltins {
+			if n == name {
+				return true
+			}
+		}
+		return false
+	}
+	if e.blockedBuiltins != nil {
+		for _, n := range e.blockedBuiltins {
+			if n == name {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func NewEmptyEnvironment() *Environment {
