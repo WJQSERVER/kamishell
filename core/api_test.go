@@ -411,6 +411,17 @@ func TestSandboxModePreservesEnvVarAccess(t *testing.T) {
 	}
 }
 
+func TestSandboxModeWithNonSandboxEnv(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, err := RunWithIO(`nonexistent_cmd_xyz`, os.Stdin, os.Stdout, os.Stderr, WithEnvironment(env), SandboxMode())
+	if err == nil {
+		t.Fatal("expected SandboxMode to block external command even on non-sandbox env")
+	}
+	if !strings.Contains(err.Error(), "not allowed in sandbox") {
+		t.Fatalf("expected sandbox error, got: %v", err)
+	}
+}
+
 func TestRunImportAndUseStdlib(t *testing.T) {
 	var buf strings.Builder
 	_, err := RunWithIO(`import "Go/strings"; print strings.Contains("hello", "ell")`, os.Stdin, &buf, os.Stderr, WithEnvironment(NewEmptyEnvironment()))
@@ -419,6 +430,31 @@ func TestRunImportAndUseStdlib(t *testing.T) {
 	}
 	if strings.TrimSpace(buf.String()) != "true" {
 		t.Fatalf("expected 'true', got %q", buf.String())
+	}
+}
+
+func TestRunRecursionDepthExceeded(t *testing.T) {
+	env := NewSandboxEnvironment()
+	env.SetMaxRecursionDepth(3)
+	_, err := RunWithIO(`func f() { f() }; f()`, os.Stdin, os.Stdout, os.Stderr, WithEnvironment(env))
+	if err == nil {
+		t.Fatal("expected max recursion depth error")
+	}
+	if !strings.Contains(err.Error(), "max recursion depth") {
+		t.Fatalf("expected recursion depth error, got: %v", err)
+	}
+}
+
+func TestRunRecursionWithinLimit(t *testing.T) {
+	env := NewSandboxEnvironment()
+	env.SetMaxRecursionDepth(50)
+	var buf strings.Builder
+	_, err := RunWithIO(`func fact(n int) int { if n <= 1 { return 1 }; return n * fact(n - 1) }; print fact(5)`, os.Stdin, &buf, os.Stderr, WithEnvironment(env))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.TrimSpace(buf.String()) != "120" {
+		t.Fatalf("expected 120, got %q", buf.String())
 	}
 }
 

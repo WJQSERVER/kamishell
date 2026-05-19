@@ -667,9 +667,12 @@ func WithTimeout(d time.Duration) RunOption {
 }
 
 // SandboxMode disables external commands on the current environment.
-// Use WithEnvironment + SandboxMode to combine a custom env with sandbox constraints.
+// If the environment is not already a sandbox, it is marked as one.
 func SandboxMode() RunOption {
 	return func(c *runConfig) {
+		if !c.env.IsSandboxed() {
+			c.env.SetSandboxed(true)
+		}
 		c.env.SetAllowExternalCmd(false)
 	}
 }

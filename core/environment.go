@@ -81,6 +81,9 @@ type Environment struct {
 	// Recursion depth tracking (root env only)
 	currentRecursion int
 
+	// Cached root environment (lazy, populated by root())
+	cachedRoot *Environment
+
 	// Sandbox controls
 	sandboxed         bool     // marks this as a sandbox environment
 	allowExternalCmd  bool     // allow external command execution via exec.Command
@@ -255,11 +258,16 @@ func (e *Environment) IsConstant(name string) bool {
 }
 
 // root walks the outer chain to find the root environment.
+// Result is cached for O(1) subsequent lookups.
 func (e *Environment) root() *Environment {
+	if e.cachedRoot != nil {
+		return e.cachedRoot
+	}
 	r := e
 	for r.outer != nil {
 		r = r.outer
 	}
+	e.cachedRoot = r
 	return r
 }
 
@@ -284,6 +292,9 @@ func (e *Environment) Cancelled() bool {
 
 // IsSandboxed returns true if this is a sandbox environment.
 func (e *Environment) IsSandboxed() bool { return e.sandboxed }
+
+// SetSandboxed marks this environment as a sandbox (true) or removes sandbox status (false).
+func (e *Environment) SetSandboxed(s bool) { e.sandboxed = s }
 
 // SetAllowExternalCmd controls whether external commands are allowed.
 func (e *Environment) SetAllowExternalCmd(allow bool) { e.allowExternalCmd = allow }
