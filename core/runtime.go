@@ -2220,7 +2220,7 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	}
 
 	// 4. External command
-	if env.IsSandboxed() && !env.allowExternalCmd {
+	if env.IsSandboxed() && !env.ExternalCmdAllowed() {
 		return &Error{Message: fmt.Sprintf("external command %q is not allowed in sandbox", name)}
 	}
 	strArgs, errObj := evalCommandArgsAsStrings(args, env, stdin, stdout, stderr)
@@ -2405,7 +2405,7 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 		return NULL
 	}
 
-	if env.IsSandboxed() && !env.allowExternalCmd {
+	if env.IsSandboxed() && !env.ExternalCmdAllowed() {
 		return &Error{Message: fmt.Sprintf("external command %q is not allowed in sandbox", name)}
 	}
 

@@ -7,12 +7,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"kamishell/builtin"
 	"kamishell/core"
-	"kamishell/make"
+	kmake "kamishell/make"
 	"kamishell/recompiler"
 
 	"github.com/WJQSERVER/readline"
@@ -22,11 +24,15 @@ func init() {
 	builtin.RegisterBuiltin(&builtin.BuiltinCommand{
 		Name:        "make",
 		Description: "Build system inspired by CMake using .km scripts",
-		Action:      make.Make,
+		Action:      kmake.Make,
 	})
 }
 
 func main() {
+	// Setup signal handling for graceful shutdown on SIGTERM
+	// (SIGINT in REPL mode is handled by readline)
+	setupSignalHandler()
+
 	compileFlag := flag.String("compile", "", "Compile .km script to binary (specify output binary name)")
 	sourceOnly := flag.String("source", "", "Compile .km script to Go source file only (specify output .go file)")
 	flag.Parse()
@@ -245,7 +251,7 @@ func NewFileHistory(path string) *FileHistory {
 
 func (h *FileHistory) Append(line string) {
 	h.History.Append(line)
-	f, err := os.OpenFile(h.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(h.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return
 	}
@@ -284,9 +290,8 @@ func compileScript(scriptFile, binaryName, sourceOnly string) {
 	// Format the generated Go code
 	formatted, err := format.Source([]byte(compiled.Source))
 	if err != nil {
-		// Output unformatted with warning
-		fmt.Fprintf(os.Stderr, "Warning: go format failed: %v\n", err)
-		formatted = []byte(compiled.Source)
+		fmt.Fprintf(os.Stderr, "Error: generated Go source is invalid: %v\n", err)
+		os.Exit(1)
 	}
 
 	if sourceOnly != "" {
@@ -325,4 +330,19 @@ func compileScript(scriptFile, binaryName, sourceOnly string) {
 	}
 
 	fmt.Printf("Compiled %s -> %s\n", scriptFile, binaryName)
+}
+
+// setupSignalHandler registers signal handlers for graceful shutdown.
+// In REPL mode, readline handles SIGINT, so this only handles SIGTERM.
+func setupSignalHandler() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigCh
+		fmt.Fprintf(os.Stderr, "\nreceived %v, shutting down...\n", sig)
+
+		builtin.KillAllJobs()
+		os.Exit(128 + int(sig.(syscall.Signal)))
+	}()
 }

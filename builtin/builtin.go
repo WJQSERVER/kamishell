@@ -125,6 +125,19 @@ func CompleteJobWithResult(id int, success bool, errMsg string) {
 	}
 }
 
+// KillAllJobs marks all running jobs as killed.
+// Used by signal handler during graceful shutdown.
+func KillAllJobs() {
+	JobsMu.Lock()
+	defer JobsMu.Unlock()
+	for _, job := range Jobs {
+		if job.Status == "Running" {
+			job.Status = "Killed"
+			job.Error = "process terminated by signal"
+		}
+	}
+}
+
 func PreprocessArgs(args []string) []string {
 	var result []string
 	for _, arg := range args {

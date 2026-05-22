@@ -50,9 +50,20 @@ func NewScriptEnvironment(outer *Environment) *Environment {
 func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environment {
 	storeCap := max(paramCapacity, 1)
 	env := &Environment{
-		store:        make(map[string]Object, storeCap),
-		outer:        outer,
-		packageStore: outerPackageStore(outer),
+		store:             make(map[string]Object, storeCap),
+		outer:             outer,
+		packageStore:      outerPackageStore(outer),
+		sandboxed:         outer.sandboxed,
+		allowExternalCmd:  outer.allowExternalCmd,
+		maxRecursionDepth: outer.maxRecursionDepth,
+	}
+	if outer.allowedBuiltins != nil {
+		env.allowedBuiltins = make([]string, len(outer.allowedBuiltins))
+		copy(env.allowedBuiltins, outer.allowedBuiltins)
+	}
+	if outer.blockedBuiltins != nil {
+		env.blockedBuiltins = make([]string, len(outer.blockedBuiltins))
+		copy(env.blockedBuiltins, outer.blockedBuiltins)
 	}
 	if paramCapacity > 0 {
 		env.slots = make([]Object, 0, paramCapacity)
@@ -290,8 +301,26 @@ func (e *Environment) Cancelled() bool {
 	}
 }
 
-// IsSandboxed returns true if this is a sandbox environment.
-func (e *Environment) IsSandboxed() bool { return e.sandboxed }
+// IsSandboxed returns true if this or any outer environment is sandboxed.
+func (e *Environment) IsSandboxed() bool {
+	for env := e; env != nil; env = env.outer {
+		if env.sandboxed {
+			return true
+		}
+	}
+	return false
+}
+
+// ExternalCmdAllowed returns true if external commands are allowed.
+// Traverses the outer chain to handle inherited sandbox settings.
+func (e *Environment) ExternalCmdAllowed() bool {
+	for env := e; env != nil; env = env.outer {
+		if env.sandboxed {
+			return env.allowExternalCmd
+		}
+	}
+	return true
+}
 
 // SetSandboxed marks this environment as a sandbox (true) or removes sandbox status (false).
 func (e *Environment) SetSandboxed(s bool) { e.sandboxed = s }
@@ -323,19 +352,22 @@ func (e *Environment) SetBlockedBuiltins(names []string) {
 func (e *Environment) SetMaxRecursionDepth(depth int) { e.maxRecursionDepth = depth }
 
 // IsBuiltinAllowed checks if a builtin command is allowed in this environment.
+// Traverses the outer chain to handle inherited sandbox settings.
 func (e *Environment) IsBuiltinAllowed(name string) bool {
-	if e.sandboxed && e.allowedBuiltins != nil {
-		for _, n := range e.allowedBuiltins {
-			if n == name {
-				return true
+	for env := e; env != nil; env = env.outer {
+		if env.sandboxed && env.allowedBuiltins != nil {
+			for _, n := range env.allowedBuiltins {
+				if n == name {
+					return true
+				}
 			}
+			return false
 		}
-		return false
-	}
-	if e.blockedBuiltins != nil {
-		for _, n := range e.blockedBuiltins {
-			if n == name {
-				return false
+		if env.blockedBuiltins != nil {
+			for _, n := range env.blockedBuiltins {
+				if n == name {
+					return false
+				}
 			}
 		}
 	}
