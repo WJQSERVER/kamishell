@@ -786,10 +786,13 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 	case *LogicalStatement:
 		return evalLogicalStatement(node, env, stdin, stdout, stderr)
 	case *GoStatement:
-		id := builtin.RegisterJob(node.String())
+		jobCtx, jobCancel := context.WithCancel(env.GetContext())
+		id := builtin.RegisterJob(node.String(), jobCancel)
 		asyncEnv := env.Clone()
+		asyncEnv.SetContext(jobCtx)
 		task := &Task{ID: id, Done: make(chan struct{})}
 		go func() {
+			defer jobCancel()
 			defer func() {
 				if r := recover(); r != nil {
 					task.Result = &Error{Message: fmt.Sprintf("goroutine panic: %v", r)}
@@ -813,10 +816,13 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		}()
 		return task
 	case *GoExpression:
-		id := builtin.RegisterJob(node.String())
+		jobCtx, jobCancel := context.WithCancel(env.GetContext())
+		id := builtin.RegisterJob(node.String(), jobCancel)
 		asyncEnv := env.Clone()
+		asyncEnv.SetContext(jobCtx)
 		task := &Task{ID: id, Done: make(chan struct{})}
 		go func() {
+			defer jobCancel()
 			defer func() {
 				if r := recover(); r != nil {
 					task.Result = &Error{Message: fmt.Sprintf("goroutine panic: %v", r)}
@@ -840,9 +846,12 @@ func EvalWithIO(node Node, env *Environment, stdin io.Reader, stdout io.Writer, 
 		}()
 		return task
 	case *BackgroundStatement:
-		id := builtin.RegisterJob(node.String())
+		jobCtx, jobCancel := context.WithCancel(env.GetContext())
+		id := builtin.RegisterJob(node.String(), jobCancel)
 		asyncEnv := env.Clone()
+		asyncEnv.SetContext(jobCtx)
 		go func() {
+			defer jobCancel()
 			result := EvalWithIO(node.Stmt, asyncEnv, stdin, stdout, stderr)
 			if isError(result) {
 				builtin.CompleteJobWithResult(id, false, result.Inspect())
@@ -2227,7 +2236,7 @@ func executeCommand(name string, args []Expression, env *Environment, stdin io.R
 	if errObj != nil {
 		return errObj
 	}
-	cmd := exec.Command(name, strArgs...)
+	cmd := exec.CommandContext(env.GetContext(), name, strArgs...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Stdin = stdin
@@ -2409,7 +2418,7 @@ func executeCommandWithStrings(name string, args []string, env *Environment, std
 		return &Error{Message: fmt.Sprintf("external command %q is not allowed in sandbox", name)}
 	}
 
-	cmd := exec.Command(name, args...)
+	cmd := exec.CommandContext(env.GetContext(), name, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Stdin = stdin

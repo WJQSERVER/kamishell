@@ -287,6 +287,16 @@ func (e *Environment) SetContext(ctx context.Context) {
 	e.root().ctx = ctx
 }
 
+// GetContext returns the root cancellation context.
+// Returns context.Background() if no context has been set.
+func (e *Environment) GetContext() context.Context {
+	ctx := e.root().ctx
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
 // Cancelled returns true if the root context has been cancelled (timeout or manual).
 func (e *Environment) Cancelled() bool {
 	ctx := e.root().ctx

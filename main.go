@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"go/format"
@@ -29,14 +30,14 @@ func init() {
 }
 
 func main() {
-	// Setup signal handling for graceful shutdown on SIGTERM
-	// (SIGINT in REPL mode is handled by readline)
-	setupSignalHandler()
+	ctx, cancel := context.WithCancel(context.Background())
+	setupSignalHandler(cancel)
 
 	compileFlag := flag.String("compile", "", "Compile .km script to binary (specify output binary name)")
 	sourceOnly := flag.String("source", "", "Compile .km script to Go source file only (specify output .go file)")
 	flag.Parse()
 	env := core.NewEnvironment()
+	env.SetContext(ctx)
 
 	// Load .kamirc
 	loadConfig(env)
@@ -334,15 +335,14 @@ func compileScript(scriptFile, binaryName, sourceOnly string) {
 
 // setupSignalHandler registers signal handlers for graceful shutdown.
 // In REPL mode, readline handles SIGINT, so this only handles SIGTERM.
-func setupSignalHandler() {
+func setupSignalHandler(cancel context.CancelFunc) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
 
 	go func() {
-		sig := <-sigCh
-		fmt.Fprintf(os.Stderr, "\nreceived %v, shutting down...\n", sig)
-
+		<-sigCh
+		cancel()
 		builtin.KillAllJobs()
-		os.Exit(128 + int(sig.(syscall.Signal)))
+		os.Exit(128 + int(syscall.SIGTERM))
 	}()
 }
