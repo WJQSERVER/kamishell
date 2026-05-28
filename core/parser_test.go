@@ -672,3 +672,919 @@ func TestParsePrefixNegationStatement(t *testing.T) {
 		t.Errorf("expected operator -, got %q", prefix.Operator)
 	}
 }
+
+// --- Exec Keyword Form (target behavior) ---
+// These tests constrain the expected behavior of the new exec implementation.
+// They should FAIL or produce compilation errors until the implementation is done.
+
+// 关键字形式：基本裸词
+func TestParseExecBareWordBasic(t *testing.T) {
+	input := `exec echo hello`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg0, ok := stmt.Args[0].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[0] is not *StringLiteral. got=%T", stmt.Args[0])
+	}
+	if arg0.Value != "echo" {
+		t.Errorf("expected arg[0] %q, got %q", "echo", arg0.Value)
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "hello" {
+		t.Errorf("expected arg[1] %q, got %q", "hello", arg1.Value)
+	}
+}
+
+// 关键字形式：多参数
+func TestParseExecBareWordMultipleArgs(t *testing.T) {
+	input := `exec ls -la /tmp`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 3 {
+		t.Fatalf("expected 3 args, got %d", len(stmt.Args))
+	}
+
+	expected := []string{"ls", "-la", "/tmp"}
+	for i, exp := range expected {
+		arg, ok := stmt.Args[i].(*StringLiteral)
+		if !ok {
+			t.Fatalf("arg[%d] is not *StringLiteral. got=%T", i, stmt.Args[i])
+		}
+		if arg.Value != exp {
+			t.Errorf("expected arg[%d] %q, got %q", i, exp, arg.Value)
+		}
+	}
+}
+
+// 关键字形式：无参数
+func TestParseExecBareWordNoArgs(t *testing.T) {
+	input := `exec`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 0 {
+		t.Fatalf("expected 0 args, got %d", len(stmt.Args))
+	}
+}
+
+// 关键字形式：空参数后跟分号
+func TestParseExecBareWordEmptyWithSemicolon(t *testing.T) {
+	input := `exec; print 1`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 0 {
+		t.Fatalf("expected 0 args, got %d", len(stmt.Args))
+	}
+}
+
+// 关键字形式：双引号剥离
+func TestParseExecBareWordDoubleQuotes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`exec echo "my document.txt"`, []string{"echo", "my document.txt"}},
+		{`exec grep "pattern with spaces" file.txt`, []string{"grep", "pattern with spaces", "file.txt"}},
+		{`exec curl -H "Content-Type: application/json" url`, []string{"curl", "-H", "Content-Type: application/json", "url"}},
+	}
+
+	for _, tt := range tests {
+		l := NewLexer(tt.input)
+		p := NewParser(l)
+		program := p.ParseProgram()
+
+		stmt, ok := program.Statements[0].(*ExecStatement)
+		if !ok {
+			t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+		}
+
+		if len(stmt.Args) != len(tt.expected) {
+			t.Fatalf("expected %d args, got %d", len(tt.expected), len(stmt.Args))
+		}
+
+		for i, expected := range tt.expected {
+			arg, ok := stmt.Args[i].(*StringLiteral)
+			if !ok {
+				t.Fatalf("arg[%d] is not *StringLiteral. got=%T", i, stmt.Args[i])
+			}
+			if arg.Value != expected {
+				t.Errorf("expected arg[%d] %q, got %q", i, expected, arg.Value)
+			}
+		}
+	}
+}
+
+// 关键字形式：单引号剥离
+func TestParseExecBareWordSingleQuotes(t *testing.T) {
+	input := `exec echo 'my document.txt'`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "my document.txt" {
+		t.Errorf("expected arg[1] %q, got %q", "my document.txt", arg1.Value)
+	}
+}
+
+// 关键字形式：分号终止
+func TestParseExecBareWordSemicolon(t *testing.T) {
+	input := `exec echo hello; print 1`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+}
+
+// 关键字形式：&& 终止
+func TestParseExecBareWordLogicalAnd(t *testing.T) {
+	input := `exec echo hello && print 1`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	logicStmt, ok := program.Statements[0].(*LogicalStatement)
+	if !ok {
+		t.Fatalf("stmt is not *LogicalStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := logicStmt.Left.(*ExecStatement)
+	if !ok {
+		t.Fatalf("left is not *ExecStatement. got=%T", logicStmt.Left)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：|| 终止
+func TestParseExecBareWordLogicalOr(t *testing.T) {
+	input := `exec echo hello || print 1`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	logicStmt, ok := program.Statements[0].(*LogicalStatement)
+	if !ok {
+		t.Fatalf("stmt is not *LogicalStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := logicStmt.Left.(*ExecStatement)
+	if !ok {
+		t.Fatalf("left is not *ExecStatement. got=%T", logicStmt.Left)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：管道终止
+func TestParseExecBareWordPipe(t *testing.T) {
+	input := `exec echo hello | cat`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	pipeStmt, ok := program.Statements[0].(*PipeStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PipeStatement. got=%T", program.Statements[0])
+	}
+
+	if len(pipeStmt.Commands) != 2 {
+		t.Fatalf("expected 2 commands, got %d", len(pipeStmt.Commands))
+	}
+
+	execStmt, ok := pipeStmt.Commands[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("command[0] is not *ExecStatement. got=%T", pipeStmt.Commands[0])
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：重定向终止（当前行为：-> 作为分隔符返回）
+func TestParseExecBareWordRedirect(t *testing.T) {
+	input := `exec echo hello -> out.txt`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	// scanCommandWords returns at -> delimiter, parser sees peekToken=REDIRECT
+	// and wraps in RedirectStatement, but the target parsing is imperfect
+	// because lexer position is after the delimiter.
+	// This is a known limitation shared with parseCommandStatement.
+	if len(program.Statements) < 1 {
+		t.Fatalf("expected at least 1 statement, got %d", len(program.Statements))
+	}
+
+	// The first statement should be a RedirectStatement
+	redirectStmt, ok := program.Statements[0].(*RedirectStatement)
+	if !ok {
+		t.Fatalf("stmt is not *RedirectStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := redirectStmt.Source.(*ExecStatement)
+	if !ok {
+		t.Fatalf("source is not *ExecStatement. got=%T", redirectStmt.Source)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：追加重定向终止
+func TestParseExecBareWordAppend(t *testing.T) {
+	input := `exec echo hello >> out.txt`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) < 1 {
+		t.Fatalf("expected at least 1 statement, got %d", len(program.Statements))
+	}
+
+	redirectStmt, ok := program.Statements[0].(*RedirectStatement)
+	if !ok {
+		t.Fatalf("stmt is not *RedirectStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := redirectStmt.Source.(*ExecStatement)
+	if !ok {
+		t.Fatalf("source is not *ExecStatement. got=%T", redirectStmt.Source)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：后台执行终止
+func TestParseExecBareWordBackground(t *testing.T) {
+	input := `exec echo hello &`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	bgStmt, ok := program.Statements[0].(*BackgroundStatement)
+	if !ok {
+		t.Fatalf("stmt is not *BackgroundStatement. got=%T", program.Statements[0])
+	}
+
+	execStmt, ok := bgStmt.Stmt.(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", bgStmt.Stmt)
+	}
+
+	if len(execStmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(execStmt.Args))
+	}
+}
+
+// 关键字形式：变量插值（$HOME）
+func TestParseExecBareWordVariableInterpolation(t *testing.T) {
+	input := `x := "world"; exec echo $x`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[1].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[1])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+
+	// $x should be detected for interpolation
+	if arg1.Parts == nil && arg1.Obj == nil {
+		t.Fatal("expected $x to be detected for interpolation")
+	}
+}
+
+// 关键字形式：双引号内变量展开
+func TestParseExecBareWordDoubleQuoteInterpolation(t *testing.T) {
+	input := `x := "world"; exec echo "$x"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[1].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[1])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+
+	// "$x" should be detected for interpolation
+	if arg1.Parts == nil && arg1.Obj == nil {
+		t.Fatal("expected $x in double quotes to be detected for interpolation")
+	}
+}
+
+// 关键字形式：URL 正确处理
+func TestParseExecBareWordURL(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{`exec curl http://localhost:8080`, []string{"curl", "http://localhost:8080"}},
+		{`exec wget https://example.com/file.txt`, []string{"wget", "https://example.com/file.txt"}},
+	}
+
+	for _, tt := range tests {
+		l := NewLexer(tt.input)
+		p := NewParser(l)
+		program := p.ParseProgram()
+
+		stmt, ok := program.Statements[0].(*ExecStatement)
+		if !ok {
+			t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+		}
+
+		if len(stmt.Args) != len(tt.expected) {
+			t.Fatalf("expected %d args, got %d", len(tt.expected), len(stmt.Args))
+		}
+
+		for i, expected := range tt.expected {
+			arg, ok := stmt.Args[i].(*StringLiteral)
+			if !ok {
+				t.Fatalf("arg[%d] is not *StringLiteral. got=%T", i, stmt.Args[i])
+			}
+			if arg.Value != expected {
+				t.Errorf("expected arg[%d] %q, got %q", i, expected, arg.Value)
+			}
+		}
+	}
+}
+
+// 关键字形式：不展开 glob
+func TestParseExecBareWordNoGlobExpansion(t *testing.T) {
+	input := `exec echo *.go`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "*.go" {
+		t.Errorf("expected arg[1] %q, got %q", "*.go", arg1.Value)
+	}
+}
+
+// 关键字形式：不展开 home
+func TestParseExecBareWordNoHomeExpansion(t *testing.T) {
+	input := `exec echo ~`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "~" {
+		t.Errorf("expected arg[1] %q, got %q", "~", arg1.Value)
+	}
+}
+
+// 关键字形式：单引号内变量不展开
+func TestParseExecBareWordSingleQuoteNoInterpolation(t *testing.T) {
+	input := `exec echo '$HOME'`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	stmt, ok := program.Statements[0].(*ExecStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ExecStatement. got=%T", program.Statements[0])
+	}
+
+	if len(stmt.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(stmt.Args))
+	}
+
+	arg1, ok := stmt.Args[1].(*StringLiteral)
+	if !ok {
+		t.Fatalf("arg[1] is not *StringLiteral. got=%T", stmt.Args[1])
+	}
+	if arg1.Value != "$HOME" {
+		t.Errorf("expected arg[1] %q, got %q", "$HOME", arg1.Value)
+	}
+	// Single quotes should NOT trigger interpolation
+	if arg1.Parts != nil {
+		t.Fatal("expected no interpolation in single quotes")
+	}
+}
+
+// 弃用形式：exec "..." 应该报错或产生警告
+func TestParseExecDeprecatedStringForm(t *testing.T) {
+	input := `exec "echo hello"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Should have parser errors
+	if len(p.Errors()) == 0 {
+		t.Fatal("expected parser errors for deprecated exec \"...\" form")
+	}
+}
+
+// 弃用形式：exec "" 应该报错
+func TestParseExecDeprecatedEmptyString(t *testing.T) {
+	input := `exec ""`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Should have parser errors
+	if len(p.Errors()) == 0 {
+		t.Fatal("expected parser errors for deprecated exec \"\" form")
+	}
+}
+
+// --- Redirect + Pipe / Append / Background ---
+
+// redirect IDENT target 后接 pipe：应该产生 RedirectStatement 包裹 PipeStatement
+func TestParseRedirectIdentTargetThenPipe(t *testing.T) {
+	input := `print "hello" -> out | cat`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	// Bug diagnosis: IDENT branch in parseRedirectStatement does extra p.nextToken(),
+	// consuming the PIPE token. Result: 2 statements instead of 1.
+	//   [0] RedirectStatement: print "hello" -> "out"
+	//   [1] CommandStatement: cat   (should be part of pipe)
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement (pipe should wrap redirect+cat), got %d — PIPE token consumed by redirect IDENT branch",
+			len(program.Statements))
+	}
+
+	pipeStmt, ok := program.Statements[0].(*PipeStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PipeStatement (pipe lost after redirect IDENT target). got=%T", program.Statements[0])
+	}
+
+	if len(pipeStmt.Commands) != 2 {
+		t.Fatalf("expected 2 pipeline commands, got %d", len(pipeStmt.Commands))
+	}
+
+	redirectStmt, ok := pipeStmt.Commands[0].(*RedirectStatement)
+	if !ok {
+		t.Fatalf("pipe.Commands[0] is not *RedirectStatement. got=%T", pipeStmt.Commands[0])
+	}
+
+	if redirectStmt.Source == nil {
+		t.Fatal("redirect source is nil")
+	}
+
+	catCmd, ok := pipeStmt.Commands[1].(*CommandStatement)
+	if !ok {
+		t.Fatalf("pipe.Commands[1] is not *CommandStatement. got=%T", pipeStmt.Commands[1])
+	}
+
+	if catCmd.Name != "cat" {
+		t.Errorf("expected command name 'cat', got %q", catCmd.Name)
+	}
+}
+
+// redirect STRING target 后接 pipe：expression 分支不受 bug 影响
+func TestParseRedirectStringTargetThenPipe(t *testing.T) {
+	input := `print "hello" -> "out" | cat`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	pipeStmt, ok := program.Statements[0].(*PipeStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PipeStatement. got=%T", program.Statements[0])
+	}
+
+	if len(pipeStmt.Commands) != 2 {
+		t.Fatalf("expected 2 pipeline commands, got %d", len(pipeStmt.Commands))
+	}
+}
+
+// redirect IDENT target 后接 append：应该产生两个重定向
+func TestParseRedirectIdentTargetThenAppend(t *testing.T) {
+	input := `print "hello" -> out >> log`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement (append should wrap inner redirect), got %d — >> token consumed by redirect IDENT branch",
+			len(program.Statements))
+	}
+
+	appendStmt, ok := program.Statements[0].(*RedirectStatement)
+	if !ok {
+		t.Fatalf("stmt is not *RedirectStatement. got=%T", program.Statements[0])
+	}
+
+	if !appendStmt.Append {
+		t.Fatal("expected outer redirect to be append (>>)")
+	}
+
+	innerRedirect, ok := appendStmt.Source.(*RedirectStatement)
+	if !ok {
+		t.Fatalf("append source is not *RedirectStatement (chained redirect lost). got=%T", appendStmt.Source)
+	}
+
+	if innerRedirect.Append {
+		t.Fatal("expected inner redirect to be overwrite (->)")
+	}
+}
+
+// redirect IDENT target 后接 background：应该产生 BackgroundStatement
+func TestParseRedirectIdentTargetThenBackground(t *testing.T) {
+	input := `print "hello" -> out &`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	bgStmt, ok := program.Statements[0].(*BackgroundStatement)
+	if !ok {
+		t.Fatalf("stmt is not *BackgroundStatement (& lost after redirect IDENT target). got=%T", program.Statements[0])
+	}
+
+	redirectStmt, ok := bgStmt.Stmt.(*RedirectStatement)
+	if !ok {
+		t.Fatalf("background stmt is not *RedirectStatement. got=%T", bgStmt.Stmt)
+	}
+
+	if redirectStmt.Source == nil {
+		t.Fatal("redirect source is nil")
+	}
+}
+
+// redirect IDENT target 后接逻辑运算符：应该产生 LogicalStatement
+func TestParseRedirectIdentTargetThenLogicalAnd(t *testing.T) {
+	input := `print "hello" -> out && print "done"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement (logical should wrap redirect+print), got %d — && token consumed by redirect IDENT branch",
+			len(program.Statements))
+	}
+
+	logicalStmt, ok := program.Statements[0].(*LogicalStatement)
+	if !ok {
+		t.Fatalf("stmt is not *LogicalStatement (&& lost after redirect IDENT target). got=%T", program.Statements[0])
+	}
+
+	if logicalStmt.Operator != "&&" {
+		t.Errorf("expected operator &&, got %q", logicalStmt.Operator)
+	}
+
+	redirectStmt, ok := logicalStmt.Left.(*RedirectStatement)
+	if !ok {
+		t.Fatalf("left is not *RedirectStatement. got=%T", logicalStmt.Left)
+	}
+
+	if redirectStmt.Source == nil {
+		t.Fatal("redirect source is nil")
+	}
+}
+
+// exec 裸词 + redirect + pipe：也受 IDENT 分支影响
+func TestParseExecBareWordRedirectThenPipe(t *testing.T) {
+	input := `exec echo hello -> out | cat`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements", input, len(program.Statements))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement (pipe should wrap exec-redirect+cat), got %d — PIPE token consumed by redirect IDENT branch",
+			len(program.Statements))
+	}
+
+	pipeStmt, ok := program.Statements[0].(*PipeStatement)
+	if !ok {
+		t.Fatalf("stmt is not *PipeStatement (pipe lost after exec redirect). got=%T", program.Statements[0])
+	}
+
+	if len(pipeStmt.Commands) != 2 {
+		t.Fatalf("expected 2 pipeline commands, got %d", len(pipeStmt.Commands))
+	}
+}
+
+// ============================================================
+// Silent error swallowing — P0
+// ============================================================
+
+// parseGroupedExpression 缺少右括号：应产生 parser error
+func TestParseGroupedExprMissingRParen(t *testing.T) {
+	input := `(1 + 2`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseGroupedExpression returns nil silently when ) is missing.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ')', got 0 errors — parseGroupedExpression swallows error silently")
+	}
+}
+
+// parseGroupedExpression 缺少右括号，后跟更多 token
+func TestParseGroupedExprMissingRParenWithContinuation(t *testing.T) {
+	input := `(1 + 2; print "hello"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	t.Logf("Input: %q → %d statements, %d errors", input, len(program.Statements), len(p.Errors()))
+	for i, stmt := range program.Statements {
+		t.Logf("  [%d] %T: %s", i, stmt, stmt.String())
+	}
+	for _, e := range p.Errors() {
+		t.Logf("  Error: %s", e)
+	}
+
+	// Should have at least one error for the missing )
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ')', got 0 errors")
+	}
+}
+
+// parseGroupedExpression 缺少右括号，作为 if 条件
+func TestParseGroupedExprMissingRParenInIfCondition(t *testing.T) {
+	input := `if (x > 5 { print "big" }`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: condition parsing silently fails, if statement gets nil condition.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ')' in if condition, got 0 errors")
+	}
+}
+
+// parseGroupedExpression 正常情况不应报错
+func TestParseGroupedExprValid(t *testing.T) {
+	input := `(1 + 2); print "ok"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("unexpected parser errors: %v", p.Errors())
+	}
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+}
+
+// parseMemberExpression 属性不是标识符（数字字面量）：应产生 parser error
+// Note: obj.123 is tokenized as IDENT FLOAT by lexer (.123 → float literal),
+// so parseMemberExpression is never entered. Use obj.( to trigger the bug.
+func TestParseMemberExprNonIdentProperty(t *testing.T) {
+	input := `obj.()`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseMemberExpression returns nil silently when property is not IDENT.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for non-ident member property '.()', got 0 errors — parseMemberExpression swallows error silently")
+	}
+}
+
+// parseMemberExpression 属性是关键字
+func TestParseMemberExprKeywordProperty(t *testing.T) {
+	input := `obj.if`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseMemberExpression returns nil when property is a keyword token (IF).
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for keyword member property '.if', got 0 errors")
+	}
+}
+
+// parseMemberExpression 正常情况不应报错
+func TestParseMemberExprValid(t *testing.T) {
+	input := `obj.method`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("unexpected parser errors: %v", p.Errors())
+	}
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+}
+
+// parseExpressionList 数组缺少右方括号：应产生 parser error
+func TestParseArrayMissingRBracket(t *testing.T) {
+	input := `[1, 2, 3`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseExpressionList returns without error when ] is missing.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ']', got 0 errors — parseExpressionList swallows error silently")
+	}
+}
+
+// parseExpressionList 函数调用缺少右括号
+func TestParseCallMissingRParen(t *testing.T) {
+	input := `foo(1, 2`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	// Bug: parseExpressionList returns without error when ) is missing.
+	// Expected: at least one parser error.
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing ')' in call, got 0 errors — parseExpressionList swallows error silently")
+	}
+}
+
+// parseExpressionList 空数组不应报错
+func TestParseArrayValid(t *testing.T) {
+	input := `[1, 2, 3]; print "ok"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		t.Fatalf("unexpected parser errors: %v", p.Errors())
+	}
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+}

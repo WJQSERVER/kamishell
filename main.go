@@ -1,18 +1,21 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"go/format"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"kamishell/builtin"
 	"kamishell/core"
-	"kamishell/make"
+	kmake "kamishell/make"
 	"kamishell/recompiler"
 
 	"github.com/WJQSERVER/readline"
@@ -22,15 +25,19 @@ func init() {
 	builtin.RegisterBuiltin(&builtin.BuiltinCommand{
 		Name:        "make",
 		Description: "Build system inspired by CMake using .km scripts",
-		Action:      make.Make,
+		Action:      kmake.Make,
 	})
 }
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	setupSignalHandler(cancel)
+
 	compileFlag := flag.String("compile", "", "Compile .km script to binary (specify output binary name)")
 	sourceOnly := flag.String("source", "", "Compile .km script to Go source file only (specify output .go file)")
 	flag.Parse()
 	env := core.NewEnvironment()
+	env.SetContext(ctx)
 
 	// Load .kamirc
 	loadConfig(env)
@@ -179,6 +186,14 @@ func runInput(input string, env *core.Environment, isRepl bool) {
 	p := core.NewParser(l)
 
 	program := p.ParseProgram()
+
+	if errs := p.Errors(); len(errs) > 0 {
+		for _, err := range errs {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+		}
+		return
+	}
+
 	core.Fold(program)
 	core.Resolve(program)
 	result := core.Eval(program, env)
@@ -245,7 +260,7 @@ func NewFileHistory(path string) *FileHistory {
 
 func (h *FileHistory) Append(line string) {
 	h.History.Append(line)
-	f, err := os.OpenFile(h.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(h.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return
 	}
@@ -284,9 +299,8 @@ func compileScript(scriptFile, binaryName, sourceOnly string) {
 	// Format the generated Go code
 	formatted, err := format.Source([]byte(compiled.Source))
 	if err != nil {
-		// Output unformatted with warning
-		fmt.Fprintf(os.Stderr, "Warning: go format failed: %v\n", err)
-		formatted = []byte(compiled.Source)
+		fmt.Fprintf(os.Stderr, "Error: generated Go source is invalid: %v\n", err)
+		os.Exit(1)
 	}
 
 	if sourceOnly != "" {
@@ -325,4 +339,18 @@ func compileScript(scriptFile, binaryName, sourceOnly string) {
 	}
 
 	fmt.Printf("Compiled %s -> %s\n", scriptFile, binaryName)
+}
+
+// setupSignalHandler registers signal handlers for graceful shutdown.
+// In REPL mode, readline handles SIGINT, so this only handles SIGTERM.
+func setupSignalHandler(cancel context.CancelFunc) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+
+	go func() {
+		<-sigCh
+		cancel()
+		builtin.KillAllJobs()
+		os.Exit(128 + int(syscall.SIGTERM))
+	}()
 }

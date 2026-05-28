@@ -63,10 +63,22 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		fmt.Fprintln(stdout, dir)
 	}
 
-	// Calculate new PWD
+	// Capture current cwd for OLDPWD and logical path computation.
 	curDir, err := os.Getwd()
 	if err == nil {
 		env.SetString("OLDPWD", curDir)
+	}
+
+	// In logical mode (-L, default), compute target path BEFORE os.Chdir.
+	// Otherwise relative paths like ".." would be resolved against the new cwd
+	// (after chdir), causing PWD to drift one level too far.
+	logicalTarget := ""
+	if !usePhysical {
+		if filepath.IsAbs(dir) {
+			logicalTarget = filepath.Clean(dir)
+		} else if curDir != "" {
+			logicalTarget = filepath.Clean(filepath.Join(curDir, dir))
+		}
 	}
 
 	err = os.Chdir(dir)
@@ -81,11 +93,8 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		return 1
 	}
 	if !usePhysical {
-		// Logical path calculation is complex in general,
-		// but we can try to use filepath.Abs or join if it's relative.
-		absDir, err := filepath.Abs(dir)
-		if err == nil {
-			newDir = absDir
+		if logicalTarget != "" {
+			newDir = logicalTarget
 		}
 	} else {
 		physDir, err := filepath.EvalSymlinks(newDir)
@@ -94,6 +103,6 @@ func Cd(args []string, env Environment, stdin io.Reader, stdout io.Writer, stder
 		}
 	}
 
-	env.Set("PWD", newDir)
+	env.SetString("PWD", newDir)
 	return 0
 }

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -11,6 +12,8 @@ type LexerState struct {
 	ReadPosition int
 	Ch           byte
 	PrevToken    TokenType
+	Line         int
+	Column       int
 }
 
 type Lexer struct {
@@ -19,16 +22,31 @@ type Lexer struct {
 	readPosition int
 	ch           byte
 	prevToken    TokenType
+	line         int
+	column       int
+	errors       []string
 }
 
 func NewLexer(input string) *Lexer {
-	l := &Lexer{input: input}
+	l := &Lexer{input: input, line: 1, column: 0}
 	l.readChar()
 	l.skipShebang()
 	return l
 }
 
+func (l *Lexer) Errors() []string {
+	return l.errors
+}
+
+func (l *Lexer) addError(msg string) {
+	l.errors = append(l.errors, msg)
+}
+
 func (l *Lexer) readChar() {
+	if l.ch == '\n' {
+		l.line++
+		l.column = 0
+	}
 	if l.readPosition >= len(l.input) {
 		l.ch = 0
 	} else {
@@ -36,6 +54,7 @@ func (l *Lexer) readChar() {
 	}
 	l.position = l.readPosition
 	l.readPosition++
+	l.column++
 }
 
 func (l *Lexer) skipShebang() {
@@ -55,6 +74,8 @@ func (l *Lexer) GetPosition() LexerState {
 		ReadPosition: l.readPosition,
 		Ch:           l.ch,
 		PrevToken:    l.prevToken,
+		Line:         l.line,
+		Column:       l.column,
 	}
 }
 
@@ -63,6 +84,8 @@ func (l *Lexer) SetPosition(state LexerState) {
 	l.readPosition = state.ReadPosition
 	l.ch = state.Ch
 	l.prevToken = state.PrevToken
+	l.line = state.Line
+	l.column = state.Column
 }
 
 func (l *Lexer) NextToken() Token {
@@ -74,7 +97,7 @@ func (l *Lexer) NextToken() Token {
 		} else if l.ch == '\n' {
 			if l.isCompletable() {
 				l.readChar()
-				tok = Token{Type: SEMICOLON, Literal: ";"}
+				tok = Token{Type: SEMICOLON, Literal: ";", Line: l.line, Column: l.column}
 				tok.Start = l.position
 				tok.End = l.position + 1
 				l.prevToken = SEMICOLON
@@ -98,121 +121,138 @@ func (l *Lexer) NextToken() Token {
 	case '=':
 		if l.peekChar() == '=' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: EQ, Literal: "==", Start: start, End: l.readPosition}
+			tok = Token{Type: EQ, Literal: "==", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else {
-			tok = Token{Type: ASSIGN, Literal: "=", Start: l.position, End: l.position + 1}
+			tok = Token{Type: ASSIGN, Literal: "=", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 		}
 	case ':':
 		if l.peekChar() == '=' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: COLON_ASSIGN, Literal: ":=", Start: start, End: l.readPosition}
+			tok = Token{Type: COLON_ASSIGN, Literal: ":=", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else {
-			tok = Token{Type: COLON, Literal: ":", Start: l.position, End: l.position + 1}
+			tok = Token{Type: COLON, Literal: ":", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 		}
 	case '|':
 		if l.peekChar() == '|' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: OR, Literal: "||", Start: start, End: l.readPosition}
+			tok = Token{Type: OR, Literal: "||", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else {
-			tok = Token{Type: PIPE, Literal: "|", Start: l.position, End: l.position + 1}
+			tok = Token{Type: PIPE, Literal: "|", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 		}
 	case '&':
 		if l.peekChar() == '&' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: AND, Literal: "&&", Start: start, End: l.readPosition}
+			tok = Token{Type: AND, Literal: "&&", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else {
-			tok = Token{Type: AMPERSAND, Literal: "&", Start: l.position, End: l.position + 1}
+			tok = Token{Type: AMPERSAND, Literal: "&", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 		}
 	case '>':
 		if l.peekChar() == '>' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: APPEND, Literal: ">>", Start: start, End: l.readPosition}
+			tok = Token{Type: APPEND, Literal: ">>", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else if l.peekChar() == '-' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: REDIRECT, Literal: "->", Start: start, End: l.readPosition}
+			tok = Token{Type: REDIRECT, Literal: "->", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else if l.peekChar() == '=' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: GEQ, Literal: ">=", Start: start, End: l.readPosition}
+			tok = Token{Type: GEQ, Literal: ">=", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else {
-			tok = Token{Type: GREATER, Literal: ">", Start: l.position, End: l.position + 1}
+			tok = Token{Type: GREATER, Literal: ">", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 		}
 	case '<':
 		if l.peekChar() == '=' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: LEQ, Literal: "<=", Start: start, End: l.readPosition}
+			tok = Token{Type: LEQ, Literal: "<=", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else {
-			tok = Token{Type: LESS, Literal: "<", Start: l.position, End: l.position + 1}
+			tok = Token{Type: LESS, Literal: "<", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 		}
 	case '!':
 		if l.peekChar() == '=' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: NEQ, Literal: "!=", Start: start, End: l.readPosition}
+			tok = Token{Type: NEQ, Literal: "!=", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else {
-			tok = Token{Type: NOT, Literal: "!", Start: l.position, End: l.position + 1}
+			tok = Token{Type: NOT, Literal: "!", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 		}
 	case '+':
-		tok = Token{Type: PLUS, Literal: "+", Start: l.position, End: l.position + 1}
+		tok = Token{Type: PLUS, Literal: "+", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '-':
 		if l.peekChar() == '>' {
 			start := l.position
+			line, col := l.line, l.column
 			l.readChar()
-			tok = Token{Type: REDIRECT, Literal: "->", Start: start, End: l.readPosition}
+			tok = Token{Type: REDIRECT, Literal: "->", Start: start, End: l.readPosition, Line: line, Column: col}
 		} else {
-			tok = Token{Type: MINUS, Literal: "-", Start: l.position, End: l.position + 1}
+			tok = Token{Type: MINUS, Literal: "-", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 		}
 	case '*':
-		tok = Token{Type: ASTERISK, Literal: "*", Start: l.position, End: l.position + 1}
+		tok = Token{Type: ASTERISK, Literal: "*", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '/':
-		tok = Token{Type: SLASH, Literal: "/", Start: l.position, End: l.position + 1}
+		tok = Token{Type: SLASH, Literal: "/", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '%':
-		tok = Token{Type: MODULO, Literal: "%", Start: l.position, End: l.position + 1}
+		tok = Token{Type: MODULO, Literal: "%", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case ';':
-		tok = Token{Type: SEMICOLON, Literal: ";", Start: l.position, End: l.position + 1}
+		tok = Token{Type: SEMICOLON, Literal: ";", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case ',':
-		tok = Token{Type: COMMA, Literal: ",", Start: l.position, End: l.position + 1}
+		tok = Token{Type: COMMA, Literal: ",", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '.':
 		if isDigit(l.peekChar()) {
 			start := l.position
+			line, col := l.line, l.column
 			tok.Type = FLOAT
 			tok.Literal = "0" + l.readFloat()
 			tok.Start = start
 			tok.End = l.position
+			tok.Line = line
+			tok.Column = col
 			l.prevToken = tok.Type
 			return tok
 		}
-		tok = Token{Type: DOT, Literal: ".", Start: l.position, End: l.position + 1}
+		tok = Token{Type: DOT, Literal: ".", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '(':
-		tok = Token{Type: LPAREN, Literal: "(", Start: l.position, End: l.position + 1}
+		tok = Token{Type: LPAREN, Literal: "(", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case ')':
-		tok = Token{Type: RPAREN, Literal: ")", Start: l.position, End: l.position + 1}
+		tok = Token{Type: RPAREN, Literal: ")", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '{':
-		tok = Token{Type: LBRACE, Literal: "{", Start: l.position, End: l.position + 1}
+		tok = Token{Type: LBRACE, Literal: "{", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '}':
-		tok = Token{Type: RBRACE, Literal: "}", Start: l.position, End: l.position + 1}
+		tok = Token{Type: RBRACE, Literal: "}", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '[':
-		tok = Token{Type: LBRACKET, Literal: "[", Start: l.position, End: l.position + 1}
+		tok = Token{Type: LBRACKET, Literal: "[", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case ']':
-		tok = Token{Type: RBRACKET, Literal: "]", Start: l.position, End: l.position + 1}
+		tok = Token{Type: RBRACKET, Literal: "]", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '$':
-		tok = Token{Type: DOLLAR, Literal: "$", Start: l.position, End: l.position + 1}
+		tok = Token{Type: DOLLAR, Literal: "$", Start: l.position, End: l.position + 1, Line: l.line, Column: l.column}
 	case '"':
 		start := l.position
+		line, col := l.line, l.column
 		tok.Type = STRING
-		tok.Literal = l.readString()
+		str, _ := l.readString()
+		tok.Literal = str
 		tok.Start = start
 		tok.End = l.position + 1
+		tok.Line = line
+		tok.Column = col
 	case 0:
 		if l.isCompletable() {
-			tok = Token{Type: SEMICOLON, Literal: ";", Start: l.position, End: l.position}
+			tok = Token{Type: SEMICOLON, Literal: ";", Start: l.position, End: l.position, Line: l.line, Column: l.column}
 			l.prevToken = SEMICOLON
 			return tok
 		}
@@ -220,26 +260,37 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = EOF
 		tok.Start = l.position
 		tok.End = l.position
+		tok.Line = l.line
+		tok.Column = l.column
 	default:
 		if isIdentifierStart(l.input[l.position:]) {
 			start := l.position
+			line, col := l.line, l.column
 			tok.Literal = l.readIdentifier()
 			tok.Type = LookupIdent(tok.Literal)
 			tok.Start = start
 			tok.End = l.position
+			tok.Line = line
+			tok.Column = col
 			l.prevToken = tok.Type
 			return tok
 		} else if isDigit(l.ch) {
 			start := l.position
+			line, col := l.line, l.column
 			literal, tokenType := l.readNumberOrFloat()
 			tok.Type = tokenType
 			tok.Literal = literal
 			tok.Start = start
 			tok.End = l.position
+			tok.Line = line
+			tok.Column = col
 			l.prevToken = tok.Type
 			return tok
 		} else {
-			tok = Token{Type: ILLEGAL, Literal: string(l.ch), Start: l.position, End: l.position + 1}
+			ch := l.ch
+			line, col := l.line, l.column
+			tok = Token{Type: ILLEGAL, Literal: string(ch), Start: l.position, End: l.position + 1, Line: line, Column: col}
+			l.addError(fmt.Sprintf("line %d:%d: illegal character %q", line, col, string(ch)))
 		}
 	}
 
@@ -250,7 +301,7 @@ func (l *Lexer) NextToken() Token {
 
 func (l *Lexer) isCompletable() bool {
 	switch l.prevToken {
-	case IDENT, NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, NIL, RETURN, RPAREN, RBRACE:
+	case IDENT, NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, NIL, RETURN, RPAREN, RBRACE, RBRACKET:
 		return true
 	}
 	return false
@@ -334,14 +385,22 @@ func (l *Lexer) readNumberOrFloat() (string, TokenType) {
 	return l.input[start:l.position], NUMBER
 }
 
-func (l *Lexer) readString() string {
+func (l *Lexer) readString() (string, bool) {
 	position := l.position + 1
+	line, col := l.line, l.column
 	var out strings.Builder
 	hasEscape := false
 	for {
 		l.readChar()
-		if l.ch == '"' || l.ch == 0 {
+		if l.ch == '"' {
 			break
+		}
+		if l.ch == 0 {
+			l.addError(fmt.Sprintf("line %d:%d: unterminated string literal", line, col))
+			if hasEscape {
+				return out.String(), false
+			}
+			return l.input[position:l.position], false
 		}
 		if l.ch == '\\' {
 			hasEscape = true
@@ -370,9 +429,9 @@ func (l *Lexer) readString() string {
 		}
 	}
 	if hasEscape {
-		return out.String()
+		return out.String(), true
 	}
-	return l.input[position:l.position]
+	return l.input[position:l.position], true
 }
 
 func (l *Lexer) peekChar() byte {

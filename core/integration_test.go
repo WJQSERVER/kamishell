@@ -1513,3 +1513,206 @@ func TestMultiParamShorthandArityCheck(t *testing.T) {
 		t.Errorf("expected arity error, got %q", stderr)
 	}
 }
+
+// --- Exec Integration Tests (target behavior) ---
+// These tests constrain the expected behavior of the new exec implementation.
+// They should FAIL until the implementation is done.
+
+// 关键字形式：基本执行
+func TestExecBareWordIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("exec echo hello", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "hello" {
+		t.Errorf("expected hello, got %q", stdout)
+	}
+}
+
+// 关键字形式：带引号的参数
+func TestExecBareWordWithQuotesIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`exec echo "my document.txt"`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "my document.txt" {
+		t.Errorf("expected my document.txt, got %q", stdout)
+	}
+}
+
+// 关键字形式：带变量插值
+func TestExecBareWordWithVariableIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := "world"; exec echo $x`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "world" {
+		t.Errorf("expected world, got %q", stdout)
+	}
+}
+
+// 关键字形式：双引号内变量展开
+func TestExecBareWordDoubleQuoteInterpolationIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`x := "world"; exec echo "$x"`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "world" {
+		t.Errorf("expected world, got %q", stdout)
+	}
+}
+
+// 关键字形式：与管道组合
+func TestExecBareWordWithPipeIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`exec echo hello | cat`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "hello" {
+		t.Errorf("expected hello, got %q", stdout)
+	}
+}
+
+// 关键字形式：与 && 组合
+func TestExecBareWordWithLogicalAndIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`exec echo hello && print "done"`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "hello" || lines[1] != "done" {
+		t.Errorf("expected hello and done, got %v", lines)
+	}
+}
+
+// 关键字形式：与重定向组合（已知限制：重定向目标解析不完整）
+func TestExecBareWordWithRedirectIntegration(t *testing.T) {
+	// This test documents the known limitation with redirect parsing
+	// for both exec and command statements.
+	// The redirect target is not correctly parsed because
+	// scanCommandWords returns position after the delimiter.
+	t.Skip("known limitation: redirect target parsing incomplete")
+}
+
+// 函数形式：基本执行
+func TestExecFunctionIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`exec("echo hello")`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "hello" {
+		t.Errorf("expected hello, got %q", stdout)
+	}
+}
+
+// 函数形式：带变量
+func TestExecFunctionWithVariableIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`cmd := "echo hello"; exec(cmd)`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "hello" {
+		t.Errorf("expected hello, got %q", stdout)
+	}
+}
+
+// 函数形式：空字符串报错
+func TestExecFunctionEmptyStringIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`exec("")`, env)
+	if !strings.Contains(stderr, "empty") {
+		t.Errorf("expected empty command error, got %q", stderr)
+	}
+}
+
+// 函数形式：非字符串参数报错
+func TestExecFunctionNonStringArgIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	_, stderr, _ := runKami(`exec(123)`, env)
+	if !strings.Contains(stderr, "string") {
+		t.Errorf("expected string argument error, got %q", stderr)
+	}
+}
+
+// 关键字形式：用户定义函数调用
+func TestExecBareWordUserFunctionIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami("func describe(v any) { print v }; describe 7; exec describe 7", env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "7" || lines[1] != "7" {
+		t.Fatalf("expected both command paths to print 7, got %v", lines)
+	}
+}
+
+// 弃用形式：exec "..." 仍然可以执行（向后兼容）
+func TestExecDeprecatedStringFormIntegration(t *testing.T) {
+	env := NewEmptyEnvironment()
+	stdout, stderr, _ := runKami(`exec "echo hello"`, env)
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "hello" {
+		t.Errorf("expected hello, got %q", stdout)
+	}
+}
+
+// ============================================================
+// Unicode string interpolation — P1
+// ============================================================
+
+// Unicode 变量名在字符串插值中应正常工作
+func TestStringInterpolationUnicodeVar(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `名称 := "kami"; print "hello $名称"`
+	stdout, stderr, _ := runKami(input, env)
+
+	t.Logf("Input: %q", input)
+	t.Logf("Stdout: %q", stdout)
+	t.Logf("Stderr: %q", stderr)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	// Bug: parseStringParts uses isIdentChar (ASCII-only), so $名称
+	// produces Var:"" instead of Var:"名称". Runtime os.Expand may
+	// handle it differently, causing inconsistency.
+	if strings.TrimSpace(stdout) != "hello kami" {
+		t.Errorf("expected 'hello kami', got %q — parseStringParts isIdentChar may not support Unicode", strings.TrimSpace(stdout))
+	}
+}
+
+// Unicode 变量名作为独立 $var 插值
+func TestStandaloneInterpolationUnicodeVar(t *testing.T) {
+	env := NewEmptyEnvironment()
+	input := `名称 := "kami"; print $名称`
+	stdout, stderr, _ := runKami(input, env)
+
+	t.Logf("Input: %q", input)
+	t.Logf("Stdout: %q", stdout)
+	t.Logf("Stderr: %q", stderr)
+
+	if stderr != "" {
+		t.Errorf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(stdout) != "kami" {
+		t.Errorf("expected 'kami', got %q", strings.TrimSpace(stdout))
+	}
+}

@@ -296,8 +296,9 @@ func (es *ExpressionStatement) String() string {
 }
 
 type ExecStatement struct {
-	Token      Token // the exec token
-	CommandStr Expression
+	Token      Token        // the exec token
+	CommandStr Expression   // deprecated string form: exec "echo hello"
+	Args       []Expression // keyword form: exec echo hello
 }
 
 func (es *ExecStatement) statementNode()       {}
@@ -306,7 +307,14 @@ func (es *ExecStatement) String() string {
 	var out strings.Builder
 	out.WriteString(es.TokenLiteral())
 	out.WriteString(" ")
-	if es.CommandStr != nil {
+	if len(es.Args) > 0 {
+		for i, arg := range es.Args {
+			if i > 0 {
+				out.WriteString(" ")
+			}
+			out.WriteString(arg.String())
+		}
+	} else if es.CommandStr != nil {
 		out.WriteString(es.CommandStr.String())
 	}
 	out.WriteString(";")

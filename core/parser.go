@@ -1,8 +1,11 @@
 package core
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -22,6 +25,7 @@ type Parser struct {
 	l         *Lexer
 	curToken  Token
 	peekToken Token
+	errors    []string
 }
 
 func NewParser(l *Lexer) *Parser {
@@ -30,6 +34,14 @@ func NewParser(l *Lexer) *Parser {
 	p.nextToken()
 	p.nextToken()
 	return p
+}
+
+func (p *Parser) Errors() []string {
+	return p.errors
+}
+
+func (p *Parser) addError(tok Token, msg string) {
+	p.errors = append(p.errors, fmt.Sprintf("line %d:%d: %s", tok.Line, tok.Column, msg))
 }
 
 func (p *Parser) nextToken() {
@@ -47,6 +59,11 @@ func (p *Parser) ParseProgram() *Program {
 			program.Statements = append(program.Statements, stmt)
 		}
 		p.nextToken()
+	}
+
+	// Merge lexer errors into parser errors
+	if lexerErrs := p.l.Errors(); len(lexerErrs) > 0 {
+		p.errors = append(p.errors, lexerErrs...)
 	}
 
 	return program
@@ -137,7 +154,7 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 			savedCur := p.curToken
 			savedPeek := p.peekToken
 			savedLexer := p.l.GetPosition()
-			// Scan ahead: IDENT, IDENT [, IDENT ...] := 
+			// Scan ahead: IDENT, IDENT [, IDENT ...] :=
 			names := []string{p.curToken.Literal}
 			p.nextToken() // move to ,
 			for p.peekToken.Type == COMMA || p.peekToken.Type == IDENT {
@@ -178,8 +195,13 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		} else if p.peekToken.Type == LBRACKET {
 			stmt = p.parseIndexAssignOrCommand()
 		} else if p.peekToken.Type == DOT {
-			// Check for IDENT.IDENT { pattern (method call with block)
-			if p.isMethodCallWithBlock() {
+			// When there is whitespace between IDENT and DOT, treat as a command
+			// with dot-starting arguments (e.g. "cd ..", "cd .", "cd ../foo").
+			// No space means member access (e.g. "obj.method").
+			hasSpace := p.peekToken.Start > p.curToken.End
+			if hasSpace {
+				stmt = p.parseCommandStatement()
+			} else if p.isMethodCallWithBlock() {
 				mcbStmt := p.parseMethodCallBlockStatement()
 				if mcbStmt != nil {
 					stmt = mcbStmt
@@ -196,6 +218,8 @@ func (p *Parser) parsePipeOrRedirectStatement() Statement {
 		}
 	case LBRACE:
 		stmt = p.parseBlockStatement()
+	case RBRACE:
+		return nil
 	case NUMBER, FLOAT, STRING, TRUE_TOK, FALSE_TOK, DOLLAR, LPAREN, NIL, LBRACKET, NOT, MINUS:
 		stmt = p.parseExpressionStatement()
 	default:
@@ -238,7 +262,6 @@ func (p *Parser) parseRedirectStatement(left Statement) *RedirectStatement {
 
 	if p.curToken.Type == IDENT {
 		stmt.Target = &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
-		p.nextToken()
 	} else {
 		stmt.Target = p.parseExpression(LOWEST)
 	}
@@ -268,10 +291,54 @@ func (p *Parser) parsePrintStatement() *PrintStatement {
 func (p *Parser) parseExecStatement() *ExecStatement {
 	stmt := &ExecStatement{Token: p.curToken}
 	p.nextToken()
-	stmt.CommandStr = p.parseExpression(LOWEST)
-	if p.peekToken.Type == SEMICOLON {
-		p.nextToken()
+
+	// Function call form: exec(cmd)
+	if p.curToken.Type == LPAREN {
+		p.nextToken() // move past (
+		if p.curToken.Type == STRING {
+			stmt.CommandStr = p.parseExpression(LOWEST)
+		} else if p.curToken.Type == RPAREN {
+			// exec() with no args
+			stmt.CommandStr = nil
+		} else {
+			stmt.CommandStr = p.parseExpression(LOWEST)
+		}
+		if p.peekToken.Type == RPAREN {
+			p.nextToken() // move past )
+		}
+		if p.peekToken.Type == SEMICOLON {
+			p.nextToken()
+		}
+		return stmt
 	}
+
+	// Deprecated string form: exec "..."
+	if p.curToken.Type == STRING {
+		p.addError(p.curToken, "exec \"...\" is deprecated, use exec <command> <args> or exec(cmd) instead")
+		stmt.CommandStr = p.parseExpression(LOWEST)
+		if p.peekToken.Type == SEMICOLON {
+			p.nextToken()
+		}
+		return stmt
+	}
+
+	// Bare word form: exec echo hello
+	words, delim, nextPos := p.scanCommandWordsWithQuotes(p.curToken.Start)
+	for _, word := range words {
+		lit := &StringLiteral{
+			Token: Token{Type: STRING, Literal: word.Value},
+			Value: word.Value,
+		}
+		if word.SingleQuote || strings.IndexByte(word.Value, '$') < 0 {
+			lit.Obj = &String{Value: word.Value}
+		} else {
+			lit.Parts = parseStringParts(word.Value)
+		}
+		stmt.Args = append(stmt.Args, lit)
+	}
+
+	p.peekToken = delim
+	p.setLexerPosition(nextPos, delim.Type)
 	return stmt
 }
 
@@ -293,27 +360,30 @@ func (p *Parser) parseAssignStatement() *AssignStatement {
 
 func (p *Parser) parsePointerAssignStatement() *PointerAssignStatement {
 	stmt := &PointerAssignStatement{Token: p.curToken}
-	
+
 	// curToken is *, peekToken is p
 	// Parse *p as the target
 	target := &PrefixExpression{Token: p.curToken, Operator: "*"}
 	p.nextToken() // move to p
 	target.Right = p.parseIdentifier()
 	stmt.Target = target
-	
+
 	p.nextToken() // move to =
 	p.nextToken() // move to start of expression
 	stmt.Value = p.parseExpression(LOWEST)
-	
+
 	if p.peekToken.Type == SEMICOLON {
 		p.nextToken()
 	}
-	
+
 	return stmt
 }
 
 func (p *Parser) parseInvalidTightAssignStatement() *InvalidStatement {
-	stmt := &InvalidStatement{Token: p.peekToken, Message: "syntax error: assignments with '=' require spaces around the operator"}
+	tok := p.peekToken
+	msg := "syntax error: assignments with '=' require spaces around the operator"
+	stmt := &InvalidStatement{Token: tok, Message: fmt.Sprintf("line %d:%d: %s", tok.Line, tok.Column, msg)}
+	p.addError(tok, msg)
 
 	p.nextToken() // move to =
 	if p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF {
@@ -511,7 +581,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	// i := 0
 	stmt.Init = &AssignStatement{
 		Token: Token{Type: COLON_ASSIGN, Literal: ":="},
-		Names:  []string{initName},
+		Names: []string{initName},
 		Value: &IntegerLiteral{Value: 0},
 	}
 
@@ -529,7 +599,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	// i = i + 1
 	stmt.Post = &AssignStatement{
 		Token: Token{Type: ASSIGN, Literal: "="},
-		Names:  []string{initName},
+		Names: []string{initName},
 		Value: &InfixExpression{
 			Left:     NewIdentifier(Token{}, initName),
 			Operator: "+",
@@ -541,7 +611,7 @@ func (p *Parser) buildRangeFromExpr(stmt *ForStatement, vars []string, rangeExpr
 	if len(vars) >= 2 {
 		valAssign := &AssignStatement{
 			Token: Token{Type: COLON_ASSIGN, Literal: ":="},
-			Names:  []string{vars[1]},
+			Names: []string{vars[1]},
 			Value: &IndexExpression{
 				Left:  rangeExpr,
 				Index: NewIdentifier(Token{}, initName),
@@ -623,64 +693,313 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{Token: p.curToken, Name: p.curToken.Literal}
 
-	for p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF && p.peekToken.Type != RBRACE && p.peekToken.Type != PIPE && p.peekToken.Type != REDIRECT && p.peekToken.Type != APPEND && p.peekToken.Type != AND && p.peekToken.Type != OR && p.peekToken.Type != AMPERSAND {
-		if merged, ok := p.tryParseKeyValueArgument(); ok {
-			stmt.Arguments = append(stmt.Arguments, merged)
-			continue
+	words, delim, nextPos := p.scanCommandWords(p.curToken.Start)
+	if len(words) > 0 {
+		stmt.Name = words[0]
+		for _, arg := range words[1:] {
+			stmt.Arguments = append(stmt.Arguments, newCommandArgLiteral(arg))
 		}
-		p.nextToken()
-		if p.curToken.Type == IDENT {
-			// In command context, treat bare words as strings
-			stmt.Arguments = append(stmt.Arguments, &StringLiteral{Token: p.curToken, Value: p.curToken.Literal})
-		} else {
-			arg := p.parseExpression(CALL)
-			if arg != nil {
-				stmt.Arguments = append(stmt.Arguments, arg)
-			} else {
-				// Fallback: treat unknown operators in command context as literal strings
-				stmt.Arguments = append(stmt.Arguments, &StringLiteral{Token: p.curToken, Value: p.curToken.Literal})
+	}
+
+	p.peekToken = delim
+	p.setLexerPosition(nextPos, delim.Type)
+	return stmt
+}
+
+// commandWord represents a parsed command argument with quote information.
+type commandWord struct {
+	Value       string
+	SingleQuote bool // true if the word was single-quoted (no interpolation)
+}
+
+func (p *Parser) scanCommandWords(start int) ([]string, Token, int) {
+	if p.l == nil {
+		return nil, Token{Type: EOF, Start: p.curToken.End, End: p.curToken.End}, p.curToken.End
+	}
+	input := p.l.input
+	n := len(input)
+	i := start
+	words := make([]string, 0, 4)
+
+	skipSpaces := func() {
+		for i < n {
+			switch input[i] {
+			case ' ', '\t', '\r':
+				i++
+			default:
+				return
 			}
 		}
 	}
 
-	if p.peekToken.Type == SEMICOLON {
-		p.nextToken()
+	skipSpaces()
+	for i < n {
+		delim, nextPos, ok := scanCommandDelimiter(input, i)
+		if ok {
+			return words, delim, nextPos
+		}
+
+		word, nextPos, ok := scanCommandWord(input, i)
+		if !ok {
+			// Defensive progress in malformed inputs.
+			i++
+			skipSpaces()
+			continue
+		}
+		words = append(words, word)
+		i = nextPos
+		skipSpaces()
 	}
 
-	return stmt
+	return words, Token{Type: EOF, Start: n, End: n}, n
 }
 
-func (p *Parser) tryParseKeyValueArgument() (Expression, bool) {
-	if p.peekToken.Type != IDENT {
-		return nil, false
-	}
-	left := p.peekToken
-
-	// Need at least IDENT '=' <value> with no spaces around '='.
+func (p *Parser) scanCommandWordsWithQuotes(start int) ([]commandWord, Token, int) {
 	if p.l == nil {
-		return nil, false
+		return nil, Token{Type: EOF, Start: p.curToken.End, End: p.curToken.End}, p.curToken.End
 	}
-	if p.peekToken.End >= len(p.l.input) || p.l.input[p.peekToken.End] != '=' {
-		return nil, false
+	input := p.l.input
+	n := len(input)
+	i := start
+	words := make([]commandWord, 0, 4)
+
+	skipSpaces := func() {
+		for i < n {
+			switch input[i] {
+			case ' ', '\t', '\r':
+				i++
+			default:
+				return
+			}
+		}
 	}
 
-	savedCur := p.curToken
-	savedPeek := p.peekToken
-	p.nextToken() // current becomes left ident
-	if p.peekToken.Type != ASSIGN || p.curToken.End != p.peekToken.Start {
-		p.curToken = savedCur
-		p.peekToken = savedPeek
-		return nil, false
+	skipSpaces()
+	for i < n {
+		delim, nextPos, ok := scanCommandDelimiter(input, i)
+		if ok {
+			return words, delim, nextPos
+		}
+
+		word, nextPos, ok := scanCommandWordWithQuote(input, i)
+		if !ok {
+			// Defensive progress in malformed inputs.
+			i++
+			skipSpaces()
+			continue
+		}
+		words = append(words, word)
+		i = nextPos
+		skipSpaces()
 	}
-	p.nextToken() // current becomes =
-	if p.peekToken.Type != IDENT && p.peekToken.Type != NUMBER && p.peekToken.Type != STRING && p.peekToken.Type != TRUE_TOK && p.peekToken.Type != FALSE_TOK && p.peekToken.Type != NIL {
-		p.curToken = savedCur
-		p.peekToken = savedPeek
-		return nil, false
+
+	return words, Token{Type: EOF, Start: n, End: n}, n
+}
+
+func scanCommandDelimiter(input string, i int) (Token, int, bool) {
+	n := len(input)
+	if i >= n {
+		return Token{Type: EOF, Start: n, End: n}, n, true
 	}
-	p.nextToken() // current becomes value
-	merged := left.Literal + "=" + p.curToken.Literal
-	return &StringLiteral{Token: left, Value: merged, Obj: &String{Value: merged}}, true
+
+	ch := input[i]
+	switch ch {
+	case '\n':
+		return Token{Type: SEMICOLON, Literal: ";", Start: i, End: i + 1}, i + 1, true
+	case ';':
+		return Token{Type: SEMICOLON, Literal: ";", Start: i, End: i + 1}, i + 1, true
+	case '|':
+		if i+1 < n && input[i+1] == '|' {
+			return Token{Type: OR, Literal: "||", Start: i, End: i + 2}, i + 2, true
+		}
+		return Token{Type: PIPE, Literal: "|", Start: i, End: i + 1}, i + 1, true
+	case '&':
+		if i+1 < n && input[i+1] == '&' {
+			return Token{Type: AND, Literal: "&&", Start: i, End: i + 2}, i + 2, true
+		}
+		return Token{Type: AMPERSAND, Literal: "&", Start: i, End: i + 1}, i + 1, true
+	case '>':
+		if i+1 < n && input[i+1] == '>' {
+			return Token{Type: APPEND, Literal: ">>", Start: i, End: i + 2}, i + 2, true
+		}
+	case '-':
+		if i+1 < n && input[i+1] == '>' {
+			return Token{Type: REDIRECT, Literal: "->", Start: i, End: i + 2}, i + 2, true
+		}
+	case '}':
+		return Token{Type: RBRACE, Literal: "}", Start: i, End: i + 1}, i + 1, true
+	case '/':
+		if i+1 < n && input[i+1] == '/' {
+			j := i + 2
+			for j < n && input[j] != '\n' {
+				j++
+			}
+			if j < n && input[j] == '\n' {
+				return Token{Type: SEMICOLON, Literal: ";", Start: i, End: j + 1}, j + 1, true
+			}
+			return Token{Type: EOF, Start: n, End: n}, n, true
+		}
+	}
+
+	return Token{}, i, false
+}
+
+func scanCommandWord(input string, i int) (string, int, bool) {
+	n := len(input)
+	if i >= n {
+		return "", i, false
+	}
+
+	if input[i] == '"' || input[i] == '\'' {
+		return scanQuotedCommandWord(input, i)
+	}
+
+	var out strings.Builder
+	for i < n {
+		if delim, _, ok := scanCommandDelimiter(input, i); ok && delim.Type != EOF {
+			break
+		}
+		ch := input[i]
+		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
+			break
+		}
+		if ch == '\\' && i+1 < n {
+			out.WriteByte(input[i+1])
+			i += 2
+			continue
+		}
+		out.WriteByte(ch)
+		i++
+	}
+
+	if out.Len() == 0 {
+		return "", i, false
+	}
+	return out.String(), i, true
+}
+
+func scanQuotedCommandWord(input string, i int) (string, int, bool) {
+	n := len(input)
+	if i >= n {
+		return "", i, false
+	}
+	quote := input[i]
+	i++
+
+	var out strings.Builder
+	for i < n {
+		ch := input[i]
+		if ch == quote {
+			return out.String(), i + 1, true
+		}
+		if quote == '"' && ch == '\\' && i+1 < n {
+			i++
+			switch input[i] {
+			case 'n':
+				out.WriteByte('\n')
+			case 't':
+				out.WriteByte('\t')
+			case 'r':
+				out.WriteByte('\r')
+			case '"':
+				out.WriteByte('"')
+			case '\\':
+				out.WriteByte('\\')
+			default:
+				out.WriteByte(input[i])
+			}
+			i++
+			continue
+		}
+		if quote == '\'' && ch == '\\' && i+1 < n && input[i+1] == '\'' {
+			out.WriteByte('\'')
+			i += 2
+			continue
+		}
+		out.WriteByte(ch)
+		i++
+	}
+
+	// Unterminated quote: keep the accumulated content as a best-effort argument.
+	return out.String(), i, true
+}
+
+func scanCommandWordWithQuote(input string, i int) (commandWord, int, bool) {
+	n := len(input)
+	if i >= n {
+		return commandWord{}, i, false
+	}
+
+	if input[i] == '\'' {
+		word, nextPos, ok := scanQuotedCommandWord(input, i)
+		if !ok {
+			return commandWord{}, i, false
+		}
+		return commandWord{Value: word, SingleQuote: true}, nextPos, true
+	}
+
+	if input[i] == '"' {
+		word, nextPos, ok := scanQuotedCommandWord(input, i)
+		if !ok {
+			return commandWord{}, i, false
+		}
+		return commandWord{Value: word, SingleQuote: false}, nextPos, true
+	}
+
+	var out strings.Builder
+	for i < n {
+		if delim, _, ok := scanCommandDelimiter(input, i); ok && delim.Type != EOF {
+			break
+		}
+		ch := input[i]
+		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
+			break
+		}
+		if ch == '\\' && i+1 < n {
+			out.WriteByte(input[i+1])
+			i += 2
+			continue
+		}
+		out.WriteByte(ch)
+		i++
+	}
+
+	if out.Len() == 0 {
+		return commandWord{}, i, false
+	}
+	return commandWord{Value: out.String(), SingleQuote: false}, i, true
+}
+
+func newCommandArgLiteral(value string) *StringLiteral {
+	lit := &StringLiteral{
+		Token: Token{Type: STRING, Literal: value},
+		Value: value,
+	}
+	if strings.IndexByte(value, '$') < 0 {
+		lit.Obj = &String{Value: value}
+	} else {
+		lit.Parts = parseStringParts(value)
+	}
+	return lit
+}
+
+func (p *Parser) setLexerPosition(pos int, prevToken TokenType) {
+	if p.l == nil {
+		return
+	}
+	n := len(p.l.input)
+	state := LexerState{PrevToken: prevToken}
+	if pos >= n {
+		state.Position = n
+		state.ReadPosition = n
+		state.Ch = 0
+		p.l.SetPosition(state)
+		return
+	}
+	state.Position = pos
+	state.ReadPosition = pos + 1
+	state.Ch = p.l.input[pos]
+	p.l.SetPosition(state)
 }
 
 func (p *Parser) parseExpression(precedence int) Expression {
@@ -794,8 +1113,19 @@ func parseStringParts(s string) []StringPart {
 			}
 			i++ // skip $
 			vstart := i
-			for i < len(s) && isIdentChar(s[i]) {
-				i++
+			for i < len(s) {
+				if s[i] < utf8.RuneSelf {
+					if !isASCIIIdentChar(s[i]) {
+						break
+					}
+					i++
+				} else {
+					r, size := utf8.DecodeRuneInString(s[i:])
+					if r == utf8.RuneError || !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+						break
+					}
+					i += size
+				}
 			}
 			parts = append(parts, StringPart{Var: s[vstart:i]})
 			start = i
@@ -809,6 +1139,10 @@ func parseStringParts(s string) []StringPart {
 }
 
 func isIdentChar(b byte) bool {
+	return isASCIIIdentChar(b)
+}
+
+func isASCIIIdentChar(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
 }
 
@@ -983,6 +1317,7 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 	if p.peekToken.Type == LBRACE {
 		p.nextToken() // move to {
 		stmt.Body = p.parseBlockStatement()
+		p.nextToken() // move past }
 	}
 
 	return stmt
@@ -1001,10 +1336,23 @@ func (p *Parser) parseFunctionParameters() []Parameter {
 	names = append(names, p.curToken.Literal)
 
 	for {
-		if p.peekToken.Type == RPAREN || p.peekToken.Type == LBRACE {
+		if p.peekToken.Type == RPAREN {
 			// End of params — type must have been provided
 			if len(names) > 0 {
-				// Names without type — error
+				// Names without type — convert to untyped params
+				p.nextToken() // consume )
+				for _, n := range names {
+					params = append(params, Parameter{Name: n})
+				}
+				return params
+			}
+			break
+		}
+		if p.peekToken.Type == LBRACE {
+			if len(names) > 0 {
+				for _, n := range names {
+					params = append(params, Parameter{Name: n})
+				}
 				return params
 			}
 			break
@@ -1128,7 +1476,7 @@ func (p *Parser) parseGoExpression() *GoExpression {
 
 func (p *Parser) parseWaitStatement() *WaitStatement {
 	stmt := &WaitStatement{Token: p.curToken}
-	
+
 	// Check if there's a timeout argument: wait(10)
 	if p.peekToken.Type == LPAREN {
 		p.nextToken() // move to (
@@ -1138,7 +1486,7 @@ func (p *Parser) parseWaitStatement() *WaitStatement {
 			p.nextToken() // move to )
 		}
 	}
-	
+
 	return stmt
 }
 
@@ -1158,6 +1506,7 @@ func (p *Parser) parseSwitchStatement() *SwitchStatement {
 		}
 		// expect LBRACE
 		if p.peekToken.Type != LBRACE {
+			p.addError(p.peekToken, "expected '{' after switch expression, got "+string(p.peekToken.Type))
 			return stmt
 		}
 		p.nextToken() // move to {
@@ -1329,14 +1678,15 @@ func (p *Parser) parseMethodCallBlockStatement() *MethodCallBlockStatement {
 
 func (p *Parser) parseImportStatement() *ImportStatement {
 	stmt := &ImportStatement{Token: p.curToken}
-	
+
 	// Expect a string literal for the import path
 	if p.peekToken.Type != STRING {
+		p.addError(p.peekToken, "expected string literal after 'import', got "+string(p.peekToken.Type))
 		return nil
 	}
 	p.nextToken()
 	stmt.Path = p.curToken.Literal
-	
+
 	return stmt
 }
 
@@ -1344,6 +1694,7 @@ func (p *Parser) parseVarStatement() *VarStatement {
 	stmt := &VarStatement{Token: p.curToken}
 
 	if p.peekToken.Type != IDENT {
+		p.addError(p.peekToken, "expected variable name after 'var', got "+string(p.peekToken.Type))
 		return nil
 	}
 	p.nextToken()
@@ -1354,6 +1705,7 @@ func (p *Parser) parseVarStatement() *VarStatement {
 		p.nextToken()
 		stmt.TypeName = p.curToken.Literal
 	} else if p.peekToken.Type != ASSIGN && p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF {
+		p.addError(p.peekToken, "unexpected token in variable declaration: "+string(p.peekToken.Type))
 		return nil
 	}
 
@@ -1377,6 +1729,7 @@ func (p *Parser) parseGroupedExpression() Expression {
 	exp := p.parseExpression(LOWEST)
 
 	if p.peekToken.Type != RPAREN {
+		p.addError(p.peekToken, "expected ')' to close grouped expression, got "+string(p.peekToken.Type))
 		return nil
 	}
 	p.nextToken()
@@ -1417,6 +1770,7 @@ func (p *Parser) parseMemberExpression(left Expression) Expression {
 
 	p.nextToken()
 	if p.curToken.Type != IDENT {
+		p.addError(p.curToken, "expected identifier after '.', got "+string(p.curToken.Type))
 		return nil
 	}
 
@@ -1449,6 +1803,8 @@ func (p *Parser) parseExpressionList(end TokenType) []Expression {
 
 	if p.peekToken.Type == end {
 		p.nextToken()
+	} else {
+		p.addError(p.peekToken, "expected "+string(end)+" to close expression list, got "+string(p.peekToken.Type))
 	}
 
 	return args

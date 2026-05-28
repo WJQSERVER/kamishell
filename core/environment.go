@@ -1,6 +1,9 @@
 package core
 
-import "maps"
+import (
+	"context"
+	"maps"
+)
 
 import "os"
 import "strings"
@@ -26,6 +29,16 @@ func NewEnvironment() *Environment {
 	return &Environment{store: s, types: t}
 }
 
+func NewSandboxEnvironment() *Environment {
+	return &Environment{
+		store:             make(map[string]Object),
+		types:             make(map[string]string),
+		sandboxed:         true,
+		allowExternalCmd:  false,
+		maxRecursionDepth: 100,
+	}
+}
+
 func NewEnclosedEnvironment(outer *Environment) *Environment {
 	return &Environment{store: make(map[string]Object), outer: outer, packageStore: outerPackageStore(outer)}
 }
@@ -37,9 +50,20 @@ func NewScriptEnvironment(outer *Environment) *Environment {
 func NewFunctionCallEnvironment(outer *Environment, paramCapacity int) *Environment {
 	storeCap := max(paramCapacity, 1)
 	env := &Environment{
-		store:        make(map[string]Object, storeCap),
-		outer:        outer,
-		packageStore: outerPackageStore(outer),
+		store:             make(map[string]Object, storeCap),
+		outer:             outer,
+		packageStore:      outerPackageStore(outer),
+		sandboxed:         outer.sandboxed,
+		allowExternalCmd:  outer.allowExternalCmd,
+		maxRecursionDepth: outer.maxRecursionDepth,
+	}
+	if outer.allowedBuiltins != nil {
+		env.allowedBuiltins = make([]string, len(outer.allowedBuiltins))
+		copy(env.allowedBuiltins, outer.allowedBuiltins)
+	}
+	if outer.blockedBuiltins != nil {
+		env.blockedBuiltins = make([]string, len(outer.blockedBuiltins))
+		copy(env.blockedBuiltins, outer.blockedBuiltins)
 	}
 	if paramCapacity > 0 {
 		env.slots = make([]Object, 0, paramCapacity)
@@ -62,6 +86,21 @@ type Environment struct {
 	// Slot-based fast storage for resolved variables
 	slots      []Object         // indexed storage (fast path)
 	slotByName map[string]int   // name → slot index (for SetObject sync)
+
+	// Cancellation signal (set on root env by RunWithIO)
+	ctx context.Context
+	// Recursion depth tracking (root env only)
+	currentRecursion int
+
+	// Cached root environment (lazy, populated by root())
+	cachedRoot *Environment
+
+	// Sandbox controls
+	sandboxed         bool     // marks this as a sandbox environment
+	allowExternalCmd  bool     // allow external command execution via exec.Command
+	allowedBuiltins   []string // builtin whitelist (nil = all allowed)
+	blockedBuiltins   []string // builtin blacklist
+	maxRecursionDepth int      // max function call recursion depth (0 = unlimited)
 }
 
 func (e *Environment) Clone() *Environment {
@@ -69,8 +108,19 @@ func (e *Environment) Clone() *Environment {
 		return nil
 	}
 	clone := &Environment{
-		store:        make(map[string]Object, len(e.store)),
-		packageStore: clonePackageStore(e.packageStore),
+		store:             make(map[string]Object, len(e.store)),
+		packageStore:      clonePackageStore(e.packageStore),
+		sandboxed:         e.sandboxed,
+		allowExternalCmd:  e.allowExternalCmd,
+		maxRecursionDepth: e.maxRecursionDepth,
+	}
+	if len(e.allowedBuiltins) > 0 {
+		clone.allowedBuiltins = make([]string, len(e.allowedBuiltins))
+		copy(clone.allowedBuiltins, e.allowedBuiltins)
+	}
+	if len(e.blockedBuiltins) > 0 {
+		clone.blockedBuiltins = make([]string, len(e.blockedBuiltins))
+		copy(clone.blockedBuiltins, e.blockedBuiltins)
 	}
 	if len(e.types) > 0 {
 		clone.types = make(map[string]string, len(e.types))
@@ -216,6 +266,122 @@ func (e *Environment) IsConstant(name string) bool {
 		return false
 	}
 	return e.constants[name]
+}
+
+// root walks the outer chain to find the root environment.
+// Result is cached for O(1) subsequent lookups.
+func (e *Environment) root() *Environment {
+	if e.cachedRoot != nil {
+		return e.cachedRoot
+	}
+	r := e
+	for r.outer != nil {
+		r = r.outer
+	}
+	e.cachedRoot = r
+	return r
+}
+
+// SetContext attaches a cancellation context to the root environment.
+func (e *Environment) SetContext(ctx context.Context) {
+	e.root().ctx = ctx
+}
+
+// GetContext returns the root cancellation context.
+// Returns context.Background() if no context has been set.
+func (e *Environment) GetContext() context.Context {
+	ctx := e.root().ctx
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
+// Cancelled returns true if the root context has been cancelled (timeout or manual).
+func (e *Environment) Cancelled() bool {
+	ctx := e.root().ctx
+	if ctx == nil {
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// IsSandboxed returns true if this or any outer environment is sandboxed.
+func (e *Environment) IsSandboxed() bool {
+	for env := e; env != nil; env = env.outer {
+		if env.sandboxed {
+			return true
+		}
+	}
+	return false
+}
+
+// ExternalCmdAllowed returns true if external commands are allowed.
+// Traverses the outer chain to handle inherited sandbox settings.
+func (e *Environment) ExternalCmdAllowed() bool {
+	for env := e; env != nil; env = env.outer {
+		if env.sandboxed {
+			return env.allowExternalCmd
+		}
+	}
+	return true
+}
+
+// SetSandboxed marks this environment as a sandbox (true) or removes sandbox status (false).
+func (e *Environment) SetSandboxed(s bool) { e.sandboxed = s }
+
+// SetAllowExternalCmd controls whether external commands are allowed.
+func (e *Environment) SetAllowExternalCmd(allow bool) { e.allowExternalCmd = allow }
+
+// SetAllowedBuiltins sets the builtin whitelist (nil = all allowed).
+func (e *Environment) SetAllowedBuiltins(names []string) {
+	if len(names) > 0 {
+		e.allowedBuiltins = make([]string, len(names))
+		copy(e.allowedBuiltins, names)
+	} else {
+		e.allowedBuiltins = nil
+	}
+}
+
+// SetBlockedBuiltins sets the builtin blacklist.
+func (e *Environment) SetBlockedBuiltins(names []string) {
+	if len(names) > 0 {
+		e.blockedBuiltins = make([]string, len(names))
+		copy(e.blockedBuiltins, names)
+	} else {
+		e.blockedBuiltins = nil
+	}
+}
+
+// SetMaxRecursionDepth sets the maximum function call recursion depth.
+func (e *Environment) SetMaxRecursionDepth(depth int) { e.maxRecursionDepth = depth }
+
+// IsBuiltinAllowed checks if a builtin command is allowed in this environment.
+// Traverses the outer chain to handle inherited sandbox settings.
+func (e *Environment) IsBuiltinAllowed(name string) bool {
+	for env := e; env != nil; env = env.outer {
+		if env.sandboxed && env.allowedBuiltins != nil {
+			for _, n := range env.allowedBuiltins {
+				if n == name {
+					return true
+				}
+			}
+			return false
+		}
+		if env.blockedBuiltins != nil {
+			for _, n := range env.blockedBuiltins {
+				if n == name {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func NewEmptyEnvironment() *Environment {

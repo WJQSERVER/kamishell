@@ -45,6 +45,7 @@ type compiler struct {
 	buf            strings.Builder
 	imports        map[string]string
 	symbols        map[string]goType
+	readVars       map[string]bool // variables that are actually read (for unused elimination)
 	funcDefs       []string
 	knownFuncs     map[string]bool
 	funcReturns    map[string]goType   // function name -> first return type (for type inference)
@@ -135,6 +136,13 @@ func (c *compiler) genEnvSync(name string) {
 	}
 }
 
+
+// analyzeEnvDependencies walks the AST and determines which variables need 
+// environment synchronization (kamiEnv.Set). Variables need sync if they are:
+// 1. Referenced via $var in string interpolation
+// 2. Referenced via $var in command arguments (for builtin env.Get access)
+// 3. Captured by closures
+
 // analyzeEnvDependencies walks the AST and determines which variables need 
 // environment synchronization (kamiEnv.Set). Variables need sync if they are:
 // 1. Referenced via $var in string interpolation
@@ -143,45 +151,45 @@ func (c *compiler) genEnvSync(name string) {
 func analyzeEnvDependencies(program *core.Program) map[string]bool {
 	needsSync := make(map[string]bool)
 
-	// First pass: collect all declared variable names
-	allDecls := make(map[string]bool)
-	var collectDecls func(stmts []core.Statement)
-	collectDecls = func(stmts []core.Statement) {
-		for _, stmt := range stmts {
-			switch s := stmt.(type) {
-			case *core.AssignStatement:
-				if s.Token.Literal == ":=" {
-					for _, name := range s.Names {
-						allDecls[name] = true
-					}
-				}
-			case *core.VarStatement:
-				allDecls[s.Name] = true
-			case *core.ForStatement:
-				if s.Init != nil {
-					collectDecls([]core.Statement{s.Init})
-				}
-				if s.Consequence != nil {
-					collectDecls(s.Consequence.Statements)
-				}
-			case *core.BlockStatement:
-				collectDecls(s.Statements)
-			case *core.IfStatement:
-				if s.Consequence != nil {
-					collectDecls(s.Consequence.Statements)
-				}
-				if s.Alternative != nil {
-					collectDecls(s.Alternative.Statements)
-				}
+	// Lexical scope stack: each scope maps variable names to true.
+	// Index 0 = global scope, last = current innermost scope.
+	scopes := []map[string]bool{make(map[string]bool)}
+
+	pushScope := func() {
+		scopes = append(scopes, make(map[string]bool))
+	}
+	popScope := func() {
+		scopes = scopes[:len(scopes)-1]
+	}
+	declare := func(name string) {
+		scopes[len(scopes)-1][name] = true
+	}
+	outerVisible := func() map[string]bool {
+		result := make(map[string]bool)
+		for i := 0; i < len(scopes)-1; i++ {
+			for k := range scopes[i] {
+				result[k] = true
 			}
 		}
+		return result
 	}
-	collectDecls(program.Statements)
+	collectDollarRefs := func(s string) {
+		if strings.Contains(s, "$") {
+			os.Expand(s, func(name string) string {
+				needsSync[name] = true
+				return ""
+			})
+		}
+	}
 
-	var walkStatements func(stmts []core.Statement, outerVars map[string]bool)
-	var walkExpression func(expr core.Expression, outerVars map[string]bool)
+	// walkClosureStmt is declared first so walkExpr can reference it.
+	var walkClosureStmt func(stmt core.Statement)
+	var walkExpr func(expr core.Expression, inClosure bool)
 
-	walkStatements = func(stmts []core.Statement, outerVars map[string]bool) {
+	// walkStatements walks top-level statements; declarations go into the
+	// current scope and expressions are walked with inClosure=false.
+	var walkStatements func(stmts []core.Statement)
+	walkStatements = func(stmts []core.Statement) {
 		for _, stmt := range stmts {
 			if stmt == nil {
 				continue
@@ -189,181 +197,338 @@ func analyzeEnvDependencies(program *core.Program) map[string]bool {
 			switch s := stmt.(type) {
 			case *core.ExpressionStatement:
 				if s.Expression != nil {
-					walkExpression(s.Expression, outerVars)
+					walkExpr(s.Expression, false)
 				}
 			case *core.PrintStatement:
 				if s.Expression != nil {
-					walkExpression(s.Expression, outerVars)
+					walkExpr(s.Expression, false)
 				}
 			case *core.AssignStatement:
+				if s.Token.Literal == ":=" {
+					for _, name := range s.Names {
+						declare(name)
+					}
+				}
 				if s.Value != nil {
-					walkExpression(s.Value, outerVars)
+					walkExpr(s.Value, false)
 				}
 				if s.Target != nil {
-					walkExpression(s.Target, outerVars)
+					walkExpr(s.Target, false)
 				}
 			case *core.VarStatement:
+				declare(s.Name)
 				if s.Value != nil {
-					walkExpression(s.Value, outerVars)
+					walkExpr(s.Value, false)
 				}
 			case *core.IfStatement:
 				if s.Condition != nil {
-					walkExpression(s.Condition, outerVars)
+					walkExpr(s.Condition, false)
 				}
 				if s.Consequence != nil {
-					walkStatements(s.Consequence.Statements, outerVars)
+					walkStatements(s.Consequence.Statements)
 				}
 				if s.Alternative != nil {
-					walkStatements(s.Alternative.Statements, outerVars)
+					walkStatements(s.Alternative.Statements)
 				}
 			case *core.ForStatement:
 				if s.Init != nil {
-					walkStatements([]core.Statement{s.Init}, outerVars)
+					walkStatements([]core.Statement{s.Init})
 				}
 				if s.Condition != nil {
-					walkExpression(s.Condition, outerVars)
+					walkExpr(s.Condition, false)
 				}
 				if s.Post != nil {
-					walkStatements([]core.Statement{s.Post}, outerVars)
+					walkStatements([]core.Statement{s.Post})
 				}
 				if s.Consequence != nil {
-					walkStatements(s.Consequence.Statements, outerVars)
+					walkStatements(s.Consequence.Statements)
 				}
 			case *core.SwitchStatement:
 				if s.Tag != nil {
-					walkExpression(s.Tag, outerVars)
+					walkExpr(s.Tag, false)
 				}
 				for _, c := range s.Cases {
 					for _, v := range c.Values {
-						walkExpression(v, outerVars)
+						walkExpr(v, false)
 					}
 					if c.Body != nil {
-						walkStatements(c.Body.Statements, outerVars)
+						walkStatements(c.Body.Statements)
 					}
 				}
 			case *core.ReturnStatement:
 				for _, rv := range s.ReturnValues {
-					walkExpression(rv, outerVars)
+					walkExpr(rv, false)
 				}
 			case *core.CommandStatement:
-				// Command arguments with $var reference — mark those vars as needing sync
 				for _, arg := range s.Arguments {
-					if sl, ok := arg.(*core.StringLiteral); ok && strings.Contains(sl.Value, "$") {
-						// Extract $var names from the string
-						os.Expand(sl.Value, func(name string) string {
-							needsSync[name] = true
-							return ""
-						})
+					if sl, ok := arg.(*core.StringLiteral); ok {
+						collectDollarRefs(sl.Value)
 					}
-					walkExpression(arg, outerVars)
+					walkExpr(arg, false)
 				}
 			case *core.PipeStatement:
 				for _, cmd := range s.Commands {
-					walkStatements([]core.Statement{cmd}, outerVars)
+					walkStatements([]core.Statement{cmd})
 				}
 			case *core.RedirectStatement:
-				walkStatements([]core.Statement{s.Source}, outerVars)
+				walkStatements([]core.Statement{s.Source})
 				if s.Target != nil {
-					walkExpression(s.Target, outerVars)
+					walkExpr(s.Target, false)
 				}
 			case *core.LogicalStatement:
-				walkStatements([]core.Statement{s.Left}, outerVars)
-				walkStatements([]core.Statement{s.Right}, outerVars)
+				walkStatements([]core.Statement{s.Left})
+				walkStatements([]core.Statement{s.Right})
 			case *core.FunctionStatement:
-				// Create a new outerVars set for the function body
-				// All collected declarations are potential outer vars for closures
-				funcOuter := make(map[string]bool)
-				for k, v := range allDecls {
-					funcOuter[k] = v
-				}
-				// The function name itself is in outer scope
-				funcOuter[s.Name] = true
-				// Remove parameters from outer vars (they're local)
+				declare(s.Name)
+				pushScope()
 				for _, p := range s.Parameters {
-					delete(funcOuter, p.Name)
+					declare(p.Name)
 				}
 				if s.Body != nil {
-					walkStatements(s.Body.Statements, funcOuter)
+					for _, st := range s.Body.Statements { walkClosureStmt(st) }
 				}
+				popScope()
 			case *core.GoStatement:
 				if block, ok := s.Node.(*core.BlockStatement); ok {
-					walkStatements(block.Statements, outerVars)
+					walkStatements(block.Statements)
 				}
 				if cmd, ok := s.Node.(*core.CommandStatement); ok {
-					walkStatements([]core.Statement{cmd}, outerVars)
+					walkStatements([]core.Statement{cmd})
 				}
 			case *core.BackgroundStatement:
-				walkStatements([]core.Statement{s.Stmt}, outerVars)
+				walkStatements([]core.Statement{s.Stmt})
 			case *core.ExecStatement:
-				// exec "echo $msg" — CommandStr may contain $var references
 				if s.CommandStr != nil {
-					walkExpression(s.CommandStr, outerVars)
+					walkExpr(s.CommandStr, false)
+				}
+				for _, arg := range s.Args {
+					walkExpr(arg, false)
+				}
+			case *core.WaitStatement:
+				if s.Timeout != nil {
+					walkExpr(s.Timeout, false)
+				}
+			case *core.PointerAssignStatement:
+				if s.Target != nil {
+					walkExpr(s.Target, false)
+				}
+				if s.Value != nil {
+					walkExpr(s.Value, false)
+				}
+			case *core.MethodCallBlockStatement:
+				walkExpr(s.Object, false)
+				if s.Body != nil {
+					walkStatements(s.Body.Statements)
 				}
 			case *core.BlockStatement:
-				walkStatements(s.Statements, outerVars)
+				walkStatements(s.Statements)
 			}
 		}
 	}
 
-	walkExpression = func(expr core.Expression, outerVars map[string]bool) {
+	// walkExpr walks an expression. When inClosure is true, identifiers
+	// that resolve to an outer scope are marked for env sync.
+	walkExpr = func(expr core.Expression, inClosure bool) {
 		if expr == nil {
 			return
 		}
 		switch e := expr.(type) {
 		case *core.Identifier:
-			// Closure capture: if this identifier is defined in an outer scope
-			// and we're inside a function literal, it needs env sync
-			if outerVars[e.Value] {
-				needsSync[e.Value] = true
+			if inClosure {
+				ov := outerVisible()
+				if ov[e.Value] && !scopes[len(scopes)-1][e.Value] {
+					needsSync[e.Value] = true
+				}
 			}
 		case *core.InfixExpression:
-			walkExpression(e.Left, outerVars)
-			walkExpression(e.Right, outerVars)
+			walkExpr(e.Left, inClosure)
+			walkExpr(e.Right, inClosure)
 		case *core.PrefixExpression:
-			walkExpression(e.Right, outerVars)
+			walkExpr(e.Right, inClosure)
 		case *core.CallExpression:
-			walkExpression(e.Function, outerVars)
+			walkExpr(e.Function, inClosure)
 			for _, arg := range e.Arguments {
-				walkExpression(arg, outerVars)
+				walkExpr(arg, inClosure)
 			}
 		case *core.MemberExpression:
-			walkExpression(e.Object, outerVars)
+			walkExpr(e.Object, inClosure)
 		case *core.IndexExpression:
-			walkExpression(e.Left, outerVars)
-			walkExpression(e.Index, outerVars)
+			walkExpr(e.Left, inClosure)
+			walkExpr(e.Index, inClosure)
 		case *core.StringLiteral:
-			// Check for $var interpolation
-			if strings.Contains(e.Value, "$") {
-				os.Expand(e.Value, func(name string) string {
-					needsSync[name] = true
-					return ""
-				})
-			}
+			collectDollarRefs(e.Value)
 		case *core.ArrayLiteral:
 			for _, el := range e.Elements {
-				walkExpression(el, outerVars)
+				walkExpr(el, inClosure)
 			}
 		case *core.FunctionLiteral:
-			// Closure: variables from allDecls that are used inside are captured
-			closureOuter := make(map[string]bool)
-			for k, v := range allDecls {
-				closureOuter[k] = v
-			}
-			// Remove parameters (they're local)
+			pushScope()
 			for _, p := range e.Parameters {
-				delete(closureOuter, p.Name)
+				declare(p.Name)
 			}
 			if e.Body != nil {
-				walkStatements(e.Body.Statements, closureOuter)
+				for _, stmt := range e.Body.Statements {
+					walkClosureStmt(stmt)
+				}
 			}
+			popScope()
 		}
 	}
 
-	// Second pass: analyze references
-	// Top-level variables are LOCAL (not outer), so pass empty outerVars
-	// outerVars are only populated when entering function bodies
-	walkStatements(program.Statements, make(map[string]bool))
+	// walkClosureStmt walks a statement inside a closure body, forwarding
+	// all expression walks with inClosure=true.
+	walkClosureStmt = func(stmt core.Statement) {
+		if stmt == nil {
+			return
+		}
+		switch s := stmt.(type) {
+		case *core.ExpressionStatement:
+			if s.Expression != nil {
+				walkExpr(s.Expression, true)
+			}
+		case *core.PrintStatement:
+			if s.Expression != nil {
+				walkExpr(s.Expression, true)
+			}
+		case *core.AssignStatement:
+			if s.Token.Literal == ":=" {
+				for _, name := range s.Names {
+					declare(name)
+				}
+			}
+			if s.Value != nil {
+				walkExpr(s.Value, true)
+			}
+			if s.Target != nil {
+				walkExpr(s.Target, true)
+			}
+		case *core.VarStatement:
+			declare(s.Name)
+			if s.Value != nil {
+				walkExpr(s.Value, true)
+			}
+		case *core.IfStatement:
+			if s.Condition != nil {
+				walkExpr(s.Condition, true)
+			}
+			if s.Consequence != nil {
+				for _, st := range s.Consequence.Statements {
+					walkClosureStmt(st)
+				}
+			}
+			if s.Alternative != nil {
+				for _, st := range s.Alternative.Statements {
+					walkClosureStmt(st)
+				}
+			}
+		case *core.ForStatement:
+			if s.Init != nil {
+				walkClosureStmt(s.Init)
+			}
+			if s.Condition != nil {
+				walkExpr(s.Condition, true)
+			}
+			if s.Post != nil {
+				walkClosureStmt(s.Post)
+			}
+			if s.Consequence != nil {
+				for _, st := range s.Consequence.Statements {
+					walkClosureStmt(st)
+				}
+			}
+		case *core.SwitchStatement:
+			if s.Tag != nil {
+				walkExpr(s.Tag, true)
+			}
+			for _, c := range s.Cases {
+				for _, v := range c.Values {
+					walkExpr(v, true)
+				}
+				if c.Body != nil {
+					for _, st := range c.Body.Statements {
+						walkClosureStmt(st)
+					}
+				}
+			}
+		case *core.ReturnStatement:
+			for _, rv := range s.ReturnValues {
+				walkExpr(rv, true)
+			}
+		case *core.CommandStatement:
+			for _, arg := range s.Arguments {
+				if sl, ok := arg.(*core.StringLiteral); ok {
+					collectDollarRefs(sl.Value)
+				}
+				walkExpr(arg, true)
+			}
+		case *core.PipeStatement:
+			for _, cmd := range s.Commands {
+				walkClosureStmt(cmd)
+			}
+		case *core.RedirectStatement:
+			walkClosureStmt(s.Source)
+			if s.Target != nil {
+				walkExpr(s.Target, true)
+			}
+		case *core.LogicalStatement:
+			walkClosureStmt(s.Left)
+			walkClosureStmt(s.Right)
+		case *core.GoStatement:
+			if block, ok := s.Node.(*core.BlockStatement); ok {
+				for _, st := range block.Statements {
+					walkClosureStmt(st)
+				}
+			}
+			if cmd, ok := s.Node.(*core.CommandStatement); ok {
+				walkClosureStmt(cmd)
+			}
+		case *core.BackgroundStatement:
+			walkClosureStmt(s.Stmt)
+		case *core.ExecStatement:
+			if s.CommandStr != nil {
+				walkExpr(s.CommandStr, true)
+			}
+			for _, arg := range s.Args {
+				walkExpr(arg, true)
+			}
+		case *core.WaitStatement:
+			if s.Timeout != nil {
+				walkExpr(s.Timeout, true)
+			}
+		case *core.PointerAssignStatement:
+			if s.Target != nil {
+				walkExpr(s.Target, true)
+			}
+			if s.Value != nil {
+				walkExpr(s.Value, true)
+			}
+		case *core.MethodCallBlockStatement:
+			walkExpr(s.Object, true)
+			if s.Body != nil {
+				for _, st := range s.Body.Statements {
+					walkClosureStmt(st)
+				}
+			}
+		case *core.BlockStatement:
+			for _, st := range s.Statements {
+				walkClosureStmt(st)
+			}
+		case *core.FunctionStatement:
+			declare(s.Name)
+			pushScope()
+			for _, p := range s.Parameters {
+				declare(p.Name)
+			}
+			if s.Body != nil {
+				for _, st := range s.Body.Statements {
+					walkClosureStmt(st)
+				}
+			}
+			popScope()
+		}
+	}
 
+	walkStatements(program.Statements)
 	return needsSync
 }
 
@@ -373,6 +538,7 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 
 	comp := &compiler{
 		symbols: make(map[string]goType),
+		readVars: make(map[string]bool),
 		envSync: envSync,
 	}
 
@@ -391,6 +557,14 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 	}
 
 	comp.line("")
+	// Emit "_ = name" for declared-but-never-read variables to satisfy Go's
+	// "declared and not used" check. Variables that need env sync are always
+	// considered "used" because kamiEnv.SetString reads them.
+	for name := range comp.symbols {
+		if !comp.readVars[name] && (comp.envSync == nil || !comp.envSync[name]) {
+			comp.buf.WriteString(fmt.Sprintf("\t_ = %s\n", name))
+		}
+	}
 	comp.dedent()
 	comp.buf.WriteString("}\n")
 
@@ -1129,6 +1303,7 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 	}
 	// Check if it's a declared local variable first
 	if c.hasVar(name) {
+		c.readVars[name] = true
 		return name
 	}
 	// Special: 'err' maps to kamiErr for auto error tracking
@@ -1178,6 +1353,12 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 }
 
 func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
+	// Attempt constant folding: if both operands are compile-time literals,
+	// compute the result directly and avoid runtime dispatch.
+	if folded, ok := tryFoldInfix(e.Left, e.Right, e.Operator); ok {
+		return folded
+	}
+
 	left := c.compileExpression(e.Left)
 	right := c.compileExpression(e.Right)
 
@@ -1264,6 +1445,11 @@ func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
 }
 
 func (c *compiler) compilePrefixExpression(e *core.PrefixExpression) string {
+	// Attempt constant folding for unary operators on literals.
+	if folded, ok := tryFoldPrefix(e.Right, e.Operator); ok {
+		return folded
+	}
+
 	right := c.compileExpression(e.Right)
 	switch e.Operator {
 	case "!":
@@ -1510,6 +1696,7 @@ func (c *compiler) compileFunctionLiteral(f *core.FunctionLiteral) string {
 	// Build closure body with sub-compiler that inherits all context
 	sub := &compiler{
 		symbols:        make(map[string]goType),
+		readVars:       c.readVars,
 		imports:        c.imports,
 		knownFuncs:     c.knownFuncs,
 		funcReturns:    c.funcReturns,
@@ -2161,10 +2348,31 @@ func (c *compiler) compileMethodCallBlockStatement(s *core.MethodCallBlockStatem
 func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 	c.usesEnv = true
 	c.addImport("os", "")
-	c.addImport("strings", "")
 	c.addImport("os/exec", "")
+
+	// Bare word form: exec echo hello
+	if len(s.Args) > 0 {
+		var strArgs []string
+		for _, arg := range s.Args {
+			strArgs = append(strArgs, c.evalCommandArg(arg))
+		}
+		argStr := fmt.Sprintf("[]string{%s}", strings.Join(strArgs, ", "))
+
+		c.line("{")
+		c.indent()
+		c.line("kamiErr = nil")
+		c.line("c := exec.Command(%s[0], %s[1:]...)", argStr, argStr)
+		c.line("c.Stdin = os.Stdin; c.Stdout = os.Stdout; c.Stderr = os.Stderr")
+		c.line("if err := c.Run(); err != nil { kamiErr = err }")
+		c.line("if kamiErr != nil { kamiEnv.SetString(\"err\", kamiErr.Error()) }")
+		c.dedent()
+		c.line("}")
+		return
+	}
+
+	// Function/deprecated form: exec("echo hello") or exec "echo hello"
+	c.addImport("strings", "")
 	c.addImport("kamishell/recompiler", "")
-	c.addImport("fmt", "")
 	cmd := c.compileExpression(s.CommandStr)
 	c.line("{")
 	c.indent()
@@ -2181,7 +2389,7 @@ func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 	c.line("if err := c.Run(); err != nil { kamiErr = err }")
 	c.dedent()
 	c.line("}")
-	c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
+	c.line("if kamiErr != nil { kamiEnv.SetString(\"err\", kamiErr.Error()) }")
 	c.dedent()
 	c.line("}")
 }
@@ -2242,6 +2450,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 	// Generate function body with a sub-compiler
 	sub := &compiler{
 		symbols:        make(map[string]goType),
+		readVars:       c.readVars,
 		imports:        c.imports,
 		knownFuncs:     c.knownFuncs,
 		funcReturns:    c.funcReturns,
@@ -2665,6 +2874,147 @@ func compileIntLiteral(expr core.Expression) (string, bool) {
 func compileFloatLiteral(expr core.Expression) (string, bool) {
 	if fl, ok := expr.(*core.FloatLiteral); ok {
 		return fmt.Sprintf("%v", fl.Value), true
+	}
+	return "", false
+}
+
+// tryFoldInfix attempts to fold an infix expression whose operands are both
+// compile-time literals.  Returns the folded Go source string and true on
+// success, or ("", false) when folding is not possible.
+func tryFoldInfix(left, right core.Expression, op string) (string, bool) {
+	lInt, lIsInt := left.(*core.IntegerLiteral)
+	rInt, rIsInt := right.(*core.IntegerLiteral)
+	lFloat, lIsFloat := left.(*core.FloatLiteral)
+	rFloat, rIsFloat := right.(*core.FloatLiteral)
+	lStr, lIsStr := left.(*core.StringLiteral)
+	rStr, rIsStr := right.(*core.StringLiteral)
+	lBool, lIsBool := left.(*core.BooleanLiteral)
+	rBool, rIsBool := right.(*core.BooleanLiteral)
+
+	switch op {
+	case "+":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("int64(%d)", lInt.Value+rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("float64(%v)", lFloat.Value+rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return strconv.Quote(lStr.Value + rStr.Value), true
+		}
+	case "-":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("int64(%d)", lInt.Value-rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("float64(%v)", lFloat.Value-rFloat.Value), true
+		}
+	case "*":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("int64(%d)", lInt.Value*rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("float64(%v)", lFloat.Value*rFloat.Value), true
+		}
+	case "/":
+		if lIsInt && rIsInt && rInt.Value != 0 {
+			return fmt.Sprintf("int64(%d)", lInt.Value/rInt.Value), true
+		}
+		if lIsFloat && rIsFloat && rFloat.Value != 0 {
+			return fmt.Sprintf("float64(%v)", lFloat.Value/rFloat.Value), true
+		}
+	case "%":
+		if lIsInt && rIsInt && rInt.Value != 0 {
+			return fmt.Sprintf("int64(%d)", lInt.Value%rInt.Value), true
+		}
+	case "==":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value == rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value == rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value == rStr.Value), true
+		}
+		if lIsBool && rIsBool {
+			return fmt.Sprintf("%v", lBool.Value == rBool.Value), true
+		}
+	case "!=":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value != rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value != rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value != rStr.Value), true
+		}
+		if lIsBool && rIsBool {
+			return fmt.Sprintf("%v", lBool.Value != rBool.Value), true
+		}
+	case "<":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value < rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value < rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value < rStr.Value), true
+		}
+	case ">":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value > rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value > rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value > rStr.Value), true
+		}
+	case "<=":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value <= rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value <= rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value <= rStr.Value), true
+		}
+	case ">=":
+		if lIsInt && rIsInt {
+			return fmt.Sprintf("%v", lInt.Value >= rInt.Value), true
+		}
+		if lIsFloat && rIsFloat {
+			return fmt.Sprintf("%v", lFloat.Value >= rFloat.Value), true
+		}
+		if lIsStr && rIsStr {
+			return fmt.Sprintf("%v", lStr.Value >= rStr.Value), true
+		}
+	}
+	return "", false
+}
+
+// tryFoldPrefix attempts to fold a unary prefix expression on a compile-time
+// literal.  Returns the folded Go source string and true on success.
+func tryFoldPrefix(operand core.Expression, op string) (string, bool) {
+	switch op {
+	case "-":
+		if il, ok := operand.(*core.IntegerLiteral); ok {
+			return fmt.Sprintf("int64(%d)", -il.Value), true
+		}
+		if fl, ok := operand.(*core.FloatLiteral); ok {
+			return fmt.Sprintf("float64(%v)", -fl.Value), true
+		}
+	case "!":
+		if bl, ok := operand.(*core.BooleanLiteral); ok {
+			if bl.Value {
+				return "false", true
+			}
+			return "true", true
+		}
 	}
 	return "", false
 }

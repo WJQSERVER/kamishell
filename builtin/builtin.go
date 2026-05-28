@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -87,6 +88,7 @@ type Job struct {
 	Command string
 	Status  string
 	Error   string
+	Cancel  context.CancelFunc
 }
 
 var (
@@ -95,13 +97,14 @@ var (
 	JobsMu    sync.Mutex
 )
 
-func RegisterJob(cmd string) int {
+func RegisterJob(cmd string, cancel context.CancelFunc) int {
 	id := int(nextJobID.Add(1))
 	JobsMu.Lock()
 	Jobs[id] = &Job{
 		ID:      id,
 		Command: cmd,
 		Status:  "Running",
+		Cancel:  cancel,
 	}
 	JobsMu.Unlock()
 	return id
@@ -121,6 +124,22 @@ func CompleteJobWithResult(id int, success bool, errMsg string) {
 		} else {
 			job.Status = "Failed"
 			job.Error = errMsg
+		}
+	}
+}
+
+// KillAllJobs cancels all running jobs and marks them as killed.
+// Used by signal handler during graceful shutdown.
+func KillAllJobs() {
+	JobsMu.Lock()
+	defer JobsMu.Unlock()
+	for _, job := range Jobs {
+		if job.Status == "Running" {
+			if job.Cancel != nil {
+				job.Cancel()
+			}
+			job.Status = "Killed"
+			job.Error = "process terminated by signal"
 		}
 	}
 }

@@ -73,6 +73,8 @@ type Token struct {
 	Literal string
 	Start   int
 	End     int
+	Line    int
+	Column  int
 }
 
 func LookupIdent(ident string) TokenType {

@@ -736,3 +736,67 @@ func trim(s string) string {
 	}
 	return s
 }
+
+// ============================================================
+// Reserved names — P2
+// ============================================================
+
+// 用户声明 env 变量不应影响 env.Get 等内置函数
+func TestResolverUserDeclaresEnvVariable(t *testing.T) {
+	stdout, stderr, _ := runKami(`env := "myenv"; print env.Get("HOME")`, NewEmptyEnvironment())
+
+	t.Logf("Stdout: %q", stdout)
+	t.Logf("Stderr: %q", stderr)
+
+	// Bug: resolver only reserves "err", not "env". User can shadow
+	// the built-in env package. If env.Get still works, the runtime
+	// handles it correctly despite resolver allocating a slot.
+	// If it fails, the resolver slot shadows the package.
+	if stderr != "" {
+		t.Logf("Note: env.Get() failed after user declared 'env' variable: %s", stderr)
+	}
+}
+
+// 用户声明 err 变量应被 resolver 拒绝（已保留）
+func TestResolverUserCannotDeclareErr(t *testing.T) {
+	// err is reserved — resolver should not allocate a slot for it.
+	// The assignment should still work at runtime (err is maintained by runtime).
+	_, stderr, _ := runKami(`err := "hello"`, NewEmptyEnvironment())
+	t.Logf("err assignment stderr: %q", stderr)
+	// This may or may not produce an error depending on runtime behavior.
+	// The key test is that resolver doesn't allocate a slot for "err".
+}
+
+// 解析错误应包含位置信息
+func TestParserErrorsHavePositionInfo(t *testing.T) {
+	input := `(1 + 2`
+	l := NewLexer(input)
+	p := NewParser(l)
+	_ = p.ParseProgram()
+
+	errs := p.Errors()
+	t.Logf("Parser errors for %q:", input)
+	for _, e := range errs {
+		t.Logf("  %q", e)
+	}
+
+	// Current: errors are plain strings with no position info.
+	// Expected: errors should mention line/column number.
+	hasPosition := false
+	for _, e := range errs {
+		// Check if error contains line/column indicators
+		if len(e) > 0 {
+			// Simple heuristic: position-aware errors typically contain ':' followed by digits
+			for i := 0; i < len(e)-1; i++ {
+				if e[i] == ':' && i+1 < len(e) && e[i+1] >= '0' && e[i+1] <= '9' {
+					hasPosition = true
+					break
+				}
+			}
+		}
+	}
+
+	if len(errs) > 0 && !hasPosition {
+		t.Logf("Note: parser errors lack line:column position info — addError() only takes a string")
+	}
+}

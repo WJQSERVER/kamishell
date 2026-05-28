@@ -20,7 +20,7 @@ func BenchmarkRegisterJobSequential(b *testing.B) {
 		JobsMu.Unlock()
 
 		for range 64 {
-			RegisterJob("bench-cmd")
+			RegisterJob("bench-cmd", nil)
 		}
 	}
 
@@ -48,7 +48,7 @@ func BenchmarkRegisterJobParallel(b *testing.B) {
 		for range 8 {
 			wg.Go(func() {
 				for range 8 {
-					RegisterJob("bench-cmd")
+					RegisterJob("bench-cmd", nil)
 				}
 			})
 		}

@@ -22,7 +22,7 @@ func TestCompleteJobWithResultMarksFailure(t *testing.T) {
 		JobsMu.Unlock()
 	}()
 
-	id := RegisterJob("sleep 1")
+	id := RegisterJob("sleep 1", nil)
 	CompleteJobWithResult(id, false, "exit status 1")
 
 	stdout := &bytes.Buffer{}
@@ -62,7 +62,7 @@ func TestRegisterJobConcurrentUniqueness(t *testing.T) {
 	for range goroutines {
 		wg.Go(func() {
 			for range perGoroutine {
-				ids <- RegisterJob("test-cmd")
+				ids <- RegisterJob("test-cmd", nil)
 			}
 		})
 	}

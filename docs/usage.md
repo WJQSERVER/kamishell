@@ -91,6 +91,19 @@ http --headers https://example.com
 ./my_script.sh
 ```
 
+### 脚本中的命令参数
+
+脚本模式下，含 `://` 的 URL 等特殊参数建议用 `exec` 或引号包裹：
+
+```bash
+# 推荐
+exec "git clone https://github.com/user/repo.git"
+git clone "https://github.com/user/repo.git"
+
+# 不推荐：裸写 URL 会被截断
+git clone https://github.com/user/repo.git
+```
+
 ## 5. 编译模式
 
 Kamishell 支持将 `.km` 脚本编译为原生 Go 二进制文件，消除解释器开销。

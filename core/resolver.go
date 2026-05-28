@@ -6,7 +6,10 @@ import "kamishell/builtin"
 // because they are maintained by the runtime via SetObject/SetWithType
 // outside of the normal declaration flow.
 var reservedNames = map[string]bool{
-	"err": true,
+	"err":  true,
+	"env":  true,
+	"sync": true,
+	"param": true,
 }
 
 // Resolve performs a variable resolution pass on the parsed AST.
@@ -97,7 +100,12 @@ func (r *resolver) resolveStatement(stmt Statement) {
 	case *GoStatement:
 		r.resolveGoNode(s.Node)
 	case *ExecStatement:
-		r.resolveExpression(s.CommandStr)
+		if s.CommandStr != nil {
+			r.resolveExpression(s.CommandStr)
+		}
+		for _, arg := range s.Args {
+			r.resolveExpression(arg)
+		}
 	case *ImportStatement:
 		// no-op
 	case *WaitStatement:

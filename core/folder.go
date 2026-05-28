@@ -83,7 +83,12 @@ func foldStatement(stmt Statement) Statement {
 		s.Node = foldNode(s.Node)
 		return s
 	case *ExecStatement:
-		s.CommandStr = foldExpression(s.CommandStr)
+		if s.CommandStr != nil {
+			s.CommandStr = foldExpression(s.CommandStr)
+		}
+		for i, arg := range s.Args {
+			s.Args[i] = foldExpression(arg)
+		}
 		return s
 	case *WaitStatement:
 		s.Timeout = foldExpression(s.Timeout)
