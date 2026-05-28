@@ -1,6 +1,6 @@
 module github.com/WJQSERVER/kamishell
 
-go 1.26.0
+go 1.26
 
 require (
 	github.com/WJQSERVER-STUDIO/go-utils/iox v0.0.3
