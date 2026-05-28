@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
@@ -39,8 +40,8 @@ func (p *Parser) Errors() []string {
 	return p.errors
 }
 
-func (p *Parser) addError(msg string) {
-	p.errors = append(p.errors, msg)
+func (p *Parser) addError(tok Token, msg string) {
+	p.errors = append(p.errors, fmt.Sprintf("line %d:%d: %s", tok.Line, tok.Column, msg))
 }
 
 func (p *Parser) nextToken() {
@@ -58,6 +59,11 @@ func (p *Parser) ParseProgram() *Program {
 			program.Statements = append(program.Statements, stmt)
 		}
 		p.nextToken()
+	}
+
+	// Merge lexer errors into parser errors
+	if lexerErrs := p.l.Errors(); len(lexerErrs) > 0 {
+		p.errors = append(p.errors, lexerErrs...)
 	}
 
 	return program
@@ -308,7 +314,7 @@ func (p *Parser) parseExecStatement() *ExecStatement {
 
 	// Deprecated string form: exec "..."
 	if p.curToken.Type == STRING {
-		p.addError("exec \"...\" is deprecated, use exec <command> <args> or exec(cmd) instead")
+		p.addError(p.curToken, "exec \"...\" is deprecated, use exec <command> <args> or exec(cmd) instead")
 		stmt.CommandStr = p.parseExpression(LOWEST)
 		if p.peekToken.Type == SEMICOLON {
 			p.nextToken()
@@ -374,7 +380,10 @@ func (p *Parser) parsePointerAssignStatement() *PointerAssignStatement {
 }
 
 func (p *Parser) parseInvalidTightAssignStatement() *InvalidStatement {
-	stmt := &InvalidStatement{Token: p.peekToken, Message: "syntax error: assignments with '=' require spaces around the operator"}
+	tok := p.peekToken
+	msg := "syntax error: assignments with '=' require spaces around the operator"
+	stmt := &InvalidStatement{Token: tok, Message: fmt.Sprintf("line %d:%d: %s", tok.Line, tok.Column, msg)}
+	p.addError(tok, msg)
 
 	p.nextToken() // move to =
 	if p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF {
@@ -1497,6 +1506,7 @@ func (p *Parser) parseSwitchStatement() *SwitchStatement {
 		}
 		// expect LBRACE
 		if p.peekToken.Type != LBRACE {
+			p.addError(p.peekToken, "expected '{' after switch expression, got "+string(p.peekToken.Type))
 			return stmt
 		}
 		p.nextToken() // move to {
@@ -1671,6 +1681,7 @@ func (p *Parser) parseImportStatement() *ImportStatement {
 
 	// Expect a string literal for the import path
 	if p.peekToken.Type != STRING {
+		p.addError(p.peekToken, "expected string literal after 'import', got "+string(p.peekToken.Type))
 		return nil
 	}
 	p.nextToken()
@@ -1683,6 +1694,7 @@ func (p *Parser) parseVarStatement() *VarStatement {
 	stmt := &VarStatement{Token: p.curToken}
 
 	if p.peekToken.Type != IDENT {
+		p.addError(p.peekToken, "expected variable name after 'var', got "+string(p.peekToken.Type))
 		return nil
 	}
 	p.nextToken()
@@ -1693,6 +1705,7 @@ func (p *Parser) parseVarStatement() *VarStatement {
 		p.nextToken()
 		stmt.TypeName = p.curToken.Literal
 	} else if p.peekToken.Type != ASSIGN && p.peekToken.Type != SEMICOLON && p.peekToken.Type != EOF {
+		p.addError(p.peekToken, "unexpected token in variable declaration: "+string(p.peekToken.Type))
 		return nil
 	}
 
@@ -1716,7 +1729,7 @@ func (p *Parser) parseGroupedExpression() Expression {
 	exp := p.parseExpression(LOWEST)
 
 	if p.peekToken.Type != RPAREN {
-		p.addError("expected ')' to close grouped expression, got " + string(p.peekToken.Type))
+		p.addError(p.peekToken, "expected ')' to close grouped expression, got "+string(p.peekToken.Type))
 		return nil
 	}
 	p.nextToken()
@@ -1757,7 +1770,7 @@ func (p *Parser) parseMemberExpression(left Expression) Expression {
 
 	p.nextToken()
 	if p.curToken.Type != IDENT {
-		p.addError("expected identifier after '.', got " + string(p.curToken.Type))
+		p.addError(p.curToken, "expected identifier after '.', got "+string(p.curToken.Type))
 		return nil
 	}
 
@@ -1791,7 +1804,7 @@ func (p *Parser) parseExpressionList(end TokenType) []Expression {
 	if p.peekToken.Type == end {
 		p.nextToken()
 	} else {
-		p.addError("expected " + string(end) + " to close expression list, got " + string(p.peekToken.Type))
+		p.addError(p.peekToken, "expected "+string(end)+" to close expression list, got "+string(p.peekToken.Type))
 	}
 
 	return args

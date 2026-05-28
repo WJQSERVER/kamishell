@@ -186,6 +186,14 @@ func runInput(input string, env *core.Environment, isRepl bool) {
 	p := core.NewParser(l)
 
 	program := p.ParseProgram()
+
+	if errs := p.Errors(); len(errs) > 0 {
+		for _, err := range errs {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+		}
+		return
+	}
+
 	core.Fold(program)
 	core.Resolve(program)
 	result := core.Eval(program, env)
