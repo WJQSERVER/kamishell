@@ -3,8 +3,8 @@ package make
 import (
 	"fmt"
 	"io"
-	"kamishell/builtin"
-	"kamishell/core"
+	"github.com/WJQSERVER/kamishell/builtin"
+	"github.com/WJQSERVER/kamishell/core"
 	"os"
 	"os/exec"
 	"runtime"

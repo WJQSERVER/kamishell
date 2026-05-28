@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"kamishell/builtin"
-	"kamishell/core"
+	"github.com/WJQSERVER/kamishell/builtin"
+	"github.com/WJQSERVER/kamishell/core"
 )
 
 func TestRunBuiltinArgsPassesRawRelativeWindowsPath(t *testing.T) {

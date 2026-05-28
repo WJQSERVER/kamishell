@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"kamishell/core"
+	"github.com/WJQSERVER/kamishell/core"
 )
 
 var projectRoot string

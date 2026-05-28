@@ -1,6 +1,6 @@
 package core
 
-import "kamishell/builtin"
+import "github.com/WJQSERVER/kamishell/builtin"
 
 // reservedNames are names that the Resolver must NOT assign slots to,
 // because they are maintained by the runtime via SetObject/SetWithType

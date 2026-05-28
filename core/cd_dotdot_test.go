@@ -2,7 +2,7 @@ package core
 
 import (
 	"bytes"
-	"kamishell/builtin"
+	"github.com/WJQSERVER/kamishell/builtin"
 	"os"
 	"path/filepath"
 	"testing"

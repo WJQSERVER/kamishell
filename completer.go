@@ -1,8 +1,8 @@
 package main
 
 import (
-	"kamishell/builtin"
-	"kamishell/core"
+	"github.com/WJQSERVER/kamishell/builtin"
+	"github.com/WJQSERVER/kamishell/core"
 	"os"
 	"path/filepath"
 	"strings"

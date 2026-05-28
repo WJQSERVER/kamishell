@@ -1,4 +1,4 @@
-module kamishell
+module github.com/WJQSERVER/kamishell
 
 go 1.26.0
 

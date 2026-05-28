@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"kamishell/builtin"
-	"kamishell/kamilib"
+	"github.com/WJQSERVER/kamishell/builtin"
+	"github.com/WJQSERVER/kamishell/kamilib"
 
 	"github.com/valyala/bytebufferpool"
 )

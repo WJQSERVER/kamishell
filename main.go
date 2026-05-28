@@ -13,10 +13,10 @@ import (
 	"strings"
 	"syscall"
 
-	"kamishell/builtin"
-	"kamishell/core"
-	kmake "kamishell/make"
-	"kamishell/recompiler"
+	"github.com/WJQSERVER/kamishell/builtin"
+	"github.com/WJQSERVER/kamishell/core"
+	kmake "github.com/WJQSERVER/kamishell/make"
+	"github.com/WJQSERVER/kamishell/recompiler"
 
 	"github.com/WJQSERVER/readline"
 )
