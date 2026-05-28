@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"kamishell/builtin"
-	"kamishell/core"
+	"github.com/WJQSERVER/kamishell/builtin"
+	"github.com/WJQSERVER/kamishell/core"
 )
 
 type CompiledScript struct {
@@ -131,7 +131,7 @@ func (c *compiler) genEnvSync(name string) {
 	case goStr:
 		c.line("kamiEnv.SetString(%q, %s)", name, name)
 	default:
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		c.line("kamiEnv.SetString(%q, recompiler.ToStr(%s))", name, name)
 	}
 }
@@ -582,7 +582,7 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 	}
 	if comp.usesEnv {
 		decls += "\tkamiEnv := recompiler.NewEnv()\n"
-		comp.addImport("kamishell/recompiler", "")
+		comp.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	}
 	if decls != "" {
 		body := strings.ReplaceAll(bodyStr, "\t__KAMI_DECL_MARKER__\n", decls)
@@ -596,7 +596,7 @@ func Compile(program *core.Program) (*CompiledScript, error) {
 	}
 
 	// Always need recompiler import: main() calls recompiler.ResetImports()
-	comp.addImport("kamishell/recompiler", "")
+	comp.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 
 	funcDefs := strings.Join(comp.funcDefs, "\n")
 
@@ -728,7 +728,7 @@ func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 						// wg.Wait(timeout) returns error — assign to kamiErr
 						c.line("kamiErr = %s", val)
 						c.line("kamiEnv.SetString(\"err\", kamiErr.Error())")
-						c.addImport("kamishell/recompiler", "")
+						c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 						return
 					}
 					// wg.Wait() or wg.Go — void, just call
@@ -749,7 +749,7 @@ func (c *compiler) compileExpressionStatement(s *core.ExpressionStatement) {
 }
 
 func (c *compiler) compilePrintStatement(s *core.PrintStatement) {
-	c.addImport("kamishell/kamilib", "")
+	c.addImport("github.com/WJQSERVER/kamishell/kamilib", "")
 	val := c.compileExpression(s.Expression)
 	c.line("kamilib.KamiPrint(%s)", stripOuterParens(val))
 }
@@ -861,7 +861,7 @@ func (c *compiler) compileAssignStatement(s *core.AssignStatement) {
 		c.funcLiteralVars[s.Names[0]] = fl
 		c.line("var %s = %s", s.Names[0], val)
 		if c.envSync == nil || c.envSync[s.Names[0]] {
-			c.addImport("kamishell/recompiler", "")
+			c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 			c.line("kamiEnv.SetString(%q, recompiler.ToStr(%s))", s.Names[0], s.Names[0])
 		}
 		return
@@ -974,7 +974,7 @@ func (c *compiler) compileIfStatement(s *core.IfStatement) {
 	if c.isBoolExpr(s.Condition) {
 		c.line("if %s {", cond)
 	} else {
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		c.line("if recompiler.IsTruthy(%s) {", cond)
 	}
 	c.indent()
@@ -1052,7 +1052,7 @@ func (c *compiler) compileForStatement(s *core.ForStatement) {
 		if c.isBoolExpr(s.Condition) {
 			condStr = fmt.Sprintf("for %s {", cond)
 		} else {
-			c.addImport("kamishell/recompiler", "")
+			c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 			condStr = fmt.Sprintf("for recompiler.IsTruthy(%s) {", cond)
 		}
 		if s.Post != nil {
@@ -1170,7 +1170,7 @@ func (c *compiler) compileSwitchStatement(s *core.SwitchStatement) {
 		}
 
 		// Fallback: string comparison via ToStr
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		c.line("switch recompiler.ToStr(%s) {", tag)
 	} else {
 		c.line("switch {")
@@ -1282,7 +1282,7 @@ func (c *compiler) compileExpression(expr core.Expression) string {
 func (c *compiler) compileStringLiteral(s *core.StringLiteral) string {
 	if strings.Contains(s.Value, "$") {
 		c.usesEnv = true
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.ExpandStr(%q, kamiEnv)", s.Value)
 	}
 	// strconv.Quote is used at recompiler-compile-time to produce valid Go source.
@@ -1321,7 +1321,7 @@ func (c *compiler) compileIdentifier(id *core.Identifier) string {
 	}
 	// Auto-declare from env lookup — use parent types if available for closure capture
 	c.usesEnv = true
-	c.addImport("kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	varType := goAny
 	if c.parentTypes != nil {
 		if parentType, ok := c.parentTypes[name]; ok {
@@ -1372,25 +1372,25 @@ func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
 		if bothInt || bothStr || bothFloat {
 			return fmt.Sprintf("(%s + %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Add(%s, %s)", left, right)
 	case "-":
 		if bothInt || bothFloat {
 			return fmt.Sprintf("(%s - %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Sub(%s, %s)", left, right)
 	case "*":
 		if bothInt || bothFloat {
 			return fmt.Sprintf("(%s * %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Mul(%s, %s)", left, right)
 	case "/":
 		if bothInt || bothFloat {
 			return fmt.Sprintf("(%s / %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Div(%s, %s)", left, right)
 	case "%":
 		if bothInt {
@@ -1400,43 +1400,43 @@ func (c *compiler) compileInfixExpression(e *core.InfixExpression) string {
 			c.addImport("math", "")
 			return fmt.Sprintf("math.Mod(%s, %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Mod(%s, %s)", left, right)
 	case "==":
 		if bothInt || bothStr || bothFloat || bothBool {
 			return fmt.Sprintf("(%s == %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Eq(%s, %s)", left, right)
 	case "!=":
 		if bothInt || bothStr || bothFloat || bothBool {
 			return fmt.Sprintf("(%s != %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.NotEq(%s, %s)", left, right)
 	case "<":
 		if bothInt || bothFloat || bothStr {
 			return fmt.Sprintf("(%s < %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.LessThan(%s, %s)", left, right)
 	case ">":
 		if bothInt || bothFloat || bothStr {
 			return fmt.Sprintf("(%s > %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.GreaterThan(%s, %s)", left, right)
 	case "<=":
 		if bothInt || bothFloat || bothStr {
 			return fmt.Sprintf("(%s <= %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.LessEq(%s, %s)", left, right)
 	case ">=":
 		if bothInt || bothFloat || bothStr {
 			return fmt.Sprintf("(%s >= %s)", left, right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.GreaterEq(%s, %s)", left, right)
 	default:
 		c.errorf("unknown infix operator: %s", e.Operator)
@@ -1457,14 +1457,14 @@ func (c *compiler) compilePrefixExpression(e *core.PrefixExpression) string {
 		if c.isBoolExpr(e.Right) {
 			return fmt.Sprintf("!(%s)", right)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("!recompiler.IsTruthy(%s)", right)
 	case "-":
 		return fmt.Sprintf("(-%s)", right)
 	case "&":
 		// Address-of: create a Ptr with typed getter/setter closures
 		if ident, ok := e.Right.(*core.Identifier); ok {
-			c.addImport("kamishell/recompiler", "")
+			c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 			name := ident.Value
 			varType := goAny
 			if t, ok := c.getVarType(name); ok {
@@ -1486,7 +1486,7 @@ func (c *compiler) compilePrefixExpression(e *core.PrefixExpression) string {
 		return fmt.Sprintf("recompiler.NewPtr(func() any { return %s }, func(v any) {})", right)
 	case "*":
 		// Dereference: call Deref on the Ptr
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.Deref(%s)", right)
 	default:
 		c.errorf("unknown prefix operator: %s", e.Operator)
@@ -1511,7 +1511,7 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 						return fmt.Sprintf("int64(len(%s))", arg)
 					}
 				}
-				c.addImport("kamishell/recompiler", "")
+				c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 				return fmt.Sprintf("recompiler.ArrayLen(%s)", arg)
 			}
 		case "push":
@@ -1525,11 +1525,11 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 						return fmt.Sprintf("append(%s, %s)", arr, val)
 					}
 				}
-				c.addImport("kamishell/recompiler", "")
+				c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 				return fmt.Sprintf("recompiler.ArrayPush(%s, %s)", arr, val)
 			}
 		case "error":
-			c.addImport("kamishell/recompiler", "")
+			c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 			if len(e.Arguments) > 0 {
 				arg := c.compileExpression(e.Arguments[0])
 				// Skip ToStr when arg is already string
@@ -1543,7 +1543,7 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 
 		// Known user-defined functions: call directly
 		if c.knownFuncs != nil && c.knownFuncs[name] {
-			c.addImport("kamishell/recompiler", "")
+			c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 			var args []string
 			needsEnv := true
 			if c.funcNeedsEnv != nil {
@@ -1605,7 +1605,7 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 				}
 				// wg.Wait(timeout) → kamilib.WaitTimeout(wg, timeout)
 				timeout := c.compileExpression(e.Arguments[0])
-				c.addImport("kamishell/kamilib", "")
+				c.addImport("github.com/WJQSERVER/kamishell/kamilib", "")
 				c.usesErr = true
 				return fmt.Sprintf("kamilib.WaitTimeout(%s, %s)", id.Value, timeout)
 			}
@@ -1624,7 +1624,7 @@ func (c *compiler) compileCallExpression(e *core.CallExpression) string {
 	}
 
 	// Generic call: function loaded from env as any
-	c.addImport("kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	fn := c.compileExpression(e.Function)
 	var args []string
 	for _, a := range e.Arguments {
@@ -1653,7 +1653,7 @@ func (c *compiler) compileMemberExpression(e *core.MemberExpression) string {
 
 	// Fallback — should not be reached for well-formed programs
 	obj := c.compileExpression(e.Object)
-	c.addImport("kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	return fmt.Sprintf("recompiler.MemberGet(%s, %q)", obj, prop)
 }
 
@@ -1793,7 +1793,7 @@ func (c *compiler) compileCommandStatement(s *core.CommandStatement) {
 
 	// Check if it's a builtin
 	if cmd, ok := builtin.Builtins[name]; ok {
-		c.addImport("kamishell/builtin", "")
+		c.addImport("github.com/WJQSERVER/kamishell/builtin", "")
 		c.addImport("os", "")
 		c.addImport("fmt", "")
 		funcName := c.builtinFuncName(cmd.Name)
@@ -1884,7 +1884,7 @@ func (c *compiler) evalCommandArg(arg core.Expression) string {
 	switch a := arg.(type) {
 	case *core.StringLiteral:
 		if strings.Contains(a.Value, "$") {
-			c.addImport("kamishell/recompiler", "")
+			c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 			return fmt.Sprintf("recompiler.ExpandStr(%q, kamiEnv)", a.Value)
 		}
 		return strconv.Quote(a.Value)
@@ -1903,7 +1903,7 @@ func (c *compiler) evalCommandArg(arg core.Expression) string {
 			return strconv.Quote("-" + right)
 		}
 		// Other prefix ops (like & or *) - treat as expression
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.ToStr(%s)", c.compileExpression(a))
 	case *core.Identifier:
 		// Direct strconv for known types
@@ -1918,7 +1918,7 @@ func (c *compiler) evalCommandArg(arg core.Expression) string {
 			c.addImport("strconv", "")
 			return fmt.Sprintf("strconv.FormatBool(%s)", a.Value)
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		return fmt.Sprintf("recompiler.ToStr(%s)", a.Value)
 	default:
 		// For complex expressions, check if we can infer the type
@@ -1937,7 +1937,7 @@ func (c *compiler) evalCommandArg(arg core.Expression) string {
 			c.addImport("strconv", "")
 			return fmt.Sprintf("strconv.FormatBool(%s)", c.compileExpression(arg))
 		}
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		val := c.compileExpression(a)
 		return fmt.Sprintf("recompiler.ToStr(%s)", val)
 	}
@@ -2031,7 +2031,7 @@ func (c *compiler) compilePipeStatement(s *core.PipeStatement) {
 		}
 
 		if bcmd, ok := builtin.Builtins[cmd.Name]; ok {
-			c.addImport("kamishell/builtin", "")
+			c.addImport("github.com/WJQSERVER/kamishell/builtin", "")
 			c.addImport("os", "")
 			funcName := c.builtinFuncName(bcmd.Name)
 			c.line("builtin.%s(%s, kamiEnv, %s, %s, os.Stderr)", funcName, argStr, stdin, stdout)
@@ -2057,8 +2057,8 @@ func (c *compiler) compilePipeStatement(s *core.PipeStatement) {
 func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
 	c.usesEnv = true
 	c.addImport("os", "")
-	c.addImport("kamishell/recompiler", "")
-	c.addImport("kamishell/builtin", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/builtin", "")
 	c.addImport("os/exec", "")
 	target := c.compileExpression(s.Target)
 
@@ -2098,7 +2098,7 @@ func (c *compiler) compileRedirectStatement(s *core.RedirectStatement) {
 		argStr := fmt.Sprintf("[]string{%s}", strings.Join(strArgs, ", "))
 
 		if bcmd, ok := builtin.Builtins[cmd.Name]; ok {
-			c.addImport("kamishell/builtin", "")
+			c.addImport("github.com/WJQSERVER/kamishell/builtin", "")
 			c.addImport("os", "")
 			funcName := c.builtinFuncName(bcmd.Name)
 			c.line("kamiErr = nil")
@@ -2169,7 +2169,7 @@ func (c *compiler) compilePipeWithOutput(ps *core.PipeStatement, output string) 
 		}
 
 		if bcmd, ok := builtin.Builtins[cmd.Name]; ok {
-			c.addImport("kamishell/builtin", "")
+			c.addImport("github.com/WJQSERVER/kamishell/builtin", "")
 			c.addImport("os", "")
 			funcName := c.builtinFuncName(bcmd.Name)
 			c.line("builtin.%s(%s, kamiEnv, %s, %s, os.Stderr)", funcName, argStr, stdin, stdout)
@@ -2217,7 +2217,7 @@ func (c *compiler) compileLogicalStatement(s *core.LogicalStatement) {
 }
 
 func (c *compiler) compileGoStatement(s *core.GoStatement) {
-	c.addImport("kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	c.line("{")
 	c.indent()
 	c.line("id := recompiler.RegisterGoJob(%q)", s.String())
@@ -2241,7 +2241,7 @@ func (c *compiler) compileGoStatement(s *core.GoStatement) {
 }
 
 func (c *compiler) compileBackgroundStatement(s *core.BackgroundStatement) {
-	c.addImport("kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	c.line("{")
 	c.indent()
 	c.line("id := recompiler.RegisterGoJob(%q)", s.String())
@@ -2268,7 +2268,7 @@ func (c *compiler) compileBackgroundStatement(s *core.BackgroundStatement) {
 func (c *compiler) compileCommandStatementInline(s *core.CommandStatement) {
 	c.addImport("os", "")
 	c.addImport("os/exec", "")
-	c.addImport("kamishell/builtin", "")
+	c.addImport("github.com/WJQSERVER/kamishell/builtin", "")
 	var strArgs []string
 	for _, arg := range s.Arguments {
 		strArgs = append(strArgs, c.evalCommandArg(arg))
@@ -2288,7 +2288,7 @@ func (c *compiler) compileCommandStatementInline(s *core.CommandStatement) {
 func (c *compiler) compileGoExpression(e *core.GoExpression) string {
 	if block, ok := e.Node.(*core.BlockStatement); ok {
 		id := fmt.Sprintf("kamiTask_%d", len(c.funcDefs)+1)
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		c.line("%s := recompiler.NewTask()", id)
 		c.line("go func() {")
 		c.indent()
@@ -2304,7 +2304,7 @@ func (c *compiler) compileGoExpression(e *core.GoExpression) string {
 }
 
 func (c *compiler) compileWaitStatement(s *core.WaitStatement) {
-	c.addImport("kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	if s.Timeout != nil {
 		timeout := c.compileExpression(s.Timeout)
 		c.line("recompiler.WaitAllTimeout(%s)", timeout)
@@ -2319,7 +2319,7 @@ func (c *compiler) compilePointerAssignStatement(s *core.PointerAssignStatement)
 	if prefix, ok := s.Target.(*core.PrefixExpression); ok && prefix.Operator == "*" {
 		ptr := c.compileExpression(prefix.Right)
 		val := c.compileExpression(s.Value)
-		c.addImport("kamishell/recompiler", "")
+		c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 		c.line("recompiler.SetPtr(%s, %s)", ptr, val)
 		return
 	}
@@ -2372,7 +2372,7 @@ func (c *compiler) compileExecStatement(s *core.ExecStatement) {
 
 	// Function/deprecated form: exec("echo hello") or exec "echo hello"
 	c.addImport("strings", "")
-	c.addImport("kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	cmd := c.compileExpression(s.CommandStr)
 	c.line("{")
 	c.indent()
@@ -2537,7 +2537,7 @@ func (c *compiler) compileFunctionStatement(s *core.FunctionStatement) {
 
 	// Register in main env so builtins/commands can find it
 	c.usesEnv = true
-	c.addImport("kamishell/recompiler", "")
+	c.addImport("github.com/WJQSERVER/kamishell/recompiler", "")
 	c.line("kamiEnv.SetString(%q, %q)", funcName, "func")
 
 	// Store func def

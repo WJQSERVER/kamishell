@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"kamishell/builtin"
-	"kamishell/core"
+	"github.com/WJQSERVER/kamishell/builtin"
+	"github.com/WJQSERVER/kamishell/core"
 )
 
 func TestSnapshotBuildEnvUsesScriptEnvPackage(t *testing.T) {

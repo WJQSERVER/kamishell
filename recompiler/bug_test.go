@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"kamishell/core"
+	"github.com/WJQSERVER/kamishell/core"
 )
 
 // compileSource compiles a Kami source string and returns the generated Go source.

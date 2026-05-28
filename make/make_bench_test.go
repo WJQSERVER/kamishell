@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"kamishell/core"
+	"github.com/WJQSERVER/kamishell/core"
 )
 
 func BenchmarkSnapshotBuildEnv(b *testing.B) {
